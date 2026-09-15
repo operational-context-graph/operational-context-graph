@@ -1,4 +1,4 @@
-[![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/ocg)](https://api.reuse.software/info/github.com/operational-context-graph/ocg)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/operational-context-graph/operational-context-graph/badge)](https://scorecard.dev/viewer/?uri=github.com/operational-context-graph/operational-context-graph) [![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/ocg)](https://api.reuse.software/info/github.com/operational-context-graph/ocg)
 
 # ocg
 
