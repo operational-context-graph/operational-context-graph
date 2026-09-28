@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Hardened Apache Doris Frontend image
+# Base: apache/doris:fe-4.1.4 (Ubuntu 22.04)
+#
+# Hardening applied (Decision D-2, sdd-telemetry-store.md):
+#   1. Pinned upstream tag. Use image digest in production:
+#        FROM apache/doris:fe-4.1.4@sha256:<digest>
+#      Obtain: docker inspect --format='{{index .RepoDigests 0}}' apache/doris:fe-4.1.4
+#   2. Build/debug tooling removed (gcc, g++, cpp, binutils, gdb, strace).
+#      These packages are in the Ubuntu base but unused at FE runtime.
+#   3. dorisctl and doris-debug auxiliary binaries removed.
+#      dorisctl embeds an outdated Go toolchain (Critical advisory in 4.1.4).
+#      doris-debug is a diagnostic binary not needed in production.
+#   4. Runs as non-root doris user (created by upstream image).
+#
+# Known remaining surface — production prerequisites, need an owner:
+#   - Bouncy Castle: replace the bundled Hadoop client JAR with a patched version,
+#     or remove it if HDFS is not used.
+#   - Java library advisories (netty, jackson, jetty, thrift): upgrade bundled JARs.
+#   - Ubuntu base-OS: rebuild on a minimal base once upstream Doris supports it.
+#
+# Build:
+#   docker build -f infrastructure/doris/Dockerfile.fe -t apeiro/doris-fe:4.1.4-hardened .
+#
+# Ports:
+#   8030 — HTTP Web UI, Stream Load, health check
+#   9020 — FE Thrift RPC
+#   9030 — MySQL-compatible SQL query port
+#   9010 — BDB JE (Raft metadata sync)
+
+FROM apache/doris:fe-4.1.4
+
+USER root
+
+RUN apt-get update --quiet && \
+    apt-get remove -y --auto-remove \
+        gcc \
+        g++ \
+        cpp \
+        binutils \
+        gdb \
+        strace \
+        linux-headers-generic \
+        2>/dev/null || true && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN rm -f \
+    /opt/apache-doris/fe/bin/dorisctl \
+    /opt/apache-doris/fe/bin/doris-debug \
+    2>/dev/null || true
+
+COPY infrastructure/doris/fe.conf /opt/apache-doris/fe/conf/fe.conf
+
+USER doris
+
+EXPOSE 8030 9020 9030 9010
