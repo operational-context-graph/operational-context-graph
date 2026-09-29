@@ -1,0 +1,44 @@
+# Dev / demo values — upstream images, single instances, no HA
+# These are intentionally relaxed. See values-prod.yaml for production settings.
+
+registry: keppel.eu-de-1.cloud.sap/ccloud
+
+inventoryStore:
+  image: operational-context-graph-inventory-store
+  tag: latest
+  replicas: 1
+  port: 8080
+
+telemetryStore:
+  image: operational-context-graph-telemetry-store
+  tag: latest
+  replicas: 1
+  port: 8080
+
+dataIngestion:
+  image: operational-context-graph-data-ingestion
+  tag: latest
+  replicas: 1
+
+postgres:
+  # Dev uses upstream image — no build step needed
+  image: postgres
+  tag: "16"
+  storage: 10Gi
+  database: inventory
+  user: inventory
+
+doris:
+  # Dev uses upstream images — no build step needed
+  fe:
+    image: apache/doris
+    tag: fe-4.1.4
+    replicas: 1
+    httpPort: 8030
+    mysqlPort: 9030
+    storage: 10Gi
+  be:
+    image: apache/doris
+    tag: be-4.1.4
+    replicas: 1
+    storage: 50Gi

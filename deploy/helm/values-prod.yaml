@@ -1,0 +1,52 @@
+# Production values — hardened images, HA topology, strict security
+# BEFORE DEPLOYING: fill in all TODO items in this file.
+
+registry: keppel.eu-de-1.cloud.sap/ccloud
+
+inventoryStore:
+  # TODO: replace <sha> with the actual git commit SHA after pushing the image
+  image: operational-context-graph-inventory-store
+  tag: <sha>
+  replicas: 2
+  port: 8080
+
+telemetryStore:
+  # TODO: replace <sha> with the actual git commit SHA after pushing the image
+  image: operational-context-graph-telemetry-store
+  tag: <sha>
+  replicas: 3
+  port: 8080
+
+dataIngestion:
+  # TODO: replace <sha> with the actual git commit SHA after pushing the image
+  image: operational-context-graph-data-ingestion
+  tag: <sha>
+  replicas: 2
+
+postgres:
+  # Production uses the hardened image built from infrastructure/postgres/Dockerfile
+  # TODO: replace <digest> with the actual SHA256 digest after building and pushing
+  #   docker build -f infrastructure/postgres/Dockerfile -t keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened .
+  #   docker push keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened
+  #   docker inspect --format='{{index .RepoDigests 0}}' keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened
+  image: postgres
+  tag: 16-hardened@sha256:<digest>
+  storage: 50Gi
+  database: inventory
+  user: inventory
+
+doris:
+  fe:
+    # TODO: replace <digest> after building infrastructure/doris/Dockerfile.fe
+    image: doris-fe
+    tag: 4.1.4-hardened@sha256:<digest>
+    replicas: 3
+    httpPort: 8030
+    mysqlPort: 9030
+    storage: 10Gi
+  be:
+    # TODO: replace <digest> after building infrastructure/doris/Dockerfile.be
+    image: doris-be
+    tag: 4.1.4-hardened@sha256:<digest>
+    replicas: 3
+    storage: 100Gi

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ocg-postgres
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-postgres
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  serviceName: ocg-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocg-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocg-postgres
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsNonRoot: true
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: "{{ .Values.registry }}/{{ .Values.postgres.image }}:{{ .Values.postgres.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "{{ .Values.postgres.database }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.postgres.user }}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ocg-postgres-credentials
+                  key: password
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.postgres.user }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.postgres.user }}"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "{{ .Values.postgres.storage }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocg-postgres
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-postgres
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ocg-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

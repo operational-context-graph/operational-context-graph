@@ -1,0 +1,6 @@
+apiVersion: v2
+name: operational-context-graph
+description: Operational Context Graph — Inventory Store, Telemetry Store, Data Ingestion
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

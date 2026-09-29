@@ -1,0 +1,203 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ocg-doris-fe
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-doris-fe
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  serviceName: ocg-doris-fe
+  replicas: {{ .Values.doris.fe.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocg-doris-fe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocg-doris-fe
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: doris-fe
+          image: "{{ .Values.registry }}/{{ .Values.doris.fe.image }}:{{ .Values.doris.fe.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8030
+            - name: mysql
+              containerPort: 9030
+            - name: thrift
+              containerPort: 9020
+            - name: bdb
+              containerPort: 9010
+          env:
+            - name: DORIS_WRITER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ocg-doris-credentials
+                  key: writer-password
+            - name: DORIS_ANALYST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ocg-doris-credentials
+                  key: analyst-password
+          livenessProbe:
+            httpGet:
+              path: /api/bootstrap
+              port: 8030
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/bootstrap
+              port: 8030
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: fe-meta
+              mountPath: /opt/apache-doris/fe/doris-meta
+  volumeClaimTemplates:
+    - metadata:
+        name: fe-meta
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "{{ .Values.doris.fe.storage }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocg-doris-fe
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-doris-fe
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ocg-doris-fe
+  ports:
+    - name: http
+      port: 8030
+      targetPort: 8030
+    - name: mysql
+      port: 9030
+      targetPort: 9030
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ocg-doris-be
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-doris-be
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  serviceName: ocg-doris-be
+  replicas: {{ .Values.doris.be.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocg-doris-be
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocg-doris-be
+    spec:
+      # BE requires vm.max_map_count >= 2000000 on the host — set via init container
+      initContainers:
+        - name: set-max-map-count
+          image: busybox
+          securityContext:
+            privileged: true
+          command: ["sysctl", "-w", "vm.max_map_count=2000000"]
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: doris-be
+          image: "{{ .Values.registry }}/{{ .Values.doris.be.image }}:{{ .Values.doris.be.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: be-http
+              containerPort: 8040
+            - name: heartbeat
+              containerPort: 9050
+            - name: thrift
+              containerPort: 9060
+            - name: brpc
+              containerPort: 8060
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8040
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8040
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 16Gi
+          volumeMounts:
+            - name: be-storage
+              mountPath: /opt/apache-doris/be/storage
+  volumeClaimTemplates:
+    - metadata:
+        name: be-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "{{ .Values.doris.be.storage }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocg-doris-be
+  namespace: autonomous-operations
+  labels:
+    app.kubernetes.io/name: ocg-doris-be
+    app.kubernetes.io/managed-by: Helm
+    ccloud/service: operational-context-graph
+    ccloud/support-group: cross-product
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ocg-doris-be
+  ports:
+    - name: be-http
+      port: 8040
+      targetPort: 8040
+    - name: heartbeat
+      port: 9050
+      targetPort: 9050

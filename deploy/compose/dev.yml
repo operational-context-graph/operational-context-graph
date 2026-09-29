@@ -1,0 +1,95 @@
+# docker-compose for local development
+# Uses upstream images — no build step needed.
+# For production use the hardened images (see infrastructure/hardening.md).
+
+services:
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: dev-password-not-for-production
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "inventory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inventory-store:
+    image: ghcr.io/operational-context-graph/inventory-store:latest
+    environment:
+      HTTP_PORT: "8080"
+      LOG_LEVEL: "debug"
+      DATABASE_URL: "postgres://inventory:dev-password-not-for-production@postgres:5432/inventory?sslmode=disable"
+      DB_MAX_OPEN_CONNS: "25"
+      DB_MAX_IDLE_CONNS: "5"
+      DB_CONN_MAX_LIFETIME: "5m"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  doris-fe:
+    image: apache/doris:fe-4.1.4
+    ports:
+      - "8030:8030"
+      - "9030:9030"
+    volumes:
+      - doris-fe-meta:/opt/apache-doris/fe/doris-meta
+      - ./infrastructure/doris/fe.conf:/opt/apache-doris/fe/conf/fe.conf
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8030/api/bootstrap"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  doris-be:
+    image: apache/doris:be-4.1.4
+    ports:
+      - "8040:8040"
+      - "9050:9050"
+    volumes:
+      - doris-be-storage:/opt/apache-doris/be/storage
+      - ./infrastructure/doris/be.conf:/opt/apache-doris/be/conf/be.conf
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    # vm.max_map_count must be set on the Docker host:
+    #   sudo sysctl -w vm.max_map_count=2000000
+
+  telemetry-store:
+    image: ghcr.io/operational-context-graph/telemetry-store:latest
+    environment:
+      HTTP_PORT: "8081"
+      LOG_LEVEL: "debug"
+      DORIS_FE_HOST: "doris-fe:8030"
+      DORIS_MYSQL_HOST: "doris-fe:9030"
+      DORIS_USER: "ocg_writer"
+      DORIS_PASSWORD: "dev-password-not-for-production"
+    ports:
+      - "8081:8081"
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+
+  data-ingestion:
+    image: ghcr.io/operational-context-graph/data-ingestion:latest
+    environment:
+      LOG_LEVEL: "debug"
+      INVENTORY_STORE_URL: "http://inventory-store:8080"
+      TELEMETRY_STORE_URL: "http://telemetry-store:8081"
+    depends_on:
+      - inventory-store
+      - telemetry-store
+
+volumes:
+  postgres-data:
+  doris-fe-meta:
+  doris-be-storage:
