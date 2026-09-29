@@ -36,11 +36,11 @@ Apache does not publish an official slim or Alpine Doris image, so the Ubuntu 22
 
 ### PostgreSQL
 
-The official `postgres:18` image is based on **Debian Trixie** and ships with build tooling (gcc, g++, binutils, make) and debug utilities (gdb, strace, ltrace) not needed at runtime.
+The official `postgres:16` image is based on **Debian Bookworm** and ships with build tooling (gcc, g++, binutils, make) and debug utilities (gdb, strace, ltrace) not needed at runtime.
 
-**Preferred alternative: `postgres:18-alpine`**
+**Preferred alternative: `postgres:16-alpine`**
 
-An Alpine Linux variant (`postgres:18-alpine`) is available and has a significantly smaller base surface than the Debian image — Alpine ships almost no extra tooling by default, making the `apt-get remove` step below largely unnecessary. Use the Alpine variant unless a dependency on glibc is confirmed (Alpine uses musl libc).
+An Alpine Linux variant (`postgres:16-alpine`) is available and has a significantly smaller base surface than the Debian image — Alpine ships almost no extra tooling by default, making the `apt-get remove` step below largely unnecessary. Use the Alpine variant unless a dependency on glibc is confirmed (Alpine uses musl libc).
 
 For this project, the Debian variant is used because no glibc incompatibility has been identified. Switching to Alpine is a straightforward change (update the `FROM` line, remove the `apt-get` block).
 
@@ -52,7 +52,7 @@ All three images follow the same pattern:
 
 ### 1. Pin the upstream image digest in production
 
-Image tags are mutable — `postgres:18` today is not the same bytes as `postgres:18` tomorrow. In production, replace the tag with the immutable digest:
+Image tags are mutable — `postgres:16` today is not the same bytes as `postgres:16` tomorrow. In production, replace the tag with the immutable digest:
 
 ```dockerfile
 # Instead of:
@@ -66,7 +66,7 @@ Obtain the digest after pulling:
 ```bash
 docker inspect --format='{{index .RepoDigests 0}}' apache/doris:fe-4.1.4
 docker inspect --format='{{index .RepoDigests 0}}' apache/doris:be-4.1.4
-docker inspect --format='{{index .RepoDigests 0}}' postgres:18
+docker inspect --format='{{index .RepoDigests 0}}' postgres:16
 ```
 
 ### 2. Remove build and debug tooling
@@ -145,7 +145,7 @@ docker build \
 # Build hardened PostgreSQL
 docker build \
   -f infrastructure/postgres/Dockerfile \
-  -t apeiro/postgres:18-hardened \
+  -t apeiro/postgres:16-hardened \
   .
 ```
 

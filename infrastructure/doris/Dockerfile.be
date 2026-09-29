@@ -5,7 +5,7 @@
 # Hardened Apache Doris Backend image
 # Base: apache/doris:be-4.1.4 (Ubuntu 22.04)
 #
-# Hardening applied (Decision D-2, sdd-telemetry-store.md):
+# Hardening applied:
 #   1. Pinned upstream tag. Use image digest in production:
 #        FROM apache/doris:be-4.1.4@sha256:<digest>
 #      Obtain: docker inspect --format='{{index .RepoDigests 0}}' apache/doris:be-4.1.4
