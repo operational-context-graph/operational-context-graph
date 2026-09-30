@@ -8,7 +8,30 @@ Stores and serves all operational data for a data center. Provides telemetry, in
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+### Local development (infrastructure only)
+
+Requires: Docker Desktop (macOS/Windows) or Docker Engine (Linux).
+
+From the repo root:
+
+```bash
+docker compose -f deploy/compose/dev.yml up sysctl-init postgres doris-fe doris-be
+```
+
+`vm.max_map_count` is set automatically — no manual host configuration needed. Doris takes ~60s to become healthy.
+
+Verify:
+```bash
+curl http://localhost:8030/api/bootstrap  # Doris FE — expect {"msg":"success",...}
+```
+
+Tear down:
+```bash
+docker compose -f deploy/compose/dev.yml down      # keep data
+docker compose -f deploy/compose/dev.yml down -v   # delete all data
+```
+
+> The application services (`inventory-store`, `telemetry-store`, `data-ingestion`) are not yet implemented. See [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) for the full deployment guide including Kubernetes/Helm instructions.
 
 ## Support, Feedback, Contributing
 

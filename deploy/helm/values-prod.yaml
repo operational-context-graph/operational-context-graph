@@ -1,7 +1,19 @@
 # Production values — hardened images, HA topology, strict security
 # BEFORE DEPLOYING: fill in all TODO items in this file.
 
-registry: keppel.eu-de-1.cloud.sap/ccloud
+# Target namespace — set to the namespace you deploy into (e.g. autonomous-operations)
+namespace: "<namespace>"
+
+# Container registry — set to your registry prefix (e.g. keppel.eu-de-1.cloud.sap/ccloud)
+registry: "<registry>"
+
+# Labels applied to every resource — set to your org's service and support-group values
+labels:
+  service: operational-context-graph
+  supportGroup: "<support-group>"
+
+# Log level for all application components (debug, info, warn, error)
+logLevel: "info"
 
 inventoryStore:
   # TODO: replace <sha> with the actual git commit SHA after pushing the image
@@ -22,13 +34,14 @@ dataIngestion:
   image: operational-context-graph-data-ingestion
   tag: <sha>
   replicas: 2
+  port: 8080
 
 postgres:
   # Production uses the hardened image built from infrastructure/postgres/Dockerfile
   # TODO: replace <digest> with the actual SHA256 digest after building and pushing
-  #   docker build -f infrastructure/postgres/Dockerfile -t keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened .
-  #   docker push keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened
-  #   docker inspect --format='{{index .RepoDigests 0}}' keppel.eu-de-1.cloud.sap/ccloud/postgres:16-hardened
+  #   docker build -f infrastructure/postgres/Dockerfile -t <registry>/postgres:16-hardened .
+  #   docker push <registry>/postgres:16-hardened
+  #   docker inspect --format='{{index .RepoDigests 0}}' <registry>/postgres:16-hardened
   image: postgres
   tag: 16-hardened@sha256:<digest>
   storage: 50Gi
@@ -36,6 +49,7 @@ postgres:
   user: inventory
 
 doris:
+  writerUser: ocg_writer
   fe:
     # TODO: replace <digest> after building infrastructure/doris/Dockerfile.fe
     image: doris-fe
@@ -43,10 +57,16 @@ doris:
     replicas: 3
     httpPort: 8030
     mysqlPort: 9030
+    thriftPort: 9020
+    bdbPort: 9010
     storage: 10Gi
   be:
     # TODO: replace <digest> after building infrastructure/doris/Dockerfile.be
     image: doris-be
     tag: 4.1.4-hardened@sha256:<digest>
     replicas: 3
+    httpPort: 8040
+    heartbeatPort: 9050
+    thriftPort: 9060
+    brpcPort: 8060
     storage: 100Gi

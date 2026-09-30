@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocg-postgres
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-postgres
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   serviceName: ocg-postgres
   replicas: 1
@@ -77,12 +77,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocg-postgres
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-postgres
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   type: ClusterIP
   selector:

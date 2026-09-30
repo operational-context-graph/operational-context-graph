@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ocg-telemetry-store
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-telemetry-store
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   replicas: {{ .Values.telemetryStore.replicas }}
   revisionHistoryLimit: 5
@@ -38,13 +38,13 @@ spec:
             - name: HTTP_PORT
               value: "{{ .Values.telemetryStore.port }}"
             - name: LOG_LEVEL
-              value: "info"
+              value: "{{ .Values.logLevel }}"
             - name: DORIS_FE_HOST
-              value: "ocg-doris-fe:8030"
+              value: "ocg-doris-fe:{{ .Values.doris.fe.httpPort }}"
             - name: DORIS_MYSQL_HOST
-              value: "ocg-doris-fe:9030"
+              value: "ocg-doris-fe:{{ .Values.doris.fe.mysqlPort }}"
             - name: DORIS_USER
-              value: "ocg_writer"
+              value: "{{ .Values.doris.writerUser }}"
             - name: DORIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -79,17 +79,17 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocg-telemetry-store
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-telemetry-store
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: ocg-telemetry-store
   ports:
     - name: http
-      port: 8080
+      port: {{ .Values.telemetryStore.port }}
       targetPort: {{ .Values.telemetryStore.port }}

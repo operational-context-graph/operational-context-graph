@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocg-doris-fe
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-doris-fe
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   serviceName: ocg-doris-fe
   replicas: {{ .Values.doris.fe.replicas }}
@@ -27,13 +27,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 8030
+              containerPort: {{ .Values.doris.fe.httpPort }}
             - name: mysql
-              containerPort: 9030
+              containerPort: {{ .Values.doris.fe.mysqlPort }}
             - name: thrift
-              containerPort: 9020
+              containerPort: {{ .Values.doris.fe.thriftPort }}
             - name: bdb
-              containerPort: 9010
+              containerPort: {{ .Values.doris.fe.bdbPort }}
           env:
             - name: DORIS_WRITER_PASSWORD
               valueFrom:
@@ -48,7 +48,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /api/bootstrap
-              port: 8030
+              port: {{ .Values.doris.fe.httpPort }}
             initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 5
@@ -56,7 +56,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /api/bootstrap
-              port: 8030
+              port: {{ .Values.doris.fe.httpPort }}
             initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 5
@@ -84,34 +84,34 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocg-doris-fe
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-doris-fe
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: ocg-doris-fe
   ports:
     - name: http
-      port: 8030
-      targetPort: 8030
+      port: {{ .Values.doris.fe.httpPort }}
+      targetPort: {{ .Values.doris.fe.httpPort }}
     - name: mysql
-      port: 9030
-      targetPort: 9030
+      port: {{ .Values.doris.fe.mysqlPort }}
+      targetPort: {{ .Values.doris.fe.mysqlPort }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocg-doris-be
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-doris-be
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   serviceName: ocg-doris-be
   replicas: {{ .Values.doris.be.replicas }}
@@ -138,17 +138,17 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - name: be-http
-              containerPort: 8040
+              containerPort: {{ .Values.doris.be.httpPort }}
             - name: heartbeat
-              containerPort: 9050
+              containerPort: {{ .Values.doris.be.heartbeatPort }}
             - name: thrift
-              containerPort: 9060
+              containerPort: {{ .Values.doris.be.thriftPort }}
             - name: brpc
-              containerPort: 8060
+              containerPort: {{ .Values.doris.be.brpcPort }}
           livenessProbe:
             httpGet:
               path: /api/health
-              port: 8040
+              port: {{ .Values.doris.be.httpPort }}
             initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 5
@@ -156,7 +156,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /api/health
-              port: 8040
+              port: {{ .Values.doris.be.httpPort }}
             initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 5
@@ -184,20 +184,20 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocg-doris-be
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-doris-be
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: ocg-doris-be
   ports:
     - name: be-http
-      port: 8040
-      targetPort: 8040
+      port: {{ .Values.doris.be.httpPort }}
+      targetPort: {{ .Values.doris.be.httpPort }}
     - name: heartbeat
-      port: 9050
-      targetPort: 9050
+      port: {{ .Values.doris.be.heartbeatPort }}
+      targetPort: {{ .Values.doris.be.heartbeatPort }}

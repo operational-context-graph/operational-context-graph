@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ocg-inventory-store
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-inventory-store
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   replicas: {{ .Values.inventoryStore.replicas }}
   revisionHistoryLimit: 5
@@ -38,7 +38,7 @@ spec:
             - name: HTTP_PORT
               value: "{{ .Values.inventoryStore.port }}"
             - name: LOG_LEVEL
-              value: "info"
+              value: "{{ .Values.logLevel }}"
             - name: DB_MAX_OPEN_CONNS
               value: "25"
             - name: DB_MAX_IDLE_CONNS
@@ -78,17 +78,17 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocg-inventory-store
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-inventory-store
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: ocg-inventory-store
   ports:
     - name: http
-      port: 8080
+      port: {{ .Values.inventoryStore.port }}
       targetPort: {{ .Values.inventoryStore.port }}

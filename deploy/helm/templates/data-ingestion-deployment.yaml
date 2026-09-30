@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ocg-data-ingestion
-  namespace: autonomous-operations
+  namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/name: ocg-data-ingestion
     app.kubernetes.io/managed-by: Helm
-    ccloud/service: operational-context-graph
-    ccloud/support-group: cross-product
+    ccloud/service: {{ .Values.labels.service }}
+    ccloud/support-group: {{ .Values.labels.supportGroup }}
 spec:
   replicas: {{ .Values.dataIngestion.replicas }}
   revisionHistoryLimit: 5
@@ -33,15 +33,15 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: INVENTORY_STORE_URL
-              value: "http://ocg-inventory-store:8080"
+              value: "http://ocg-inventory-store:{{ .Values.inventoryStore.port }}"
             - name: TELEMETRY_STORE_URL
-              value: "http://ocg-telemetry-store:8080"
+              value: "http://ocg-telemetry-store:{{ .Values.telemetryStore.port }}"
             - name: LOG_LEVEL
-              value: "info"
+              value: "{{ .Values.logLevel }}"
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8080
+              port: {{ .Values.dataIngestion.port }}
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
@@ -49,7 +49,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /readyz
-              port: 8080
+              port: {{ .Values.dataIngestion.port }}
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 5

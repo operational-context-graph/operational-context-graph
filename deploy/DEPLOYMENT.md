@@ -1,8 +1,8 @@
-# OCG Helm Deployment — qa-de-1
+# OCG Helm Deployment
 
-Target cluster: `qa-de-1`  
-Target namespace: `autonomous-operations`  
-Registry: `keppel.eu-de-1.cloud.sap/ccloud/`
+Target cluster: `<cluster>`  
+Target namespace: `<namespace>`  
+Registry: `<registry>/`
 
 ---
 
@@ -41,15 +41,15 @@ tag: "<git-sha>"
 
 Replace `<git-sha>` with the exact git commit SHA of the build you want to deploy, e.g. `a1b2c3d`.
 
-The CI pipeline builds and pushes images to `keppel.eu-de-1.cloud.sap/ccloud/` tagged with the commit SHA.
+The CI pipeline builds and pushes images to `<registry>/` tagged with the commit SHA.
 
 ### 2. Fill in image digests (production only)
 
 For production, images must also be digest-pinned. After the CI build completes, run:
 
 ```bash
-docker pull keppel.eu-de-1.cloud.sap/ccloud/inventory-store:<git-sha>
-docker inspect --format='{{index .RepoDigests 0}}' keppel.eu-de-1.cloud.sap/ccloud/inventory-store:<git-sha>
+docker pull <registry>/inventory-store:<git-sha>
+docker inspect --format='{{index .RepoDigests 0}}' <registry>/inventory-store:<git-sha>
 ```
 
 Copy the `sha256:...` digest into `values-prod.yaml`. Repeat for each image.
@@ -68,7 +68,7 @@ Pass it as an extra values file at deploy time:
 
 ```bash
 helm install ocg ./deploy/helm \
-  -n autonomous-operations \
+  -n <namespace> \
   -f deploy/helm/values-prod.yaml \
   -f deploy/helm/values-secrets.yaml
 ```
@@ -78,14 +78,14 @@ The Secrets are created by the chart using values from this file. The templates 
 ### 4. Confirm the namespace exists
 
 ```bash
-kubectl get namespace autonomous-operations
+kubectl get namespace <namespace>
 ```
 
 If it does not exist, create it or ask cluster-admin to create it.
 
 ### 5. vm.max_map_count for Doris BE
 
-The Doris BE init container runs `sysctl -w vm.max_map_count=2000000`. This requires the node to allow privileged init containers. Confirm with the cluster-admin that this is permitted on `qa-de-1`. If not, the node-level setting must be applied via a DaemonSet or node pool configuration.
+The Doris BE init container runs `sysctl -w vm.max_map_count=2000000`. This requires the node to allow privileged init containers. Confirm with the cluster-admin that this is permitted on `<cluster>`. If not, the node-level setting must be applied via a DaemonSet or node pool configuration.
 
 ---
 
@@ -94,7 +94,7 @@ The Doris BE init container runs `sysctl -w vm.max_map_count=2000000`. This requ
 ### First install
 
 ```bash
-# Ensure kubectl context points to qa-de-1
+# Ensure kubectl context points to the target cluster
 kubectl config current-context
 
 # Dry run — validate templates without sending to cluster
@@ -105,7 +105,7 @@ helm install ocg-dry-run ./deploy/helm \
 
 # Actual install
 helm install ocg ./deploy/helm \
-  -n autonomous-operations \
+  -n <namespace> \
   -f deploy/helm/values-prod.yaml \
   -f deploy/helm/values-secrets.yaml
 ```
@@ -114,7 +114,7 @@ helm install ocg ./deploy/helm \
 
 ```bash
 helm upgrade ocg ./deploy/helm \
-  -n autonomous-operations \
+  -n <namespace> \
   -f deploy/helm/values-prod.yaml \
   -f deploy/helm/values-secrets.yaml
 ```
@@ -122,46 +122,58 @@ helm upgrade ocg ./deploy/helm \
 ### Check rollout status
 
 ```bash
-kubectl rollout status deployment/ocg-inventory-store  -n autonomous-operations
-kubectl rollout status deployment/ocg-telemetry-store   -n autonomous-operations
-kubectl rollout status deployment/ocg-data-ingestion    -n autonomous-operations
-kubectl rollout status statefulset/ocg-postgres         -n autonomous-operations
-kubectl rollout status statefulset/ocg-doris-fe         -n autonomous-operations
-kubectl rollout status statefulset/ocg-doris-be         -n autonomous-operations
+kubectl rollout status deployment/ocg-inventory-store  -n <namespace>
+kubectl rollout status deployment/ocg-telemetry-store   -n <namespace>
+kubectl rollout status deployment/ocg-data-ingestion    -n <namespace>
+kubectl rollout status statefulset/ocg-postgres         -n <namespace>
+kubectl rollout status statefulset/ocg-doris-fe         -n <namespace>
+kubectl rollout status statefulset/ocg-doris-be         -n <namespace>
 ```
 
 ### Rollback
 
 ```bash
-helm rollback ocg -n autonomous-operations
+helm rollback ocg -n <namespace>
 ```
 
 ---
 
 ## Local development (docker-compose)
 
+> **Note:** The application images (`inventory-store`, `telemetry-store`, `data-ingestion`) do not exist yet. Until they are built and published, only the infrastructure services (Postgres, Doris) can be started locally.
+
+### Start infrastructure only
+
+From the repo root:
+
 ```bash
-cd operational-context-graph
+docker compose -f deploy/compose/dev.yml up sysctl-init postgres doris-fe doris-be
+```
+
+`vm.max_map_count` is set automatically by the `sysctl-init` service — no manual host configuration needed.
+
+### Start full stack (once application images exist)
+
+```bash
 docker compose -f deploy/compose/dev.yml up
 ```
 
-**Before starting Doris BE**, set `vm.max_map_count` on the Docker host:
+### Services
+
+| Service           | Address                       |
+|-------------------|-------------------------------|
+| Inventory Store   | http://localhost:8080         |
+| Telemetry Store   | http://localhost:8081         |
+| PostgreSQL        | localhost:5432                |
+| Doris FE HTTP     | http://localhost:8030         |
+| Doris FE MySQL    | localhost:9030 (MySQL client) |
+
+### Tear down
 
 ```bash
-# macOS (Docker Desktop): add to ~/.docker/daemon.json then restart Docker Desktop
-# Linux:
-sudo sysctl -w vm.max_map_count=2000000
+docker compose -f deploy/compose/dev.yml down      # stop, keep data volumes
+docker compose -f deploy/compose/dev.yml down -v   # stop and delete all data
 ```
-
-Services will be available at:
-
-| Service           | Address                  |
-|-------------------|--------------------------|
-| Inventory Store   | http://localhost:8080    |
-| Telemetry Store   | http://localhost:8081    |
-| PostgreSQL        | localhost:5432           |
-| Doris FE HTTP     | http://localhost:8030    |
-| Doris FE MySQL    | localhost:9030 (MySQL client) |
 
 ---
 
@@ -169,27 +181,28 @@ Services will be available at:
 
 | # | What | Owner | Status |
 |---|------|-------|--------|
-| 1 | CI pipeline builds and pushes images to keppel | platform team | not started |
-| 2 | Image tags and digests filled in values-prod.yaml | deployer | before each deploy |
-| 3 | Real passwords injected (Secret or --set) | deployer | before first deploy |
-| 4 | `vm.max_map_count` policy confirmed with cluster-admin | deployer | before first deploy |
-| 5 | Health probe paths confirmed against actual application code (`/healthz`, `/readyz`) | developer | before first deploy |
-| 6 | Doris FE/BE registered with each other (post-deploy step: `ADD BACKEND` SQL) | deployer | after first deploy |
-| 7 | Postgres TLS certs added for `sslmode=verify-full` in production | platform team | before production |
-| 8 | Hardened images built and pushed to keppel (see infrastructure/hardening.md) | platform team | before production |
+| 1 | Application services implemented and Dockerfiles added (inventory-store, telemetry-store, data-ingestion) | developer | not started |
+| 2 | CI pipeline builds and pushes images to the registry | platform team | not started |
+| 3 | Image tags and digests filled in values-prod.yaml | deployer | before each deploy |
+| 4 | Real passwords injected (Secret or --set) | deployer | before first deploy |
+| 5 | `vm.max_map_count` policy confirmed with cluster-admin | deployer | before first deploy |
+| 6 | Health probe paths confirmed against actual application code (`/healthz`, `/readyz`) | developer | before first deploy |
+| 7 | Doris FE/BE registered with each other (local dev: automatic via `BE_ADDR`; Kubernetes: post-deploy `ADD BACKEND` SQL) | deployer | after first deploy |
+| 8 | Postgres TLS certs added for `sslmode=verify-full` in production | platform team | before production |
+| 9 | Hardened images built and pushed to registry (see `infrastructure/` Dockerfiles) | platform team | before production |
 
 ---
 
 ## Notes on the chart structure
 
-**Why namespace is hardcoded in templates:**  
-All resources hardcode `namespace: autonomous-operations` because that is the only target namespace for this chart. If you ever need to deploy to a different namespace, replace the hardcoded value or add `{{ .Release.Namespace }}`.
+**Why namespace is a value:**  
+All resources use `namespace: {{ .Values.namespace }}`. Set the `namespace` key in your values file or pass `--set namespace=<your-namespace>` at deploy time.
 
 **Why StatefulSets for Postgres and Doris:**  
 Both require stable network identities and persistent volumes that survive pod restarts. A Deployment would lose data on reschedule.
 
 **Why ClusterIP Services only:**  
-None of the OCG components need to be reachable from outside the cluster directly. Inter-service communication goes through the internal DNS names (e.g. `ocg-inventory-store`, `ocg-doris-fe`). External access would go through an Ingress or the existing `autonomous-operations-api` gateway.
+None of the OCG components need to be reachable from outside the cluster directly. Inter-service communication goes through the internal DNS names (e.g. `ocg-inventory-store`, `ocg-doris-fe`). External access would go through an Ingress or an API gateway.
 
 **Doris BE init container:**  
 Doris Backend requires `vm.max_map_count >= 2000000` for its memory-mapped storage. The init container sets this at pod startup — without it BE will crash.
