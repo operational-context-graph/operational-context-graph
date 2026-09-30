@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+version: "3"
+
+vars:
+  COMPOSE: deploy/compose/dev.yml
+  REGISTRY: ghcr.io/operational-context-graph
+
+tasks:
+
+  # ── Infrastructure image builds ─────────────────────────────────────────────
+  build:postgres:
+    desc: Build hardened Postgres image
+    cmd: docker build -f infrastructure/postgres/Dockerfile -t {{.REGISTRY}}/postgres:local .
+
+  build:doris-fe:
+    desc: Build hardened Doris FE image
+    cmd: docker build -f infrastructure/doris/Dockerfile.fe -t {{.REGISTRY}}/doris-fe:local .
+
+  build:doris-be:
+    desc: Build hardened Doris BE image
+    cmd: docker build -f infrastructure/doris/Dockerfile.be -t {{.REGISTRY}}/doris-be:local .
+
+  build:infra:
+    desc: Build all hardened infrastructure images
+    deps: [build:postgres, build:doris-fe, build:doris-be]
+
+  # ── Local infrastructure (Docker Compose) ───────────────────────────────────
+  infra:up:
+    desc: Start infrastructure services (Postgres, Doris)
+    cmd: >
+      docker compose -f {{.COMPOSE}}
+      up --wait --wait-timeout 120
+      sysctl-init postgres doris-fe doris-be
+
+  infra:down:
+    desc: Stop infrastructure services and remove volumes
+    cmd: docker compose -f {{.COMPOSE}} down -v
+
+  # ── Verification ─────────────────────────────────────────────────────────────
+  verify:postgres:
+    desc: Check Postgres is ready
+    cmd: docker compose -f {{.COMPOSE}} exec -T postgres pg_isready -U inventory
+
+  verify:doris:
+    desc: Check Doris FE HTTP is ready
+    cmd: curl --fail --silent http://localhost:8030/api/bootstrap

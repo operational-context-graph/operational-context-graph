@@ -23,7 +23,7 @@
 #   - Ubuntu base-OS: rebuild on a minimal base once upstream Doris supports it.
 #
 # Build:
-#   docker build -f infrastructure/doris/Dockerfile.fe -t apeiro/doris-fe:4.1.4-hardened .
+#   docker build -f infrastructure/doris/Dockerfile.fe -t ghcr.io/operational-context-graph/doris-fe:latest .
 #
 # Ports:
 #   8030 — HTTP Web UI, Stream Load, health check

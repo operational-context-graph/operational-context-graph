@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Hardened PostgreSQL image for the Apeiro OCG Inventory Store
+# Hardened PostgreSQL image for the OCG Inventory Store
 # Base: postgres:16 (Debian Bookworm)
 #
 # Alternative: postgres:16-alpine has a significantly smaller surface by default
@@ -23,7 +23,7 @@
 # the image does not need rebuilding on every schema change.
 #
 # Build:
-#   docker build -f infrastructure/postgres/Dockerfile -t apeiro/postgres:16-hardened .
+#   docker build -f infrastructure/postgres/Dockerfile -t ghcr.io/operational-context-graph/postgres:latest .
 #
 # Port:
 #   5432 — PostgreSQL wire protocol

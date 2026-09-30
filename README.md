@@ -31,7 +31,7 @@ docker compose -f deploy/compose/dev.yml down      # keep data
 docker compose -f deploy/compose/dev.yml down -v   # delete all data
 ```
 
-> The application services (`inventory-store`, `telemetry-store`, `data-ingestion`) are not yet implemented. See [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) for the full deployment guide including Kubernetes/Helm instructions.
+> The application services (`inventory-store`, `telemetry-store`, `data-ingestion`) are not yet implemented. See [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) for the full deployment guide.
 
 ## Support, Feedback, Contributing
 

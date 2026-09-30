@@ -22,7 +22,7 @@
 #   Swap disabled (swapoff -a)
 #
 # Build:
-#   docker build -f infrastructure/doris/Dockerfile.be -t apeiro/doris-be:4.1.4-hardened .
+#   docker build -f infrastructure/doris/Dockerfile.be -t ghcr.io/operational-context-graph/doris-be:latest .
 #
 # Ports:
 #   9060 — BE Thrift (query fragment execution)
