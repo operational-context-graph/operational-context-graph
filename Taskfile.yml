@@ -26,6 +26,23 @@ tasks:
     desc: Build all hardened infrastructure images
     deps: [build:postgres, build:doris-fe, build:doris-be]
 
+  # ── Application service builds ───────────────────────────────────────────────
+  build:inventory-store:
+    desc: Build inventory-store Docker image
+    cmd: docker build -f services/inventory-store/Dockerfile -t {{.REGISTRY}}/inventory-store:local services/inventory-store
+
+  build:telemetry-store:
+    desc: Build telemetry-store Docker image
+    cmd: docker build -f services/telemetry-store/Dockerfile -t {{.REGISTRY}}/telemetry-store:local services/telemetry-store
+
+  build:services:
+    desc: Build all application service images
+    deps: [build:inventory-store, build:telemetry-store]
+
+  build:all:
+    desc: Build all images (infra + services)
+    deps: [build:infra, build:services]
+
   # ── Local infrastructure (Docker Compose) ───────────────────────────────────
   infra:up:
     desc: Start infrastructure services (Postgres, Doris)
@@ -37,6 +54,36 @@ tasks:
   infra:down:
     desc: Stop infrastructure services and remove volumes
     cmd: docker compose -f {{.COMPOSE}} down -v
+
+  services:up:
+    desc: Start all services (infra + inventory-store + telemetry-store)
+    cmd: >
+      docker compose -f {{.COMPOSE}}
+      up --wait --wait-timeout 120
+
+  # ── Schema initialisation ────────────────────────────────────────────────────
+  schema:postgres:
+    desc: Apply Postgres schema (assets, relationships, asset_history)
+    cmd: >
+      docker compose -f {{.COMPOSE}} exec -T postgres
+      psql -U inventory -d inventory -f /dev/stdin
+      < deploy/sql/postgres-init.sql
+
+  schema:doris:
+    desc: Apply Doris DDL (ocg database + logs, metrics, traces tables)
+    cmd: >
+      mysql -h 127.0.0.1 -P 9030 -u root --connect-timeout 10
+      < deploy/sql/doris-init.sql
+
+  schema:doris-users:
+    desc: Create ocg_writer and ocg_reader Doris users
+    cmd: >
+      mysql -h 127.0.0.1 -P 9030 -u root --connect-timeout 10
+      < deploy/sql/doris-users.sql
+
+  schema:all:
+    desc: Apply Postgres schema, Doris DDL, and Doris users
+    deps: [schema:postgres, schema:doris, schema:doris-users]
 
   # ── Verification ─────────────────────────────────────────────────────────────
   verify:postgres:

@@ -11,8 +11,7 @@
 #      Obtain: docker inspect --format='{{index .RepoDigests 0}}' apache/doris:be-4.1.4
 #   2. Build/debug tooling removed (gcc, g++, cpp, binutils, gdb, strace).
 #   3. Runs as non-root doris user (created by upstream image).
-#   4. be.conf baked in with high-throughput ingestion and compaction settings
-#      required by the Telemetry Store SDD Deployment View 3.4.
+#   4. be.conf baked in with high-throughput ingestion and compaction settings.
 #
 # Known remaining surface — production prerequisites:
 #   - Java library advisories in BE JNI components (jackson, etc.): upgrade JARs.

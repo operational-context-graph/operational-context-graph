@@ -8,30 +8,49 @@ Stores and serves all operational data for a data center. Provides telemetry, in
 
 ## Requirements and Setup
 
-### Local development (infrastructure only)
+Requires: Docker Desktop (macOS/Windows) or Docker Engine (Linux), Go 1.27+, and the `mysql` CLI (`brew install mysql-client` on macOS).
 
-Requires: Docker Desktop (macOS/Windows) or Docker Engine (Linux).
+### Local development
 
 From the repo root:
 
 ```bash
-docker compose -f deploy/compose/dev.yml up sysctl-init postgres doris-fe doris-be
-```
+# 1. Start infrastructure (Postgres + Doris)
+task infra:up
 
-`vm.max_map_count` is set automatically — no manual host configuration needed. Doris takes ~60s to become healthy.
+# 2. Apply schemas and create Doris users (one-time)
+task schema:all
+
+# 3. Build service images
+task build:services
+
+# 4. Start all services
+task services:up
+```
 
 Verify:
+
 ```bash
-curl http://localhost:8030/api/bootstrap  # Doris FE — expect {"msg":"success",...}
+curl http://localhost:8080/healthz   # inventory-store
+curl http://localhost:8081/healthz   # telemetry-store
 ```
 
-Tear down:
-```bash
-docker compose -f deploy/compose/dev.yml down      # keep data
-docker compose -f deploy/compose/dev.yml down -v   # delete all data
-```
+### Services
 
-> The application services (`inventory-store`, `telemetry-store`, `data-ingestion`) are not yet implemented. See [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) for the full deployment guide.
+| Service | Address |
+|---|---|
+| Inventory Store | http://localhost:8080 |
+| Telemetry Store | http://localhost:8081 |
+| PostgreSQL | localhost:5432 |
+| Doris FE HTTP | http://localhost:8030 |
+| Doris FE MySQL | localhost:9030 |
+| Adminer (DB browser) | http://localhost:8090 |
+
+### Tear down
+
+```bash
+task infra:down   # stop all services and delete all data volumes
+```
 
 ## Support, Feedback, Contributing
 

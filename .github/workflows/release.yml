@@ -81,13 +81,20 @@ jobs:
           upload-artifact: true
           upload-artifact-retention: 5
 
-  # ── Application service images (placeholders) ──────────────────────────────
-  # Remove "if: false" and add to release-notes needs when
-  # services/inventory-store/Dockerfile exists.
-  build-push-inventory-store:
-    name: Build and push inventory-store (placeholder)
+  # ── Build and push application service images ──────────────────────────────
+  build-push-services:
+    name: Build and push ${{ matrix.name }}
     runs-on: ubuntu-latest
-    if: false # remove when services/inventory-store/Dockerfile exists
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: inventory-store
+            context: services/inventory-store
+            dockerfile: services/inventory-store/Dockerfile
+          - name: telemetry-store
+            context: services/telemetry-store
+            dockerfile: services/telemetry-store/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -103,7 +110,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbea8a62664d0b94b9dd458ecc50 # v5.7.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.ORG }}/inventory-store
+          images: ${{ env.REGISTRY }}/${{ env.ORG }}/${{ matrix.name }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -113,8 +120,8 @@ jobs:
         id: push
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
-          context: services/inventory-store
-          file: services/inventory-store/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -122,16 +129,16 @@ jobs:
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.ORG }}/inventory-store
+          subject-name: ${{ env.REGISTRY }}/${{ env.ORG }}/${{ matrix.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.ORG }}/inventory-store@${{ steps.push.outputs.digest }}
+          image: ${{ env.REGISTRY }}/${{ env.ORG }}/${{ matrix.name }}@${{ steps.push.outputs.digest }}
           format: spdx-json
-          output-file: sbom-inventory-store.spdx.json
+          output-file: sbom-${{ matrix.name }}.spdx.json
           upload-artifact: true
           upload-artifact-retention: 5
 
@@ -141,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build-push-infra
-      # When removing "if: false" from build-push-inventory-store, add it here:
+      - build-push-services
     permissions:
       contents: write
     steps:

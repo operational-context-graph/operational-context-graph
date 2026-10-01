@@ -85,7 +85,7 @@ services:
         ipv4_address: 172.28.1.2
 
   inventory-store:
-    image: ghcr.io/operational-context-graph/inventory-store:latest
+    image: ghcr.io/operational-context-graph/inventory-store:local
     environment:
       HTTP_PORT: "8080"
       LOG_LEVEL: "debug"
@@ -102,14 +102,11 @@ services:
       - ocg
 
   telemetry-store:
-    image: ghcr.io/operational-context-graph/telemetry-store:latest
+    image: ghcr.io/operational-context-graph/telemetry-store:local
     environment:
       HTTP_PORT: "8081"
       LOG_LEVEL: "debug"
-      DORIS_FE_HOST: "doris-fe:8030"
-      DORIS_MYSQL_HOST: "doris-fe:9030"
-      DORIS_USER: "ocg_writer"
-      DORIS_PASSWORD: "dev-password-not-for-production"
+      DORIS_DSN: "ocg_reader:dev-password-not-for-production@tcp(doris-fe:9030)/ocg?parseTime=true"
     ports:
       - "8081:8081"
     depends_on:
@@ -118,15 +115,10 @@ services:
     networks:
       - ocg
 
-  data-ingestion:
-    image: ghcr.io/operational-context-graph/data-ingestion:latest
-    environment:
-      LOG_LEVEL: "debug"
-      INVENTORY_STORE_URL: "http://inventory-store:8080"
-      TELEMETRY_STORE_URL: "http://telemetry-store:8081"
-    depends_on:
-      - inventory-store
-      - telemetry-store
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8090:8080"
     networks:
       - ocg
 
