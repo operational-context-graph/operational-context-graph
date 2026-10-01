@@ -6,10 +6,6 @@
 
 Stores and serves all operational data for a data center. Provides telemetry, inventory, runbooks, recorded actions, and a live semantic knowledge graph through a single access-controlled API.
 
-## Requirements and Setup
-
-Requires: Docker Desktop (macOS/Windows) or Docker Engine (Linux), Go 1.27+, and the `mysql` CLI (`brew install mysql-client` on macOS).
-
 ### Local development
 
 From the repo root:
