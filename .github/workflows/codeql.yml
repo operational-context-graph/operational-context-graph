@@ -9,9 +9,8 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch:
   schedule:
-    - cron: "44 22 * * 0"
+    - cron: "30 13 * * 4"
 
 jobs:
   analyze:
