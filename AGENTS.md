@@ -6,6 +6,15 @@ SPDX-License-Identifier: Apache-2.0
 
 # Agent Guidelines
 
+## Repository layout
+
+This repository is a polyglot monorepo. Sub-components live in their own directories and are written in Go, Python, or TypeScript.
+
+- Each language has its own workspace manager, and they coexist without knowing about each other: Go uses `go.work`, Python uses uv with `pyproject.toml`, and TypeScript uses pnpm with `pnpm-workspace.yaml`. Use the manager that matches the sub-component you change. Do not cross language boundaries.
+- Cross-component contracts are Protocol Buffers under `proto/`, compiled into language stubs under `gen/` with Buf (`buf.gen.yaml`). Edit the `.proto` source and regenerate. Never hand-edit generated code in `gen/`.
+- Build, lint, and test through `make`. The root `Makefile` orchestrates per-language and per-component targets. Run the target for the sub-component you changed, and scope verification to that sub-component.
+- Place a new sub-component in its own directory under `services/`, `shared/`, or `frontend/`. Give it its own manifest and register it in the matching workspace configuration.
+
 ## Writing standards
 
 - Use US English and plain language.
@@ -64,3 +73,20 @@ Each agent profile includes a handoff template. Use it at the end of every sessi
 The security reviewer MUST be the final reviewer for high-risk and design changes.
 
 Architecture decisions and threat models MUST be stored in the project's canonical documentation repository. Agents MUST request its location when it is unavailable.
+
+## Spec-driven development
+
+Use `/sdd-propose` to drive a non-trivial new component from a written spec. The skill runs a failure-mode elicitation, then OpenSpec `/opsx:propose`.
+
+Use it when at least one applies:
+
+- Non-obvious boundary conditions — concurrent access, timeout, retry, partial failure, or ordering invariants.
+- The spec serves as a design document — multiple consumers, a security-relevant interface, or a traceable requirement.
+- The contract is long-lived — it will be extended, versioned, or depended on by other packages.
+- Standards must apply consistently — library choices, security constraints, or patterns.
+
+Skip it when all of these hold: scope is simple and well-bounded, the component is short-lived or throwaway, and no spec artifact is needed downstream. A plain prompt is enough.
+
+Commit `openspec/specs/` and `openspec/config.yaml`. Working artifacts (`openspec/changes/` and `elicitation-*.md`) stay gitignored.
+
+Applying a change is not a review bypass. `/opsx:apply` turns the spec into code — run it under the developer agent and the risk-based workflow above. Choose the change tier, then follow `developer → code-reviewer → verification`, adding the security reviewer as the final reviewer for High and Design tiers.
