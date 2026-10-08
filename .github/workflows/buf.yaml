@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write # the buf action posts a summary comment on the PR
 
 jobs:
   buf:
