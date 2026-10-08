@@ -123,6 +123,10 @@ terraform.rc
 # Generated
 gen/
 
+# OpenSpec working artifacts (openspec/specs/ and openspec/config.yaml stay tracked)
+openspec/changes/
+openspec/elicitation-*.md
+
 # claude
 .claude/settings.local.json
 .claude/plans/

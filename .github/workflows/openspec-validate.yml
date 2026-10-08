@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: OpenSpec Validation
+
+on:
+  push:
+    paths:
+      - 'openspec/**'
+  pull_request:
+    paths:
+      - 'openspec/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate specs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'latest'
+
+      - name: Install openspec
+        run: npm install -g @fission-ai/openspec
+
+      - name: Doctor (relationship health)
+        run: openspec doctor
+
+      - name: Validate all specs and changes
+        run: openspec validate --all --strict
