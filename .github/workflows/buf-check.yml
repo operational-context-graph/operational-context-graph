@@ -4,10 +4,6 @@
 ---
 name: Buf
 
-# Pull-request only. The buf action's defaults run lint, format, and breaking-change
-# detection on pull_request events, comparing against the PR base branch. We do not run
-# on push: that path would trigger the action's Buf Schema Registry publish step (unused
-# here) and has no meaningful breaking-change baseline.
 on:
   pull_request:
     paths:
