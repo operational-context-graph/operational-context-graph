@@ -4,13 +4,11 @@
 ---
 name: Buf
 
+# Pull-request only. The buf action's defaults run lint, format, and breaking-change
+# detection on pull_request events, comparing against the PR base branch. We do not run
+# on push: that path would trigger the action's Buf Schema Registry publish step (unused
+# here) and has no meaningful breaking-change baseline.
 on:
-  push:
-    paths:
-      - 'proto/**'
-      - 'buf.yaml'
-      - 'buf.gen.yaml'
-      - '.github/workflows/buf.yaml'
   pull_request:
     paths:
       - 'proto/**'
@@ -29,13 +27,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # lint, format, and breaking all run via the action's defaults on pull_request.
+      # To skip breaking on a specific PR (e.g. the first PR that introduces a module,
+      # when the base branch has no protos to diff against), add the "buf skip breaking"
+      # label to that PR.
       - name: Buf
         uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
-        with:
-          lint: true
-          format: true
-          breaking: true
-          # Always compare against the tip of main. The default baseline uses the push
-          # event's "before" SHA, which is the all-zeros null ref on a new branch's first
-          # push and makes the breaking step fail. Pinning to main is deterministic.
-          breaking_against: 'https://github.com/${{ github.repository }}.git#format=git,ref=main,subdir=.'
