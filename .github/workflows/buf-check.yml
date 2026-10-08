@@ -22,6 +22,7 @@ permissions:
 
 jobs:
   buf:
+    name: Buf Check (Lint/Format/Breaking Changes)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
