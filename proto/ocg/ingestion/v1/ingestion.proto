@@ -1,0 +1,81 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package ocg.ingestion.v1;
+
+import "google/protobuf/struct.proto";
+
+// partition and watermark follow Kafka Connect semantics. Connectors
+// that do not track watermarks leave both fields unset. Mixed-partition batches are
+// supported because the fields are carried per-envelope.
+
+message MessageEnvelope {
+  string logical_artifact_id = 1; // required
+  string schema_version = 2; // required
+  // Serialized JSON payload
+  bytes payload = 3; // required
+  // Opaque partition key supplied by the connector. The server never interprets
+  // the contents; it is used only as part of the storage key for watermark tracking.
+  google.protobuf.Struct partition = 4; // optional
+  // Opaque watermark within partition at which this message was read.
+  // The server stores this value and returns it via GetWatermark so the connector
+  // can resume from the correct position on restart.
+  google.protobuf.Struct watermark = 5; // optional
+  // MIME type of the payload (e.g. "application/json"). Defaults to "application/json" if not set.
+  optional string content_type = 6; // optional
+}
+
+message IngestRequest {
+  repeated MessageEnvelope messages = 1; // required
+}
+
+message IngestPartialSuccess {
+  int64 rejected_messages = 1; // required
+  optional string error_message = 2;
+}
+
+message IngestResponse {
+  IngestPartialSuccess partial_success = 1; // required
+}
+
+// GetWatermarkRequest — connector identity comes from mTLS cert CN or connector-id header.
+message GetWatermarkRequest {
+  google.protobuf.Struct partition = 1; // optional
+}
+
+message GetWatermarkResponse {
+  // Echo of the requested partition (allows multiplexed concurrent calls).
+  google.protobuf.Struct partition = 1;
+  // Last committed watermark for this (connector, partition) pair.
+  google.protobuf.Struct watermark = 2; // required
+}
+
+// IngestionService — unary-push ingestion for generic (non-OTLP) envelopes.
+service IngestionService {
+  rpc Ingest(IngestRequest) returns (IngestResponse);
+}
+
+// BACKFILL
+
+message StartGapRequest {
+  // Opaque partition key. Identifies which partition has the gap.
+  google.protobuf.Struct partition = 1; // required
+}
+
+message StartGapResponse {}
+
+message CloseGapRequest {
+  // Opaque partition key. Identifies which partition has the gap.
+  google.protobuf.Struct partition = 1; // required
+}
+
+message CloseGapResponse {}
+
+service BackfillService {
+  rpc Ingest(IngestRequest) returns (IngestResponse);
+  rpc GetWatermark(GetWatermarkRequest) returns (GetWatermarkResponse);
+  rpc StartGap(StartGapRequest) returns (StartGapResponse);
+  rpc CloseGap(CloseGapRequest) returns (CloseGapResponse);
+}
