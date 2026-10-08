@@ -35,3 +35,7 @@ jobs:
           lint: true
           format: true
           breaking: true
+          # Always compare against the tip of main. The default baseline uses the push
+          # event's "before" SHA, which is the all-zeros null ref on a new branch's first
+          # push and makes the breaking step fail. Pinning to main is deterministic.
+          breaking_against: 'https://github.com/${{ github.repository }}.git#format=git,ref=main,subdir=.'
