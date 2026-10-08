@@ -1,0 +1,7 @@
+{
+  "name": "operational-context-graph",
+  "private": true,
+  "devDependencies": {
+    "@fission-ai/openspec": "1.14.1"
+  }
+}
