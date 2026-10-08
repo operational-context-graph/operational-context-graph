@@ -1,0 +1,127 @@
+schema: spec-driven
+
+# ── AO SDD CONSTITUTION ──────────────────────────────────────────────────────
+# Extend this file with stack-specific mandates for your repository.
+#
+# HOW TO USE:
+#   - Extend this file with stack-specific mandates for your repository.
+#   - Do not remove or weaken the base context or spec rules.
+#   - Add library choices, forbidden patterns, API conventions under rules.spec
+#     or rules.proposal as additional bullet points.
+#   - Run `openspec spec validate --strict` in CI to catch malformed or structurally incomplete specs.
+#
+# context   → injected at every artifact generation step (strongest)
+# rules     → per-artifact constraints
+# operations → advisory guidance for apply/archive
+# ─────────────────────────────────────────────────────────────────────────────
+
+context: |
+  FAILURE-MODE ENUMERATION — MANDATORY BEFORE ANY ARTIFACT GENERATION:
+  Before writing the spec, proposal, or tasks for any requirement:
+    1. List every way it can go wrong:
+       - Concurrent callers: two concurrent callers executing the same method simultaneously
+       - Boundary inputs: null/nil, empty string, zero, max-size, expired entry, single-entry
+       - Dependency failures: store unavailable, external service timeout, partial write
+       - Partial success: operation half-complete, rollback path needed
+       - Configuration extremes: zero-value config, zero capacity, contradictory settings
+    2. Every enumerated failure mode MUST become at least one explicit WHEN/THEN scenario.
+    3. Do not generate scenarios only for the happy path.
+    4. A spec where every scenario reads "Given valid input, When called, Then returns
+       expected output" has zero failure-mode coverage and MUST be revised.
+
+  POLYGLOT MONOREPO — THIS REPOSITORY USES GO, PYTHON, AND TYPESCRIPT:
+  Before generating any implementation task or code reference:
+    - Identify which sub-component and language the requirement belongs to.
+    - Use the correct workspace manager: go.work for Go, uv/pyproject.toml for Python,
+      pnpm/pnpm-workspace.yaml for TypeScript.
+    - Do not cross language boundaries in a single task. Cross-component contracts go
+      through proto/ and are compiled with Buf — never hand-edit gen/.
+    - Verification targets run through make. Scope to the sub-component changed.
+
+  CLARIFICATION THRESHOLD — LOWER THAN DEFAULT:
+  Ask the user to clarify BEFORE generating artifacts when any of these are unclear:
+    - Concurrent access semantics (is the type thread-safe? what is the isolation boundary?)
+    - Boundary behaviour (what happens at capacity? eviction order when TTL and LRU compete?)
+    - Error return contracts (should errors be wrapped/raised/thrown? are sentinel values expected?)
+    - Metric or observability registration (global registry? per-instance? test isolation?)
+    - Language and sub-component ownership (which service or package owns this requirement?)
+  Do NOT assume. Do NOT invent answers. Surface the question explicitly.
+  Only skip clarification when the input document answers the question unambiguously.
+
+rules:
+  proposal:
+    - Non-goals section is mandatory — at least one non-goal must be explicit.
+    - An open_questions section is mandatory for any requirement whose boundary behaviour
+      is not stated explicitly in the input. Do not silently assume answers.
+    - Concurrent access contract must appear as an explicit design decision, not implied.
+    - Language and sub-component assignment must be stated — do not leave it implicit.
+
+  specs:
+    - |-
+      Every requirement MUST have WHEN/THEN scenarios covering ALL of:
+        (a) the happy path (at least one)
+        (b) concurrent access or race condition (at least one per shared-state requirement)
+        (c) timeout / error / null / zero path (at least one per fallible operation)
+        (d) boundary input: empty, overflow, expired, max-size, capacity=1 (at least one each)
+      A spec with ZERO error-path or boundary-path scenarios is INCOMPLETE and MUST be
+      revised before proceeding to implementation.
+    - Every capability must have a testable success signal.
+      "works correctly" and "behaves as expected" do not qualify.
+    - Constraints must actually change a design decision.
+      Decorative constraints ("must be implemented in language X") are not permitted.
+    - At least one non-goal must be explicit per component spec.
+    - Gaps the input did not resolve MUST appear in an explicit open_questions section,
+      never silently assumed away.
+    - A spec with fewer WHEN/THEN scenarios than (number of requirements × 3) is likely
+      incomplete. Count and verify before finalising.
+    - Concurrent access — if any method modifies shared state, there MUST be a WHEN/THEN
+      scenario for two concurrent callers executing that method simultaneously — not just a note.
+
+  tasks:
+    - Every task that implements a shared-state operation MUST have a corresponding
+      concurrency test task — not optional, not advisory.
+    - Boundary test tasks (null/nil input, empty input, single-entry, max-size) MUST appear
+      as explicit tasks, not folded into a generic "write tests" task.
+    - Every task MUST identify the target language and sub-component.
+    - Proto contract changes MUST include a Buf regeneration task before any consumer tasks.
+
+operations:
+  apply:
+    guidance:
+      - |-
+        Identify the language of the sub-component before running any tool.
+        Use the correct static analysis tool:
+          - Go:         go vet ./...
+          - Python:     ruff check . (or mypy for type errors)
+          - TypeScript: tsc --noEmit
+        Must exit 0.
+      - Run openspec spec validate --strict after all spec files are written.
+      - Every public method that modifies shared state MUST have a concurrency test.
+      - |-
+        Run tests with concurrency/race detection enabled where the runtime supports it:
+          - Go:         go test ./... -race
+          - Python:     use threading/asyncio tests; pytest-asyncio for async paths
+          - TypeScript: use concurrent Promise tests; Jest --runInBand when order matters
+        Must pass.
+      - |-
+        Coverage gate: run the test suite with coverage reporting using the language's
+        standard tooling. Total coverage MUST be ≥90%.
+      - |-
+        Semantic review before declaring done:
+          1. WHEN/THEN scenario count >= (requirements × 3) — verify
+          2. At least one concurrent-access test per shared-state method
+          3. Boundary tests present: null/nil, empty, zero-value, max-capacity, single-entry
+          4. open_questions either resolved in spec or surfaced as code comments
+          5. No global mutable state with side effects
+          6. Proto changes regenerated via Buf; no hand-edited gen/ files
+      - |-
+        Implementation ownership: implement applied tasks as the developer agent
+        (.claude/agents/developer.md) — follow its coding standards, branch naming,
+        and end-of-session handoff. Running /opsx:apply is the spec-to-code step,
+        not a bypass of review.
+      - |-
+        Route the change through the risk-based workflow in AGENTS.md: pick the
+        change tier, then developer → code-reviewer → verification. High and Design
+        tiers add security-reviewer as the final reviewer; Design tier adds
+        architect → threat-modeler before implementation.
+      - Respect the repository layout and per-language build tooling documented in AGENTS.md.
