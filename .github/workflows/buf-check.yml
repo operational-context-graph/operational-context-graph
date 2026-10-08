@@ -6,12 +6,13 @@ name: Buf
 
 on:
   pull_request:
+    branches: ["main"]
     paths:
       - 'proto/**'
       - 'buf.yaml'
       - 'buf.gen.yaml'
       - '.github/workflows/buf.yaml'
-
+  workflow_dispatch: ~
 permissions:
   contents: read
   pull-requests: write # the buf action posts a summary comment on the PR
