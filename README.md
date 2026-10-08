@@ -6,6 +6,10 @@
 
 Stores and serves all operational data for a data center. Provides telemetry, inventory, runbooks, recorded actions, and a live semantic knowledge graph through a single access-controlled API.
 
+## Repository layout
+
+This is a polyglot monorepo. The gRPC interface definitions are the source of truth for the API and live under `proto/`. Generated code is not committed; run `buf generate` (see the `Makefile`) to produce language bindings locally.
+
 ## Requirements and Setup
 
 *Insert a short description what is required to get your project running...*
