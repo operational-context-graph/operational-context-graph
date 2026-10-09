@@ -11,7 +11,7 @@ on:
       - "proto/**"
       - "buf.yaml"
       - "buf.gen.yaml"
-      - ".github/workflows/buf.yaml"
+      - ".github/workflows/buf.yml"
   workflow_dispatch: ~
 
 permissions:
