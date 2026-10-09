@@ -30,11 +30,13 @@ jobs:
         with:
           node-version: 'latest'
 
-      - name: Install openspec
-        run: npm install -g @fission-ai/openspec
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          run_install: true
 
       - name: Doctor (relationship health)
-        run: openspec doctor
+        run: pnpm exec openspec doctor
 
       - name: Validate all specs and changes
-        run: openspec validate --all --strict
+        run: pnpm exec openspec validate --all --strict

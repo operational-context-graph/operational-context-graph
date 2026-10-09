@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: OSS Compliance Validation
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.sum"
+      - "**/*-lock.json"
+      - "**/*-lock.*"
+      - "**/*.lock"
+      - "**/*lock.toml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**/*.sum"
+      - "**/*-lock.json"
+      - "**/*-lock.*"
+      - "**/*.lock"
+      - "**/*lock.toml"
+  workflow_dispatch: ~
+
+jobs:
+  oss-grant-check:
+    name: OSS Grant Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # setup required tools
+      - name: Setup Grant
+        id: setup-grant
+        run: |
+          curl -sSfL https://get.anchore.io/grant | sudo sh -s -- -b /usr/local/bin
+      - name: Verify Grant Installation
+        run: grant --version
+      # install dependencies
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          run_install: true
+      - name: Install node_modules (flat)
+        run: pnpm install --shamefully-hoist
+      # run OSS compliance checks on syft SBOM
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          #path: .
+          output-file: sbom.spdx.json
+          format: spdx-json
+          upload-artifact: false
+      - name: Run OSS Grant Check on SBOM
+        run: grant check sbom.spdx.json -c ./.grant.yml

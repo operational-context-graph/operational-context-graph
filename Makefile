@@ -2,24 +2,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Root orchestrator. Build, lint, and test run through make and are scoped to
-# the sub-component being changed. Aggregate targets (build/test/lint/vet) fan
-# out to every service and grow as services are added.
-
 SHELL := /usr/bin/env bash
-.DEFAULT_GOAL := help
 
 SERVICE_DI := services/data-ingestion
 COVERAGE_DIR := $(CURDIR)/coverage
 
 .PHONY: help build run test lint vet \
-	di-build di-run di-test di-lint di-vet di-tidy di-mocks
+	di-build di-run di-test di-lint di-vet di-tidy di-mocks \
+	proto-lint proto-format proto-generate
 
-help: ## Show this help
-	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
-
-build: di-build ## Build all services
+build: proto-generate di-build ## Build all services
 run: di-run ## Run the data-ingestion service (dev)
 test: di-test ## Test all services
 lint: di-lint ## Lint all services
@@ -50,3 +42,12 @@ di-tidy: ## Tidy the data-ingestion go.mod
 
 di-mocks: ## Generate mocks for data-ingestion (requires mockery)
 	cd $(SERVICE_DI) && mockery
+
+proto-lint:
+	buf lint
+
+proto-format:
+	buf format -w
+
+proto-generate:
+	buf generate

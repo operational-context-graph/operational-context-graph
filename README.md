@@ -1,10 +1,14 @@
-[![CodeQL Advanced](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml/badge.svg)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/operational-context-graph/operational-context-graph/badge)](https://scorecard.dev/viewer/?uri=github.com/operational-context-graph/operational-context-graph) [![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/ocg)](https://api.reuse.software/info/github.com/operational-context-graph/ocg)
+[![Continuous Integration](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml) [![CodeQL Advanced](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml/badge.svg)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml) [![Vulnerability Scan](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml) [![OSS Compliance Validation](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/operational-context-graph/operational-context-graph/badge)](https://scorecard.dev/viewer/?uri=github.com/operational-context-graph/operational-context-graph) [![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/operational-context-graph)](https://api.reuse.software/info/github.com/operational-context-graph/operational-context-graph)
 
 # Operational Context Graph
 
 ## About this project
 
 Stores and serves all operational data for a data center. Provides telemetry, inventory, runbooks, recorded actions, and a live semantic knowledge graph through a single access-controlled API.
+
+## Repository layout
+
+This is a polyglot monorepo. The gRPC interface definitions are the source of truth for the API and live under `proto/`. Generated code is not committed; run `buf generate` (see the `Makefile`) to produce language bindings locally.
 
 ## Requirements and Setup
 
