@@ -26,7 +26,12 @@ jobs:
       matrix:
         include:
           - language: go
-            build-mode: autobuild
+            # Buildless extraction. This is a go.work monorepo with no go.mod
+            # at the root, so autobuild runs from a non-module directory and
+            # fails.
+            # build-mode: none reads the Go source directly and automatically
+            # covers every module as services are added.
+            build-mode: none
           # TODO: enable when JavaScript/TypeScript support is needed
           # - language: javascript-typescript
           #   build-mode: none
