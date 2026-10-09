@@ -40,9 +40,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Add any setup steps before running the `github/codeql-action/init` action.
-      # This includes steps like installing compilers or runtimes (`actions/setup-node`
-      # or others).
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/data-ingestion/go.mod
+          cache: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -51,13 +54,8 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
 
-      # Manual build for Go: CodeQL traces this build to extract the database.
-      # Build every module so new services are covered without editing this file.
-      - name: Set up Go
-        if: matrix.language == 'go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: services/data-ingestion/go.mod
+      # Manual build: CodeQL traces this to build the database. Build every
+      # module so new services are covered automatically.
       - name: Build Go modules
         if: matrix.language == 'go'
         run: |
