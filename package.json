@@ -9,6 +9,7 @@
   },
   "license": "Apache-2.0",
   "author": "Operational Context Graph contributors",
+  "packageManager": "pnpm@11.24.0",
   "devDependencies": {
     "@fission-ai/openspec": "1.14.1"
   }
