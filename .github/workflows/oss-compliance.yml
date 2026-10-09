@@ -48,13 +48,18 @@ jobs:
           node-version-file:: ".nvmrc"
       - name: Install Node Modules
         run: npm install
-      # run OSS compliance checks on syft SBOM
-      - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          path: .
-          output-file: sbom.spdx.json
-          format: spdx-json
-          upload-artifact: false
+      #  install syft
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - name: Syft sbom
+        run: syft . -o spdx-json --file sbom.spdx.json
+      # # run OSS compliance checks on syft SBOM
+      # - name: Generate SBOM with Syft
+      #   uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      #   with:
+      #     path: .
+      #     output-file: sbom.spdx.json
+      #     format: spdx-json
+      #     upload-artifact: false
       - name: Run OSS Grant Check on SBOM
         run: grant check sbom.spdx.json -c ./.grant.yml
