@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Optional mockery configuration (github.com/vektra/mockery).
+# Generated mocks use testify/mock, so they introduce no new paradigm.
+# Run `make di-mocks` to regenerate. Adopt per component only where interfaces
+# are large or change frequently.
+with-expecter: true
+dir: "mocks"
+mockname: "{{.InterfaceName}}"
+outpkg: "mocks"
+filename: "{{.InterfaceName}}.go"
+packages:
+  github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest:
+    interfaces:
+      Service:
