@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the data-ingestion subchart.
+enabled: true
+replicaCount: 1
+
+image:
+  repository: ghcr.io/operational-context-graph/data-ingestion
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Container port the service listens on (matches OCG_DI_SERVER_PORT default).
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""

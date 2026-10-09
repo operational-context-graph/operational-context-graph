@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Example configuration for the Data Ingestion service.
+# Copy and adjust per environment. Values are overridden by OCG_DI_* env vars,
+# e.g. OCG_DI_SERVER_PORT or OCG_DI_LOGGING_LEVEL.
+server:
+  host: 0.0.0.0
+  port: 8080
+logging:
+  level: info

@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+global: {}
+
+data-ingestion:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/operational-context-graph/data-ingestion
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080

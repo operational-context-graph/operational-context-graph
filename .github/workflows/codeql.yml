@@ -26,7 +26,9 @@ jobs:
       matrix:
         include:
           - language: go
-            build-mode: autobuild
+            # `build-mode: autobuild` fails in this go.work monorepo because it has no go.mod.
+            # We build each module ourselves (see the build step below).
+            build-mode: manual
           # TODO: enable when JavaScript/TypeScript support is needed
           # - language: javascript-typescript
           #   build-mode: none
@@ -38,9 +40,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Add any setup steps before running the `github/codeql-action/init` action.
-      # This includes steps like installing compilers or runtimes (`actions/setup-node`
-      # or others).
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/data-ingestion/go.mod
+          cache: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -48,6 +53,18 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
+
+      # Manual build: CodeQL traces this to build the database. Build every
+      # module so new services are covered automatically.
+      - name: Build Go modules
+        if: matrix.language == 'go'
+        run: |
+          find . -type f -name go.mod -not -path './.git/*' -not -path '*/vendor/*' \
+            -exec dirname {} \; | sort -u | while IFS= read -r mod; do
+              echo "::group::build $mod"
+              ( cd "$mod" && go build ./... )
+              echo "::endgroup::"
+          done
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
