@@ -74,8 +74,8 @@ docker build -t data-ingestion:dev services/data-ingestion
 minikube image load data-ingestion:dev
 
 # 2. Install the chart with the local override values.
-helm install ocg deploy/helm/operational-context-graph \
-  -f deploy/helm/operational-context-graph/values.local.yaml
+helm install ocg helm/operational-context-graph \
+  -f helm/operational-context-graph/values.local.yaml
 
 # 3. Wait for the pod, then forward a local port to the service.
 kubectl rollout status deployment/ocg-data-ingestion
@@ -84,7 +84,7 @@ kubectl port-forward svc/ocg-data-ingestion 8080:8080
 
 Open <http://localhost:8080/healthz> in a browser.
 
-The override file [`values.local.yaml`](../../deploy/helm/operational-context-graph/values.local.yaml) points the chart at the locally built `data-ingestion:dev` image and sets `pullPolicy: Never`, so Kubernetes uses the loaded image instead of pulling from the registry.
+The override file [`values.local.yaml`](../../helm/operational-context-graph/values.local.yaml) points the chart at the locally built `data-ingestion:dev` image and sets `pullPolicy: Never`, so Kubernetes uses the loaded image instead of pulling from the registry.
 
 Remove the release with `helm uninstall ocg`.
 
