@@ -1,0 +1,16 @@
+{
+  "name": "@sap/operational-context-graph",
+  "version": "0.0.1",
+  "private": true,
+  "homepage": "https://operational-context-graph.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/operational-context-graph/operational-context-graph"
+  },
+  "license": "Apache-2.0",
+  "author": "Operational Context Graph contributors",
+  "packageManager": "pnpm@11.24.0",
+  "devDependencies": {
+    "@fission-ai/openspec": "1.14.1"
+  }
+}

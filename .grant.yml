@@ -31,6 +31,7 @@ allow:
   - Zlib
   - CC0-*
 
+# Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
   # actions/* is licensed under MIT
   - actions/*
@@ -65,3 +66,6 @@ ignore-packages:
 
   # zizmorcore/zizmor-action licensed under MIT
   - zizmorcore/zizmor-action
+
+  # bufbuild/buf-action licensed under Apache-2.0
+  - bufbuild/buf-action
