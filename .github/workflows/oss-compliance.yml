@@ -56,5 +56,6 @@ jobs:
           output-file: sbom.spdx.json
           format: spdx-json
           upload-artifact: false
+          config: .syft.yml
       - name: Run OSS Grant Check on SBOM
         run: grant check sbom.spdx.json -c ./.grant.yml
