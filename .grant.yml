@@ -69,6 +69,3 @@ ignore-packages:
 
   # bufbuild/buf-action licensed under Apache-2.0
   - bufbuild/buf-action
-
-  # Ignoring operational-context-graph package as it is the main project itself
-  - operational-context-graph

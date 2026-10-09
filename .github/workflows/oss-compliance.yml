@@ -42,17 +42,12 @@ jobs:
       - name: Verify Grant Installation
         run: grant --version
       # install dependencies
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
         with:
-          node-version-file: ".nvmrc"
-      - name: Install Node Modules
-        run: npm install
-      #  install syft
-      # - name: Install Syft
-      #   uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-      # - name: Syft sbom
-      #   run: syft . -o spdx-json --file sbom.spdx.json
+          run_install: true
+      - name: Install node_modules (flat)
+        run: pnpm install --shamefully-hoist
       # run OSS compliance checks on syft SBOM
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
