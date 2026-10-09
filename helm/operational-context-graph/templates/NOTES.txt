@@ -1,0 +1,10 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+Operational Context Graph has been deployed as release {{ .Release.Name }}.
+
+Enabled services:
+{{- if (index .Values "data-ingestion" "enabled") }}
+  - data-ingestion
+{{- end }}

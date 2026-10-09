@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: operational-context-graph
+description: Umbrella chart for the Operational Context Graph platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: data-ingestion
+    version: 0.1.0
+    condition: data-ingestion.enabled
