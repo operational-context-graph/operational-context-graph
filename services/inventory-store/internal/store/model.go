@@ -13,25 +13,30 @@ import (
 
 // Asset mirrors the assets table.
 type Asset struct {
-	ID          uuid.UUID       `json:"id"`
-	AssetType   string          `json:"asset_type"`
-	Source      string          `json:"source"`
-	ExternalID  string          `json:"external_id"`
-	Name        *string         `json:"name,omitempty"`
-	IPAddresses json.RawMessage `json:"ip_addresses,omitempty"`
-	Attributes  json.RawMessage `json:"attributes,omitempty"`
-	IngestedAt  time.Time       `json:"ingested_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID                  uuid.UUID       `json:"id"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	SourceID            string          `json:"source_id"`
+	Name                *string         `json:"name,omitempty"`
+	IPAddresses         json.RawMessage `json:"ip_addresses,omitempty"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	CreatedAt           time.Time       `json:"created_at"`
+	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
+	ValidFrom           time.Time       `json:"valid_from"`
+	ValidTo             *time.Time      `json:"valid_to,omitempty"`
 }
 
 // AssetInput is the request body for POST /assets.
 type AssetInput struct {
-	AssetType   string          `json:"asset_type"`
-	Source      string          `json:"source"`
-	ExternalID  string          `json:"external_id"`
-	Name        *string         `json:"name,omitempty"`
-	IPAddresses json.RawMessage `json:"ip_addresses,omitempty"`
-	Attributes  json.RawMessage `json:"attributes,omitempty"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	SourceID            string          `json:"source_id"`
+	Name                *string         `json:"name,omitempty"`
+	IPAddresses         json.RawMessage `json:"ip_addresses,omitempty"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
 }
 
 // BatchResult is one outcome item returned from UpsertAssetBatch.
@@ -42,28 +47,32 @@ type BatchResult struct {
 
 // Relationship mirrors the relationships table.
 type Relationship struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceAssetID    uuid.UUID       `json:"source_asset_id"`
-	TargetAssetID    uuid.UUID       `json:"target_asset_id"`
-	RelationshipType string          `json:"relationship_type"`
-	Source           string          `json:"source"`
-	Attributes       json.RawMessage `json:"attributes,omitempty"`
-	IngestedAt       time.Time       `json:"ingested_at"`
+	ID                  uuid.UUID       `json:"id"`
+	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
+	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	CreatedAt           time.Time       `json:"created_at"`
+	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
 }
 
 // RelationshipInput is the request body for POST /relationships.
 type RelationshipInput struct {
-	SourceAssetID    uuid.UUID       `json:"source_asset_id"`
-	TargetAssetID    uuid.UUID       `json:"target_asset_id"`
-	RelationshipType string          `json:"relationship_type"`
-	Source           string          `json:"source"`
-	Attributes       json.RawMessage `json:"attributes,omitempty"`
+	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
+	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
 }
 
 // Cursor encodes the keyset pagination position.
 type Cursor struct {
-	IngestedAt time.Time `json:"t"`
-	ID         uuid.UUID `json:"i"`
+	CreatedAt time.Time `json:"t"`
+	ID        uuid.UUID `json:"i"`
 }
 
 func (c Cursor) Encode() string {

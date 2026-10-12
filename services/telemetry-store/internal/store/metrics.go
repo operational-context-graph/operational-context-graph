@@ -6,6 +6,8 @@ package store
 import (
 	"context"
 	"fmt"
+
+	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
 )
 
 // QueryMetrics returns metric rows matching q.
@@ -25,13 +27,15 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 		where += " AND metric_name = ?"
 		args = append(args, q.MetricName)
 	}
-	if q.AfterTS != nil && q.AfterID != nil {
-		where += " AND (timestamp, record_id) > (?, ?)"
-		args = append(args, q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000"), *q.AfterID)
+	if q.AfterTS != nil && q.AfterRecordID != nil {
+		// Doris does not support row-value comparisons; use the expanded equivalent.
+		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
+		where += " AND (timestamp > ? OR (timestamp = ? AND record_id > ?))"
+		args = append(args, tsStr, tsStr, *q.AfterRecordID)
 	}
 
 	stmt := fmt.Sprintf(
-		`SELECT timestamp, record_id, host, metric_name, value, CAST(attributes AS STRING)
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, record_id, host, metric_name, value, CAST(attributes AS STRING)
 		 FROM ocg.metrics %s ORDER BY timestamp, record_id LIMIT %d`, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
@@ -43,15 +47,11 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 	var metrics []Metric
 	for rows.Next() {
 		var m Metric
-		var tsStr string
-		if err := rows.Scan(&tsStr, &m.RecordID, &m.Host, &m.MetricName, &m.Value, &m.Attributes); err != nil {
+		var ts dorissql.DateTime
+		if err := rows.Scan(&ts, &m.RecordID, &m.Host, &m.MetricName, &m.Value, &m.Attributes); err != nil {
 			return nil, fmt.Errorf("scan metric: %w", err)
 		}
-		var parseErr error
-		m.Timestamp, parseErr = parseDorisTime(tsStr)
-		if parseErr != nil {
-			return nil, fmt.Errorf("parse metric timestamp: %w", parseErr)
-		}
+		m.Timestamp = ts.Time
 		metrics = append(metrics, m)
 	}
 	return metrics, rows.Err()

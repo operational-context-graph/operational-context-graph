@@ -11,21 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseDorisTimeWithMicros(t *testing.T) {
-	got, err := parseDorisTime("2026-03-15 10:30:00.123456")
+func TestCursorRoundTrip(t *testing.T) {
+	ts := time.Date(2026, 3, 15, 10, 30, 0, 123456000, time.UTC)
+	original := Cursor{TS: ts, RecordID: "01HX5Y2K6P3M4N8Q7R"}
+	encoded := original.Encode()
+	assert.NotEmpty(t, encoded)
+
+	decoded, err := DecodeCursor(encoded)
 	require.NoError(t, err)
-	want := time.Date(2026, 3, 15, 10, 30, 0, 123456000, time.UTC)
-	assert.True(t, want.Equal(got), "got %v, want %v", got, want)
+	assert.Equal(t, original.RecordID, decoded.RecordID)
+	assert.True(t, original.TS.Equal(decoded.TS))
 }
 
-func TestParseDorisTimeWithoutMicros(t *testing.T) {
-	got, err := parseDorisTime("2026-03-15 10:30:00")
-	require.NoError(t, err)
-	want := time.Date(2026, 3, 15, 10, 30, 0, 0, time.UTC)
-	assert.True(t, want.Equal(got), "got %v, want %v", got, want)
-}
-
-func TestParseDorisTimeInvalid(t *testing.T) {
-	_, err := parseDorisTime("not-a-date")
+func TestDecodeCursorInvalid(t *testing.T) {
+	_, err := DecodeCursor("not-valid-base64!!!")
 	assert.Error(t, err)
 }

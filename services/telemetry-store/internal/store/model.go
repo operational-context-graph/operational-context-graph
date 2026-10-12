@@ -6,7 +6,6 @@ package store
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -57,13 +56,20 @@ type LogQuery struct {
 
 // MetricQuery parameters for GET /v1/telemetry/metrics.
 type MetricQuery struct {
-	From       time.Time
-	To         time.Time
-	Host       string
-	MetricName string
-	Limit      int
-	AfterTS    *time.Time
-	AfterID    *string
+	From          time.Time
+	To            time.Time
+	Host          string
+	MetricName    string
+	Limit         int
+	AfterTS       *time.Time
+	AfterRecordID *string
+}
+
+// TraceQuery parameters for GET /v1/telemetry/traces/:traceID.
+type TraceQuery struct {
+	From    time.Time
+	To      time.Time
+	TraceID string
 }
 
 // Cursor encodes the keyset pagination position for telemetry queries.
@@ -86,17 +92,3 @@ func DecodeCursor(s string) (Cursor, error) {
 	return c, json.Unmarshal(b, &c)
 }
 
-// parseDorisTime parses a Doris DATETIME(6) string returned as []byte/string
-// by the go-mysql-org driver (which does not auto-convert to time.Time).
-func parseDorisTime(s string) (time.Time, error) {
-	layouts := []string{
-		"2006-01-02 15:04:05.999999",
-		"2006-01-02 15:04:05",
-	}
-	for _, l := range layouts {
-		if t, err := time.ParseInLocation(l, s, time.UTC); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("cannot parse doris timestamp %q", s)
-}

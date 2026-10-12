@@ -64,6 +64,12 @@ func (s *Store) Close() { s.pool.Close() }
 // Ping checks liveness.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
+// SchemaReady verifies the schema is present and queryable.
+func (s *Store) SchemaReady(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, "SELECT 1 FROM assets LIMIT 0")
+	return err
+}
+
 func nullJSON(b json.RawMessage) any {
 	if len(b) == 0 || string(b) == "null" {
 		return nil

@@ -6,6 +6,8 @@ package store
 import (
 	"context"
 	"fmt"
+
+	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
 )
 
 // QueryLogs returns log rows matching q.
@@ -26,12 +28,14 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 		args = append(args, q.Severity)
 	}
 	if q.AfterTS != nil && q.AfterRecordID != nil {
-		where += " AND (timestamp, record_id) > (?, ?)"
-		args = append(args, q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000"), *q.AfterRecordID)
+		// Doris does not support row-value comparisons; use the expanded equivalent.
+		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
+		where += " AND (timestamp > ? OR (timestamp = ? AND record_id > ?))"
+		args = append(args, tsStr, tsStr, *q.AfterRecordID)
 	}
 
 	stmt := fmt.Sprintf(
-		`SELECT timestamp, record_id, host, severity, body, CAST(attributes AS STRING)
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, record_id, host, severity, body, CAST(attributes AS STRING)
 		 FROM ocg.logs %s ORDER BY timestamp, record_id LIMIT %d`, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
@@ -43,15 +47,11 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 	var logs []Log
 	for rows.Next() {
 		var l Log
-		var tsStr string
-		if err := rows.Scan(&tsStr, &l.RecordID, &l.Host, &l.Severity, &l.Body, &l.Attributes); err != nil {
+		var ts dorissql.DateTime
+		if err := rows.Scan(&ts, &l.RecordID, &l.Host, &l.Severity, &l.Body, &l.Attributes); err != nil {
 			return nil, fmt.Errorf("scan log: %w", err)
 		}
-		var parseErr error
-		l.Timestamp, parseErr = parseDorisTime(tsStr)
-		if parseErr != nil {
-			return nil, fmt.Errorf("parse log timestamp: %w", parseErr)
-		}
+		l.Timestamp = ts.Time
 		logs = append(logs, l)
 	}
 	return logs, rows.Err()

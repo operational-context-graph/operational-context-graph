@@ -12,9 +12,21 @@ import (
 	_ "github.com/go-mysql-org/go-mysql/driver"
 )
 
-// DB wraps the Doris MySQL connection pool.
+// maxTraceResults caps the result set for QueryTraceByID.
+const maxTraceResults = 10000
+
+const queryTraceSQL = `/*+ SET_VAR(query_timeout=25000) */
+SELECT timestamp, record_id, host, trace_id, span_id, parent_span_id,
+       span_name, duration_nanos, status_code, CAST(attributes AS STRING)
+FROM ocg.traces
+WHERE timestamp >= ? AND timestamp < ? AND trace_id = ?
+ORDER BY timestamp, record_id
+LIMIT ?`
+
+// DB wraps the Doris MySQL connection pool and its prepared statements.
 type DB struct {
-	db *sql.DB
+	db         *sql.DB
+	stmtTraces *sql.Stmt
 }
 
 // New opens the connection pool with default tuning and verifies connectivity.
@@ -49,11 +61,27 @@ func NewWithConfig(ctx context.Context, dsn string, maxOpen, maxIdle int, connMa
 		db.Close()
 		return nil, fmt.Errorf("ping doris: %w", err)
 	}
-	return &DB{db: db}, nil
+
+	stmtTraces, err := db.PrepareContext(ctx, queryTraceSQL)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("prepare traces query: %w", err)
+	}
+
+	return &DB{db: db, stmtTraces: stmtTraces}, nil
 }
 
-// Close releases the pool.
-func (d *DB) Close() error { return d.db.Close() }
+// Close releases the pool and prepared statements.
+func (d *DB) Close() error {
+	d.stmtTraces.Close()
+	return d.db.Close()
+}
 
 // Ping checks liveness.
 func (d *DB) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
+
+// SchemaReady verifies the Doris schema is present and queryable.
+func (d *DB) SchemaReady(ctx context.Context) error {
+	_, err := d.db.ExecContext(ctx, "SELECT 1 FROM ocg.logs LIMIT 0")
+	return err
+}

@@ -13,46 +13,101 @@ import (
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
 )
 
-// UpsertAsset inserts or updates an asset. Returns (asset, created, error).
+// UpsertAsset upserts an asset using the temporal dedup contract:
+//   - If the natural key exists and last_updated_at_source matches → re-delivery, no new version row.
+//   - If last_updated_at_source advances, or the asset is new → expire current row, insert new version.
+//
+// Returns (asset, created, error). created=true when a new row was inserted.
 func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, error) {
-	const q = `
-INSERT INTO assets (asset_type, source, external_id, name, ip_addresses, attributes)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (source, external_id) DO UPDATE SET
-    asset_type   = EXCLUDED.asset_type,
-    name         = EXCLUDED.name,
-    ip_addresses = EXCLUDED.ip_addresses,
-    attributes   = EXCLUDED.attributes,
-    updated_at   = NOW()
-RETURNING id, asset_type, source, external_id, name, ip_addresses, attributes, ingested_at, updated_at,
-          (xmax = 0) AS inserted`
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Asset{}, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	row := s.pool.QueryRow(ctx, q,
-		in.AssetType, in.Source, in.ExternalID, in.Name,
-		nullJSON(in.IPAddresses), nullJSON(in.Attributes),
+	// Check for existing current row and compare last_updated_at_source.
+	const checkCurrent = `
+SELECT id, last_updated_at_source
+FROM assets
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+
+	var cur struct {
+		id                  uuid.UUID
+		lastUpdatedAtSource *string
+	}
+	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(&cur.id, &cur.lastUpdatedAtSource)
+	rowExists := true
+	if errors.Is(err, pgx.ErrNoRows) {
+		rowExists = false
+	} else if err != nil {
+		return Asset{}, false, fmt.Errorf("check current asset: %w", err)
+	}
+
+	// Temporal dedup: skip new version if last_updated_at_source unchanged.
+	if rowExists && in.LastUpdatedAtSource != nil && cur.lastUpdatedAtSource != nil {
+		existing := *cur.lastUpdatedAtSource
+		incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+		if existing == incoming {
+			// Re-delivery — return existing current row without creating a new version.
+			if err := tx.Commit(ctx); err != nil {
+				return Asset{}, false, fmt.Errorf("commit redelivery tx: %w", err)
+			}
+			asset, fetchErr := s.GetAsset(ctx, cur.id)
+			if fetchErr != nil {
+				return Asset{}, false, fetchErr
+			}
+			return asset, false, nil
+		}
+	}
+
+	// Expire any current version with the same natural key.
+	const expire = `
+UPDATE assets SET valid_to = NOW()
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+	tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID)
+	if err != nil {
+		return Asset{}, false, fmt.Errorf("expire asset: %w", err)
+	}
+	created := tag.RowsAffected() == 0
+
+	const insert = `
+INSERT INTO assets (artifact_type, source_system, source_id, name, ip_addresses, extensions,
+                    created_at_source, last_updated_at_source, valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NULL)
+RETURNING id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+          created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
+
+	row := tx.QueryRow(ctx, insert,
+		in.ArtifactType, in.SourceSystem, in.SourceID, in.Name,
+		nullJSON(in.IPAddresses), nullJSON(in.Extensions),
+		in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
-
 	var a Asset
-	var inserted bool
-	err := row.Scan(
-		&a.ID, &a.AssetType, &a.Source, &a.ExternalID, &a.Name,
-		&a.IPAddresses, &a.Attributes, &a.IngestedAt, &a.UpdatedAt,
-		&inserted,
+	err = row.Scan(
+		&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
+		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo,
 	)
 	if err != nil {
-		return Asset{}, false, fmt.Errorf("upsert asset: %w", err)
+		return Asset{}, false, fmt.Errorf("insert asset: %w", err)
 	}
-	return a, inserted, nil
+
+	if err := tx.Commit(ctx); err != nil {
+		return Asset{}, false, fmt.Errorf("commit upsert asset: %w", err)
+	}
+	return a, created, nil
 }
 
-// GetAsset fetches an asset by internal UUID.
+// GetAsset fetches the current version of an asset by internal UUID.
 func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
-	const q = `SELECT id, asset_type, source, external_id, name, ip_addresses, attributes, ingested_at, updated_at
-               FROM assets WHERE id = $1`
+	const q = `SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+               created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+               FROM assets WHERE id = $1 AND valid_to IS NULL`
 	row := s.pool.QueryRow(ctx, q, id)
 	var a Asset
-	err := row.Scan(&a.ID, &a.AssetType, &a.Source, &a.ExternalID, &a.Name,
-		&a.IPAddresses, &a.Attributes, &a.IngestedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
+		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, apperr.ErrNotFound
 	}
@@ -62,14 +117,16 @@ func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return a, nil
 }
 
-// GetAssetByExternal fetches an asset by (source, external_id).
-func (s *Store) GetAssetByExternal(ctx context.Context, source, externalID string) (Asset, error) {
-	const q = `SELECT id, asset_type, source, external_id, name, ip_addresses, attributes, ingested_at, updated_at
-               FROM assets WHERE source = $1 AND external_id = $2`
-	row := s.pool.QueryRow(ctx, q, source, externalID)
+// GetAssetByExternal fetches the current version of an asset by (source_system, source_id).
+func (s *Store) GetAssetByExternal(ctx context.Context, sourceSystem, sourceID string) (Asset, error) {
+	const q = `SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+               created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+               FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+	row := s.pool.QueryRow(ctx, q, sourceSystem, sourceID)
 	var a Asset
-	err := row.Scan(&a.ID, &a.AssetType, &a.Source, &a.ExternalID, &a.Name,
-		&a.IPAddresses, &a.Attributes, &a.IngestedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
+		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, apperr.ErrNotFound
 	}
@@ -79,35 +136,36 @@ func (s *Store) GetAssetByExternal(ctx context.Context, source, externalID strin
 	return a, nil
 }
 
-// ListAssets returns a page of assets filtered by type or source.
-func (s *Store) ListAssets(ctx context.Context, assetType, source string, limit int, after *Cursor) ([]Asset, *Cursor, error) {
+// ListAssets returns a page of current assets filtered by artifact_type or source_system.
+func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem string, limit int, after *Cursor) ([]Asset, *Cursor, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
 
 	args := []any{}
-	where := "WHERE 1=1"
+	where := "WHERE valid_to IS NULL"
 	i := 1
 
-	if assetType != "" {
-		where += fmt.Sprintf(" AND asset_type = $%d", i)
-		args = append(args, assetType)
+	if artifactType != "" {
+		where += fmt.Sprintf(" AND artifact_type = $%d", i)
+		args = append(args, artifactType)
 		i++
 	}
-	if source != "" {
-		where += fmt.Sprintf(" AND source = $%d", i)
-		args = append(args, source)
+	if sourceSystem != "" {
+		where += fmt.Sprintf(" AND source_system = $%d", i)
+		args = append(args, sourceSystem)
 		i++
 	}
 	if after != nil {
-		where += fmt.Sprintf(" AND (ingested_at, id) > ($%d, $%d)", i, i+1)
-		args = append(args, after.IngestedAt, after.ID)
+		where += fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", i, i+1)
+		args = append(args, after.CreatedAt, after.ID)
 		i += 2
 	}
 
 	args = append(args, limit+1)
-	q := fmt.Sprintf(`SELECT id, asset_type, source, external_id, name, ip_addresses, attributes, ingested_at, updated_at
-		FROM assets %s ORDER BY ingested_at, id LIMIT $%d`, where, i)
+	q := fmt.Sprintf(`SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+		created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+		FROM assets %s ORDER BY created_at, id LIMIT $%d`, where, i)
 
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -118,8 +176,9 @@ func (s *Store) ListAssets(ctx context.Context, assetType, source string, limit 
 	var assets []Asset
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.AssetType, &a.Source, &a.ExternalID, &a.Name,
-			&a.IPAddresses, &a.Attributes, &a.IngestedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
+			&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+			&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo); err != nil {
 			return nil, nil, fmt.Errorf("scan asset: %w", err)
 		}
 		assets = append(assets, a)
@@ -131,13 +190,13 @@ func (s *Store) ListAssets(ctx context.Context, assetType, source string, limit 
 	var nextCursor *Cursor
 	if len(assets) > limit {
 		last := assets[limit-1]
-		nextCursor = &Cursor{IngestedAt: last.IngestedAt, ID: last.ID}
+		nextCursor = &Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
 		assets = assets[:limit]
 	}
 	return assets, nextCursor, nil
 }
 
-// UpsertAssetBatch upserts multiple assets in a single transaction.
+// UpsertAssetBatch upserts multiple assets using the temporal dedup model.
 func (s *Store) UpsertAssetBatch(ctx context.Context, inputs []AssetInput) ([]BatchResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -145,30 +204,58 @@ func (s *Store) UpsertAssetBatch(ctx context.Context, inputs []AssetInput) ([]Ba
 	}
 	defer tx.Rollback(ctx)
 
-	const q = `
-INSERT INTO assets (asset_type, source, external_id, name, ip_addresses, attributes)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (source, external_id) DO UPDATE SET
-    asset_type   = EXCLUDED.asset_type,
-    name         = EXCLUDED.name,
-    ip_addresses = EXCLUDED.ip_addresses,
-    attributes   = EXCLUDED.attributes,
-    updated_at   = NOW()
-RETURNING id, (xmax = 0) AS inserted`
+	const checkCurrent = `
+SELECT id, last_updated_at_source
+FROM assets
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+
+	const expire = `
+UPDATE assets SET valid_to = NOW()
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+
+	const insert = `
+INSERT INTO assets (artifact_type, source_system, source_id, name, ip_addresses, extensions,
+                    created_at_source, last_updated_at_source, valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NULL)
+RETURNING id`
 
 	results := make([]BatchResult, 0, len(inputs))
 	for _, in := range inputs {
-		var id uuid.UUID
-		var inserted bool
-		err := tx.QueryRow(ctx, q,
-			in.AssetType, in.Source, in.ExternalID, in.Name,
-			nullJSON(in.IPAddresses), nullJSON(in.Attributes),
-		).Scan(&id, &inserted)
+		// Temporal dedup check.
+		var curID uuid.UUID
+		var curLUAS *string
+		err := tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(&curID, &curLUAS)
+		rowExists := true
+		if errors.Is(err, pgx.ErrNoRows) {
+			rowExists = false
+		} else if err != nil {
+			return nil, fmt.Errorf("check current asset in batch: %w", err)
+		}
+
+		if rowExists && in.LastUpdatedAtSource != nil && curLUAS != nil {
+			incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+			if *curLUAS == incoming {
+				results = append(results, BatchResult{ID: curID, Outcome: "updated"})
+				continue
+			}
+		}
+
+		tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID)
 		if err != nil {
-			return nil, fmt.Errorf("upsert asset batch row: %w", err)
+			return nil, fmt.Errorf("expire asset batch row: %w", err)
+		}
+		created := tag.RowsAffected() == 0
+
+		var id uuid.UUID
+		if err := tx.QueryRow(ctx, insert,
+			in.ArtifactType, in.SourceSystem, in.SourceID, in.Name,
+			nullJSON(in.IPAddresses), nullJSON(in.Extensions),
+			in.CreatedAtSource, in.LastUpdatedAtSource,
+		).Scan(&id); err != nil {
+			return nil, fmt.Errorf("insert asset batch row: %w", err)
 		}
 		outcome := "updated"
-		if inserted {
+		if created {
 			outcome = "created"
 		}
 		results = append(results, BatchResult{ID: id, Outcome: outcome})
