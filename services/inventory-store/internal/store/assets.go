@@ -71,21 +71,21 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 	created := tag.RowsAffected() == 0
 
 	const insert = `
-INSERT INTO assets (artifact_type, source_system, source_id, name, ip_addresses, extensions,
+INSERT INTO assets (artifact_type, source_system, source_id, extensions,
                     created_at_source, last_updated_at_source, valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NULL)
-RETURNING id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
+RETURNING id, artifact_type, source_system, source_id, extensions,
           created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
 	row := tx.QueryRow(ctx, insert,
-		in.ArtifactType, in.SourceSystem, in.SourceID, in.Name,
-		nullJSON(in.IPAddresses), nullJSON(in.Extensions),
+		in.ArtifactType, in.SourceSystem, in.SourceID,
+		nullJSON(in.Extensions),
 		in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var a Asset
 	err = row.Scan(
-		&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
-		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+		&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.Extensions, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo,
 	)
 	if err != nil {
@@ -100,13 +100,13 @@ RETURNING id, artifact_type, source_system, source_id, name, ip_addresses, exten
 
 // GetAsset fetches the current version of an asset by internal UUID.
 func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
-	const q = `SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+	const q = `SELECT id, artifact_type, source_system, source_id, extensions,
                created_at, created_at_source, last_updated_at_source, valid_from, valid_to
                FROM assets WHERE id = $1 AND valid_to IS NULL`
 	row := s.pool.QueryRow(ctx, q, id)
 	var a Asset
-	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
-		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.Extensions, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, apperr.ErrNotFound
@@ -119,13 +119,13 @@ func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 
 // GetAssetByExternal fetches the current version of an asset by (source_system, source_id).
 func (s *Store) GetAssetByExternal(ctx context.Context, sourceSystem, sourceID string) (Asset, error) {
-	const q = `SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+	const q = `SELECT id, artifact_type, source_system, source_id, extensions,
                created_at, created_at_source, last_updated_at_source, valid_from, valid_to
                FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 	row := s.pool.QueryRow(ctx, q, sourceSystem, sourceID)
 	var a Asset
-	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
-		&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.Extensions, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, apperr.ErrNotFound
@@ -163,7 +163,7 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem strin
 	}
 
 	args = append(args, limit+1)
-	q := fmt.Sprintf(`SELECT id, artifact_type, source_system, source_id, name, ip_addresses, extensions,
+	q := fmt.Sprintf(`SELECT id, artifact_type, source_system, source_id, extensions,
 		created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 		FROM assets %s ORDER BY created_at, id LIMIT $%d`, where, i)
 
@@ -176,8 +176,8 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem strin
 	var assets []Asset
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID, &a.Name,
-			&a.IPAddresses, &a.Extensions, &a.CreatedAt,
+		if err := rows.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+			&a.Extensions, &a.CreatedAt,
 			&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo); err != nil {
 			return nil, nil, fmt.Errorf("scan asset: %w", err)
 		}
@@ -214,9 +214,9 @@ UPDATE assets SET valid_to = NOW()
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	const insert = `
-INSERT INTO assets (artifact_type, source_system, source_id, name, ip_addresses, extensions,
+INSERT INTO assets (artifact_type, source_system, source_id, extensions,
                     created_at_source, last_updated_at_source, valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NULL)
+VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
 RETURNING id`
 
 	results := make([]BatchResult, 0, len(inputs))
@@ -248,8 +248,8 @@ RETURNING id`
 
 		var id uuid.UUID
 		if err := tx.QueryRow(ctx, insert,
-			in.ArtifactType, in.SourceSystem, in.SourceID, in.Name,
-			nullJSON(in.IPAddresses), nullJSON(in.Extensions),
+			in.ArtifactType, in.SourceSystem, in.SourceID,
+			nullJSON(in.Extensions),
 			in.CreatedAtSource, in.LastUpdatedAtSource,
 		).Scan(&id); err != nil {
 			return nil, fmt.Errorf("insert asset batch row: %w", err)

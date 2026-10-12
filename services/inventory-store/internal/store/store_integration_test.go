@@ -25,8 +25,6 @@ CREATE TABLE IF NOT EXISTS assets (
     artifact_type        VARCHAR(64)  NOT NULL,
     source_system        VARCHAR(128) NOT NULL,
     source_id            VARCHAR(256) NOT NULL,
-    name                 VARCHAR(256),
-    ip_addresses         JSONB,
     extensions           JSONB,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     created_at_source    TIMESTAMPTZ,

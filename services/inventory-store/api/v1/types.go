@@ -10,8 +10,6 @@ type UpsertAssetRequest struct {
 	ArtifactType        string  `json:"artifact_type"          validate:"required"`
 	SourceSystem        string  `json:"source_system"          validate:"required"`
 	SourceID            string  `json:"source_id"              validate:"required"`
-	Name                *string `json:"name,omitempty"`
-	IPAddresses         []byte  `json:"ip_addresses,omitempty"`
 	Extensions          []byte  `json:"extensions,omitempty"`
 	CreatedAtSource     *string `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string `json:"last_updated_at_source,omitempty"`
@@ -23,8 +21,6 @@ type AssetResponse struct {
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
 	SourceID            string    `json:"source_id"`
-	Name                *string   `json:"name,omitempty"`
-	IPAddresses         []byte    `json:"ip_addresses,omitempty"`
 	Extensions          []byte    `json:"extensions,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`

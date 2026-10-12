@@ -44,8 +44,6 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 			ArtifactType: req.ArtifactType,
 			SourceSystem: req.SourceSystem,
 			SourceID:     req.SourceID,
-			Name:         req.Name,
-			IPAddresses:  json.RawMessage(req.IPAddresses),
 			Extensions:   json.RawMessage(req.Extensions),
 		}
 		if req.CreatedAtSource != nil {
@@ -157,8 +155,6 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 				ArtifactType: a.ArtifactType,
 				SourceSystem: a.SourceSystem,
 				SourceID:     a.SourceID,
-				Name:         a.Name,
-				IPAddresses:  json.RawMessage(a.IPAddresses),
 				Extensions:   json.RawMessage(a.Extensions),
 			}
 			if a.CreatedAtSource != nil {
@@ -198,8 +194,6 @@ func toAssetResponse(a store.Asset) v1.AssetResponse {
 		ArtifactType: a.ArtifactType,
 		SourceSystem: a.SourceSystem,
 		SourceID:     a.SourceID,
-		Name:         a.Name,
-		IPAddresses:  []byte(a.IPAddresses),
 		Extensions:   []byte(a.Extensions),
 		CreatedAt:    a.CreatedAt.UTC().Format(time.RFC3339),
 		ValidFrom:    a.ValidFrom.UTC().Format(time.RFC3339),
