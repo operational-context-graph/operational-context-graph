@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package testhelper provides shared helpers for inventory-store tests.
-package testhelper
+// Package test provides shared helpers for inventory-store tests.
+package test
 
 import (
 	"encoding/json"
@@ -39,4 +39,14 @@ func GetRequest(t *testing.T, handler http.Handler, path string) *httptest.Respo
 func DecodeJSON(t *testing.T, rr *httptest.ResponseRecorder, dst any) {
 	t.Helper()
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(dst))
+}
+
+// PostRaw records an HTTP POST with a raw body and explicit Content-Type.
+func PostRaw(t *testing.T, handler http.Handler, path, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
 }

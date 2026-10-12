@@ -37,7 +37,7 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req v1.UpsertRelationshipRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
+			renderError(c, bindErr(err))
 			return
 		}
 		in := store.RelationshipInput{
@@ -160,7 +160,7 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req v1.BatchUpsertRelationshipRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
+			renderError(c, bindErr(err))
 			return
 		}
 		inputs := make([]store.RelationshipInput, len(req.Relationships))

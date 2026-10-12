@@ -37,7 +37,7 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req v1.UpsertAssetRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
+			renderError(c, bindErr(err))
 			return
 		}
 		in := store.AssetInput{
@@ -146,7 +146,7 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req v1.BatchUpsertAssetRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
+			renderError(c, bindErr(err))
 			return
 		}
 		inputs := make([]store.AssetInput, len(req.Assets))

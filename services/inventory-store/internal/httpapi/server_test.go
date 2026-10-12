@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
 	"github.com/operational-context-graph/inventory-store/internal/store"
-	"github.com/operational-context-graph/inventory-store/internal/testhelper"
+	"github.com/operational-context-graph/inventory-store/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -83,7 +84,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 	}
 	srv := httpapi.NewServer(stub, ":0")
 
-	rr := testhelper.PostJSON(t, srv.Handler, "/v1/assets", map[string]any{
+	rr := test.PostJSON(t, srv.Handler, "/v1/assets", map[string]any{
 		"artifact_type": "server",
 		"source_system": "cmdb",
 		"source_id":     "srv-001",
@@ -93,7 +94,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 	assert.Equal(t, "application/json; charset=utf-8", rr.Header().Get("Content-Type"))
 
 	var resp v1.UpsertAssetResponse
-	testhelper.DecodeJSON(t, rr, &resp)
+	test.DecodeJSON(t, rr, &resp)
 	assert.Equal(t, assetID, resp.Asset.ID)
 	assert.True(t, resp.Created)
 }
@@ -101,7 +102,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 func TestHandleUpsertAsset_InvalidJSON(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
 
-	rr := testhelper.PostJSON(t, srv.Handler, "/v1/assets", "not-an-object")
+	rr := test.PostJSON(t, srv.Handler, "/v1/assets", "not-an-object")
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
@@ -119,7 +120,7 @@ func TestHandleGetAsset_NotFound(t *testing.T) {
 	}
 	srv := httpapi.NewServer(stub, ":0")
 
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/assets/"+uuid.New().String())
+	rr := test.GetRequest(t, srv.Handler, "/v1/assets/"+uuid.New().String())
 
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
@@ -131,57 +132,81 @@ func TestHandleGetAsset_NotFound(t *testing.T) {
 
 func TestHandleGetAsset_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/assets/not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, "/v1/assets/not-a-uuid")
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleGetRelationship_NotFound(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/relationships/"+uuid.New().String())
+	rr := test.GetRequest(t, srv.Handler, "/v1/relationships/"+uuid.New().String())
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleGetRelationship_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/relationships/not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, "/v1/relationships/not-a-uuid")
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestHandleFilterRelationships_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/relationships?asset_id=not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, "/v1/relationships?asset_id=not-a-uuid")
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleFilterRelationships_EmptyResult(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/relationships")
+	rr := test.GetRequest(t, srv.Handler, "/v1/relationships")
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp v1.RelationshipListResponse
-	testhelper.DecodeJSON(t, rr, &resp)
+	test.DecodeJSON(t, rr, &resp)
 	assert.Empty(t, resp.Items)
 }
 
 func TestHandleGetAssetBySource_MissingParams(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/assets/by-source?source=cmdb")
+	rr := test.GetRequest(t, srv.Handler, "/v1/assets/by-source?source=cmdb")
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/health")
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestRequestIDMiddleware_SetsHeader(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/health")
 	assert.NotEmpty(t, rr.Header().Get("X-Request-Id"))
+}
+
+func TestHandleUpsertAsset_WrongContentType_Returns415(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.PostRaw(t, srv.Handler, "/v1/assets", "text/plain", `{"artifact_type":"server","source_system":"cmdb","source_id":"x"}`)
+	assert.Equal(t, http.StatusUnsupportedMediaType, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleUpsertAsset_OversizedBody_Returns413(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	// Build a valid JSON object whose string value exceeds the 4 MiB cap.
+	// The JSON parser reads past the opening quote before MaxBytesReader cuts it.
+	big := `{"artifact_type":"` + strings.Repeat("a", 5*1024*1024) + `"}`
+	rr := test.PostRaw(t, srv.Handler, "/v1/assets", "application/json", big)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestUnmatchedRoute_Returns404WithProblemJSON(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.GetRequest(t, srv.Handler, "/v1/does-not-exist")
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestRequestIDMiddleware_EchoesExistingHeader(t *testing.T) {

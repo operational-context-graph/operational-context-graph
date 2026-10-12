@@ -14,7 +14,7 @@ import (
 	v1 "github.com/operational-context-graph/telemetry-store/api/v1"
 	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
 	"github.com/operational-context-graph/telemetry-store/internal/store"
-	"github.com/operational-context-graph/telemetry-store/internal/testhelper"
+	"github.com/operational-context-graph/telemetry-store/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +59,7 @@ func TestHandleQueryLogs_OK(t *testing.T) {
 
 	from := now.Add(-time.Minute).Format(time.RFC3339)
 	to := now.Add(time.Minute).Format(time.RFC3339)
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp v1.LogListResponse
@@ -70,46 +70,53 @@ func TestHandleQueryLogs_OK(t *testing.T) {
 
 func TestHandleQueryLogs_MissingParams(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/logs")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs")
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestHandleQueryLogs_OnlyFrom_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from=2026-01-01T00:00:00Z")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from=2026-01-01T00:00:00Z")
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleQueryLogs_MaxSpanExceeded_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from=2026-01-01T00:00:00Z&to=2026-01-03T00:00:00Z")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from=2026-01-01T00:00:00Z&to=2026-01-03T00:00:00Z")
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleQueryMetrics_MissingParams(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/metrics")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/metrics")
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestHandleQueryTrace_MissingParams(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/v1/telemetry/traces/abc")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/abc")
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/health")
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestRequestIDMiddleware_SetsHeader(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
-	rr := testhelper.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/health")
 	assert.NotEmpty(t, rr.Header().Get("X-Request-Id"))
+}
+
+func TestUnmatchedRoute_Returns404WithProblemJSON(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, ":0")
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/does-not-exist/extra")
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestRequestIDMiddleware_EchoesExistingHeader(t *testing.T) {

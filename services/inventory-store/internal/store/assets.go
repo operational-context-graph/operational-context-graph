@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
 )
 
 // UpsertAsset upserts an asset using the temporal dedup contract:
@@ -109,7 +108,7 @@ func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		&a.Extensions, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Asset{}, apperr.ErrNotFound
+		return Asset{}, ErrAssetNotFound
 	}
 	if err != nil {
 		return Asset{}, fmt.Errorf("get asset: %w", err)
@@ -128,7 +127,7 @@ func (s *Store) GetAssetByExternal(ctx context.Context, sourceSystem, sourceID s
 		&a.Extensions, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Asset{}, apperr.ErrNotFound
+		return Asset{}, ErrAssetNotFound
 	}
 	if err != nil {
 		return Asset{}, fmt.Errorf("get asset by external: %w", err)

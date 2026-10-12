@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,36 +16,17 @@ type Store struct {
 	pool *pgxpool.Pool
 }
 
-// New opens the connection pool with default tuning and verifies connectivity.
-func New(ctx context.Context, databaseURL string) (*Store, error) {
-	return NewWithConfig(ctx, databaseURL, 25, 5, "5m")
+// NewFromPool creates a Store from an already-opened pool.
+func NewFromPool(pool *pgxpool.Pool) *Store {
+	return &Store{pool: pool}
 }
 
-// NewWithConfig opens the connection pool with explicit tuning parameters.
-func NewWithConfig(ctx context.Context, databaseURL string, maxOpen, maxIdle int, connMaxLifetime string) (*Store, error) {
+// New opens the connection pool with default tuning. Kept for integration tests.
+func New(ctx context.Context, databaseURL string) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse db url: %w", err)
 	}
-
-	if maxOpen <= 0 {
-		maxOpen = 25
-	}
-	if maxIdle <= 0 {
-		maxIdle = 5
-	}
-	if connMaxLifetime == "" {
-		connMaxLifetime = "5m"
-	}
-	d, err := time.ParseDuration(connMaxLifetime)
-	if err != nil {
-		d = 5 * time.Minute
-	}
-
-	cfg.MaxConns = int32(maxOpen)
-	cfg.MinConns = int32(maxIdle)
-	cfg.MaxConnLifetime = d
-
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open pool: %w", err)

@@ -5,12 +5,14 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/operational-context-graph/telemetry-store/internal/apperr"
 	"github.com/operational-context-graph/telemetry-store/internal/store"
 )
 
@@ -31,7 +33,7 @@ func NewServer(d telemetryDB, addr string) *http.Server {
 	r := gin.New()
 	r.Use(requestIDMiddleware())
 	r.Use(loggingMiddleware())
-	r.Use(gin.Recovery())
+	r.Use(panicRecoveryMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
 		if err := d.Ping(c.Request.Context()); err != nil {
@@ -43,6 +45,11 @@ func NewServer(d telemetryDB, addr string) *http.Server {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	r.NoRoute(func(c *gin.Context) {
+		c.Set(routeKey, "unmatched")
+		renderError(c, apperr.ErrNotFound)
 	})
 
 	v1 := r.Group("/v1/telemetry")
@@ -90,4 +97,18 @@ func setRoute(name string) gin.HandlerFunc {
 		c.Set(routeKey, name)
 		c.Next()
 	}
+}
+
+// panicRecoveryMiddleware recovers from panics, logs them via slog, and returns a 500 problem response.
+func panicRecoveryMiddleware() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		route, _ := c.Get(routeKey)
+		slog.Error("panic recovered",
+			"panic", recovered,
+			"route", route,
+			"request_id", c.GetHeader("X-Request-Id"),
+		)
+		renderError(c, fmt.Errorf("internal server error"))
+		c.Abort()
+	})
 }

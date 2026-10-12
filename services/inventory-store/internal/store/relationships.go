@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
 )
 
 // UpsertRelationship inserts a relationship; ignores duplicate natural key.
@@ -23,7 +22,7 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 			return Relationship{}, false, fmt.Errorf("check asset %s: %w", aid, err)
 		}
 		if !exists {
-			return Relationship{}, false, fmt.Errorf("%w: %s", apperr.ErrNotFound, aid)
+			return Relationship{}, false, fmt.Errorf("%w: %s", ErrAssetNotFound, aid)
 		}
 	}
 
@@ -103,7 +102,7 @@ func (s *Store) GetRelationshipByID(ctx context.Context, id uuid.UUID) (Relation
 		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
 		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Relationship{}, apperr.ErrNotFound
+		return Relationship{}, ErrRelationshipNotFound
 	}
 	if err != nil {
 		return Relationship{}, fmt.Errorf("get relationship by id: %w", err)
@@ -180,7 +179,7 @@ func (s *Store) GetRelationship(ctx context.Context, srcID, tgtID uuid.UUID, art
 		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
 		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Relationship{}, apperr.ErrNotFound
+		return Relationship{}, ErrRelationshipNotFound
 	}
 	if err != nil {
 		return Relationship{}, fmt.Errorf("get relationship: %w", err)
@@ -220,7 +219,7 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	}
 	for id := range seen {
 		if _, ok := found[id]; !ok {
-			return nil, fmt.Errorf("%w: %s", apperr.ErrNotFound, id)
+			return nil, fmt.Errorf("%w: %s", ErrAssetNotFound, id)
 		}
 	}
 

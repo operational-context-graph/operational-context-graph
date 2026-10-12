@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin/binding"
 	"github.com/operational-context-graph/telemetry-store/internal/config"
+	"github.com/operational-context-graph/telemetry-store/internal/database"
 	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
 	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
 	"github.com/operational-context-graph/telemetry-store/internal/store"
@@ -24,10 +26,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	if err := run(ctx); err != nil {
+		slog.Error("startup failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	var level slog.Level
@@ -40,10 +48,15 @@ func main() {
 
 	binding.EnableDecoderDisallowUnknownFields = true
 
-	db, err := store.New(ctx, cfg.DorisDSN)
+	sqlDB, err := database.Open(ctx, cfg.DorisDSN)
 	if err != nil {
-		slog.Error("open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer sqlDB.Close()
+
+	db, err := store.NewFromDB(ctx, sqlDB)
+	if err != nil {
+		return fmt.Errorf("prepare store: %w", err)
 	}
 	defer db.Close()
 
@@ -52,7 +65,6 @@ func main() {
 		slog.Info("starting telemetry-store", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "error", err)
-			os.Exit(1)
 		}
 	}()
 
@@ -61,6 +73,7 @@ func main() {
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
-		slog.Error("graceful shutdown failed", "error", err)
+		return fmt.Errorf("graceful shutdown: %w", err)
 	}
+	return nil
 }

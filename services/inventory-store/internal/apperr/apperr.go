@@ -9,10 +9,11 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrAlreadyExists = errors.New("already exists")
-	ErrInvalidInput  = errors.New("invalid input")
-	ErrConflict      = errors.New("conflict")
+	ErrNotFound             = errors.New("not found")
+	ErrAlreadyExists        = errors.New("already exists")
+	ErrInvalidInput         = errors.New("invalid input")
+	ErrConflict             = errors.New("conflict")
+	ErrUnsupportedMediaType = errors.New("unsupported media type")
 )
 
 // FieldError describes a validation failure for a single request field.

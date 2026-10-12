@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
 )
@@ -29,52 +28,18 @@ type DB struct {
 	stmtTraces *sql.Stmt
 }
 
-// New opens the connection pool with default tuning and verifies connectivity.
-func New(ctx context.Context, dsn string) (*DB, error) {
-	return NewWithConfig(ctx, dsn, 10, 3, "5m")
-}
-
-// NewWithConfig opens the connection pool with explicit tuning parameters.
-// connMaxLifetime is a duration string (e.g. "5m", "30s"); empty defaults to "5m".
-func NewWithConfig(ctx context.Context, dsn string, maxOpen, maxIdle int, connMaxLifetime string) (*DB, error) {
-	db, err := sql.Open("mysql", dsn)
+// NewFromDB creates a DB from an already-opened *sql.DB and prepares statements.
+func NewFromDB(ctx context.Context, sqlDB *sql.DB) (*DB, error) {
+	stmt, err := sqlDB.PrepareContext(ctx, queryTraceSQL)
 	if err != nil {
-		return nil, fmt.Errorf("open doris: %w", err)
-	}
-	if maxOpen <= 0 {
-		maxOpen = 10
-	}
-	if maxIdle <= 0 {
-		maxIdle = 3
-	}
-	if connMaxLifetime == "" {
-		connMaxLifetime = "5m"
-	}
-	d, err := time.ParseDuration(connMaxLifetime)
-	if err != nil {
-		d = 5 * time.Minute
-	}
-	db.SetMaxOpenConns(maxOpen)
-	db.SetMaxIdleConns(maxIdle)
-	db.SetConnMaxLifetime(d)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping doris: %w", err)
-	}
-
-	stmtTraces, err := db.PrepareContext(ctx, queryTraceSQL)
-	if err != nil {
-		db.Close()
 		return nil, fmt.Errorf("prepare traces query: %w", err)
 	}
-
-	return &DB{db: db, stmtTraces: stmtTraces}, nil
+	return &DB{db: sqlDB, stmtTraces: stmt}, nil
 }
 
-// Close releases the pool and prepared statements.
+// Close releases prepared statements. The caller is responsible for closing the underlying *sql.DB.
 func (d *DB) Close() error {
-	d.stmtTraces.Close()
-	return d.db.Close()
+	return d.stmtTraces.Close()
 }
 
 // Ping checks liveness.
@@ -85,3 +50,4 @@ func (d *DB) SchemaReady(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, "SELECT 1 FROM ocg.logs LIMIT 0")
 	return err
 }
+

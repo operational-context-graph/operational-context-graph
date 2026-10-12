@@ -5,6 +5,8 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,24 +15,40 @@ import (
 
 // problem is an RFC 9457 problem details object.
 type problem struct {
-	Type   string             `json:"type"`
-	Title  string             `json:"title"`
-	Status int                `json:"status"`
-	Detail string             `json:"detail,omitempty"`
+	Type   string              `json:"type"`
+	Title  string              `json:"title"`
+	Status int                 `json:"status"`
+	Detail string              `json:"detail,omitempty"`
 	Errors []apperr.FieldError `json:"errors,omitempty"`
 }
 
 func renderError(c *gin.Context, err error) {
 	var p problem
 	var ve *apperr.ValidationError
+	var maxBytesErr *http.MaxBytesError
 	switch {
-	case errors.As(err, &ve):
+	case errors.As(err, &maxBytesErr):
 		p = problem{
-			Type:   "https://problems.ocg.example/validation-error",
-			Title:  "Unprocessable Entity",
-			Status: http.StatusUnprocessableEntity,
+			Type:   "https://problems.ocg.example/request-entity-too-large",
+			Title:  "Request Entity Too Large",
+			Status: http.StatusRequestEntityTooLarge,
+		}
+	case errors.Is(err, apperr.ErrUnsupportedMediaType):
+		p = problem{
+			Type:   "https://problems.ocg.example/unsupported-media-type",
+			Title:  "Unsupported Media Type",
+			Status: http.StatusUnsupportedMediaType,
 			Detail: err.Error(),
-			Errors: ve.Fields,
+		}
+	case errors.As(err, &ve) || errors.Is(err, apperr.ErrInvalidInput):
+		p = problem{
+			Type:   "https://problems.ocg.example/invalid-input",
+			Title:  "Bad Request",
+			Status: http.StatusBadRequest,
+			Detail: err.Error(),
+		}
+		if ve != nil {
+			p.Errors = ve.Fields
 		}
 	case errors.Is(err, apperr.ErrNotFound):
 		p = problem{
@@ -46,14 +64,9 @@ func renderError(c *gin.Context, err error) {
 			Status: http.StatusConflict,
 			Detail: err.Error(),
 		}
-	case errors.Is(err, apperr.ErrInvalidInput):
-		p = problem{
-			Type:   "https://problems.ocg.example/invalid-input",
-			Title:  "Bad Request",
-			Status: http.StatusBadRequest,
-			Detail: err.Error(),
-		}
 	default:
+		route, _ := c.Get(routeKey)
+		slog.Error("unhandled error", "err", err, "route", route, "request_id", c.GetHeader("X-Request-Id"))
 		p = problem{
 			Type:   "https://problems.ocg.example/internal",
 			Title:  "Internal Server Error",
@@ -62,4 +75,15 @@ func renderError(c *gin.Context, err error) {
 	}
 	c.Header("Content-Type", "application/problem+json")
 	c.JSON(p.Status, p)
+}
+
+// bindErr converts a ShouldBindJSON error into the right apperr sentinel.
+// *http.MaxBytesError passes through so renderError maps it to 413;
+// everything else is wrapped as ErrInvalidInput (400).
+func bindErr(err error) error {
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
+		return mbe
+	}
+	return fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error())
 }

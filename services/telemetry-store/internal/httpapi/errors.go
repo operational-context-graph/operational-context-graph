@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +14,10 @@ import (
 
 // problem is an RFC 9457 problem details object.
 type problem struct {
-	Type   string             `json:"type"`
-	Title  string             `json:"title"`
-	Status int                `json:"status"`
-	Detail string             `json:"detail,omitempty"`
+	Type   string              `json:"type"`
+	Title  string              `json:"title"`
+	Status int                 `json:"status"`
+	Detail string              `json:"detail,omitempty"`
 	Errors []apperr.FieldError `json:"errors,omitempty"`
 }
 
@@ -24,13 +25,15 @@ func renderError(c *gin.Context, err error) {
 	var p problem
 	var ve *apperr.ValidationError
 	switch {
-	case errors.As(err, &ve):
+	case errors.As(err, &ve) || errors.Is(err, apperr.ErrInvalidInput):
 		p = problem{
-			Type:   "https://problems.ocg.example/validation-error",
-			Title:  "Unprocessable Entity",
-			Status: http.StatusUnprocessableEntity,
+			Type:   "https://problems.ocg.example/invalid-input",
+			Title:  "Bad Request",
+			Status: http.StatusBadRequest,
 			Detail: err.Error(),
-			Errors: ve.Fields,
+		}
+		if ve != nil {
+			p.Errors = ve.Fields
 		}
 	case errors.Is(err, apperr.ErrNotFound):
 		p = problem{
@@ -46,14 +49,9 @@ func renderError(c *gin.Context, err error) {
 			Status: http.StatusConflict,
 			Detail: err.Error(),
 		}
-	case errors.Is(err, apperr.ErrInvalidInput):
-		p = problem{
-			Type:   "https://problems.ocg.example/invalid-input",
-			Title:  "Bad Request",
-			Status: http.StatusBadRequest,
-			Detail: err.Error(),
-		}
 	default:
+		route, _ := c.Get(routeKey)
+		slog.Error("unhandled error", "err", err, "route", route, "request_id", c.GetHeader("X-Request-Id"))
 		p = problem{
 			Type:   "https://problems.ocg.example/internal",
 			Title:  "Internal Server Error",
