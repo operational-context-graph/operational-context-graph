@@ -15,8 +15,4 @@ func registerRoutes(engine *gin.Engine) {
 	health := handlers.NewHealth()
 	engine.GET("/healthz", health.Healthz)
 	engine.GET("/readyz", health.Readyz)
-
-	// TODO: register the Data Ingestion API routes here once the design in the
-	// software design document is implemented, for example:
-	//   api := engine.Group("/api/v1")
 }

@@ -6,10 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Data Ingestion service
 
-The Data Ingestion service ingests operational data into the Operational
-Context Graph. This directory currently holds the initial scaffold; the
-ingestion pipeline from the software design document is implemented in later
-changes.
+The Data Ingestion service is the entry point for all data that is ingested into the OCG.
 
 ## Layout
 
