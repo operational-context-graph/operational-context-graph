@@ -122,6 +122,7 @@ terraform.rc
 
 # Generated
 gen/
+sbom.spdx.json
 
 # OpenSpec working artifacts (openspec/specs/ and openspec/config.yaml stay tracked)
 openspec/changes/

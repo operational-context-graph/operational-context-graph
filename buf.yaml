@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  # IngestionService.Ingest and BackfillService.Ingest share IngestRequest/IngestResponse
+  # by design: backfill replays the same envelope shape as live ingest. Scope this exception
+  # to the ingestion module only — every other proto under proto/ keeps full STANDARD lint.
+  ignore_only:
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/ocg/ingestion
+breaking:
+  use:
+    - FILE

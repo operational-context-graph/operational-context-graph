@@ -6,6 +6,9 @@
 # Default ownership
 * @operational-context-graph/sap-dev
 
+# Proto interface definitions
+/proto/ @operational-context-graph/architects
+
 # Repository administration
 /.github/CODEOWNERS @operational-context-graph/repository-admins
 
