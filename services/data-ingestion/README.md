@@ -45,19 +45,19 @@ See [`configs/config.example.yaml`](configs/config.example.yaml).
 To run the application with a custom config file:
 
 ```bash
-OCG_DI_CONFIG_FILE=configs/config.example.yaml make di-run
+OCG_DI_CONFIG_FILE=configs/config.example.yaml make run
 ```
 
 ## Development
 
-Run all commands from the repository root through `make`:
+Run commands from within this directory:
 
 ```bash
-make di-build   # build
-make di-vet     # go vet
-make di-test    # race tests with coverage
-make di-tidy    # tidy go.mod
-make di-mocks   # regenerate mocks (requires mockery)
+make build   # build
+make vet     # go vet
+make test    # race tests with coverage
+make tidy    # tidy go.mod
+make mocks   # regenerate mocks (requires mockery)
 ```
 
 ## Local deployment (minikube)

@@ -4,7 +4,7 @@
 
 # Optional mockery configuration (github.com/vektra/mockery).
 # Generated mocks use testify/mock, so they introduce no new paradigm.
-# Run `make di-mocks` to regenerate. Adopt per component only where interfaces
+# Run `make mocks` to regenerate. Adopt per component only where interfaces
 # are large or change frequently.
 with-expecter: true
 dir: "mocks"

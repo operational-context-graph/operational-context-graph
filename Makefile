@@ -12,45 +12,33 @@ SHELL := /usr/bin/env bash
 SERVICE_DI := services/data-ingestion
 COVERAGE_DIR := $(CURDIR)/coverage
 
-.PHONY: help build run test lint vet \
-	di-build di-run di-test di-lint di-vet di-tidy di-mocks \
+.PHONY: help build run test lint vet tidy mocks \
 	proto-lint proto-format proto-generate
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-build: di-build ## Build all services
-run: di-run ## Run the data-ingestion service (dev)
-test: di-test ## Test all services
-lint: di-lint ## Lint all services
-vet: di-vet ## Vet all services
+build: proto-generate ## Build all services
+	$(MAKE) -C $(SERVICE_DI) build
 
-di-build: ## Build the data-ingestion service
-	cd $(SERVICE_DI) && go build ./...
+run: ## Run the data-ingestion service (dev)
+	$(MAKE) -C $(SERVICE_DI) run
 
-di-run: ## Run the data-ingestion service from source
-	cd $(SERVICE_DI) && go run ./cmd/data-ingestion
+vet: ## Vet all services
+	$(MAKE) -C $(SERVICE_DI) vet
 
-di-vet: ## Run go vet on the data-ingestion service
-	cd $(SERVICE_DI) && go vet ./...
+test: ## Test all services
+	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
 
-di-test: ## Test data-ingestion with race detector and coverage
-	mkdir -p $(COVERAGE_DIR)
-	cd $(SERVICE_DI) && go test ./... -race -coverprofile=$(COVERAGE_DIR)/data-ingestion.out
+lint: ## Lint all services
+	$(MAKE) -C $(SERVICE_DI) lint
 
-di-lint: ## Lint data-ingestion (golangci-lint if available, else go vet)
-	cd $(SERVICE_DI) && if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found; running go vet"; go vet ./...; \
-	fi
+tidy: ## Tidy go.mod files
+	$(MAKE) -C $(SERVICE_DI) tidy
 
-di-tidy: ## Tidy the data-ingestion go.mod
-	cd $(SERVICE_DI) && go mod tidy
-
-di-mocks: ## Generate mocks for data-ingestion (requires mockery)
-	cd $(SERVICE_DI) && mockery
+mocks: ## Regenerate mocks
+	$(MAKE) -C $(SERVICE_DI) mocks
 
 proto-lint:
 	buf lint
