@@ -21,14 +21,12 @@ const (
 	routeUpsertAsset      = "upsert-asset"
 	routeUpsertAssetBatch = "upsert-asset-batch"
 	routeGetAsset         = "get-asset"
-	routeGetAssetBySource = "get-asset-by-source"
 	routeListAssets       = "list-assets"
 )
 
 func registerAssetRoutes(rg *gin.RouterGroup, d db) {
 	rg.POST("/assets", setRoute(routeUpsertAsset), handleUpsertAsset(d))
 	rg.POST("/assets/batch", setRoute(routeUpsertAssetBatch), handleUpsertAssetBatch(d))
-	rg.GET("/assets/by-source", setRoute(routeGetAssetBySource), handleGetAssetBySource(d))
 	rg.GET("/assets/:id", setRoute(routeGetAsset), handleGetAsset(d))
 	rg.GET("/assets", setRoute(routeListAssets), handleListAssets(d))
 }
@@ -91,22 +89,6 @@ func handleGetAsset(d db) gin.HandlerFunc {
 	}
 }
 
-func handleGetAssetBySource(d db) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		source := c.Query("source")
-		sourceID := c.Query("source_id")
-		if source == "" || sourceID == "" {
-			renderError(c, fmt.Errorf("%w: source and source_id are required", apperr.ErrInvalidInput))
-			return
-		}
-		asset, err := d.GetAssetByExternal(c.Request.Context(), source, sourceID)
-		if err != nil {
-			renderError(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, toAssetResponse(asset))
-	}
-}
 
 func handleListAssets(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -40,9 +40,6 @@ func (s *stubDB) GetAsset(ctx context.Context, id uuid.UUID) (store.Asset, error
 	}
 	return store.Asset{}, nil
 }
-func (s *stubDB) GetAssetByExternal(_ context.Context, _, _ string) (store.Asset, error) {
-	return store.Asset{}, apperr.ErrNotFound
-}
 func (s *stubDB) ListAssets(_ context.Context, _, _ string, _ int, _ *store.Cursor) ([]store.Asset, *store.Cursor, error) {
 	return nil, nil, nil
 }
@@ -166,12 +163,7 @@ func TestHandleFilterRelationships_EmptyResult(t *testing.T) {
 	assert.Empty(t, resp.Items)
 }
 
-func TestHandleGetAssetBySource_MissingParams(t *testing.T) {
-	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/assets/by-source?source=cmdb")
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
-}
+
 
 func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")

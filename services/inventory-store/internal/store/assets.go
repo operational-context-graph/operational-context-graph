@@ -116,25 +116,6 @@ func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return a, nil
 }
 
-// GetAssetByExternal fetches the current version of an asset by (source_system, source_id).
-func (s *Store) GetAssetByExternal(ctx context.Context, sourceSystem, sourceID string) (Asset, error) {
-	const q = `SELECT id, artifact_type, source_system, source_id, extensions,
-               created_at, created_at_source, last_updated_at_source, valid_from, valid_to
-               FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
-	row := s.pool.QueryRow(ctx, q, sourceSystem, sourceID)
-	var a Asset
-	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
-		&a.Extensions, &a.CreatedAt,
-		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Asset{}, ErrAssetNotFound
-	}
-	if err != nil {
-		return Asset{}, fmt.Errorf("get asset by external: %w", err)
-	}
-	return a, nil
-}
-
 // ListAssets returns a page of current assets filtered by artifact_type or source_system.
 func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem string, limit int, after *Cursor) ([]Asset, *Cursor, error) {
 	if limit <= 0 || limit > 1000 {
