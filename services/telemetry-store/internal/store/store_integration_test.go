@@ -43,7 +43,9 @@ func TestMain(m *testing.M) {
 
 func newStore(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.New(context.Background(), os.Getenv("TEST_DB_URL"))
+	sqlDB, err := sql.Open("mysql", os.Getenv("TEST_DB_URL"))
+	require.NoError(t, err)
+	db, err := store.NewFromDB(context.Background(), sqlDB)
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 	return db

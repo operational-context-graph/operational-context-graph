@@ -209,3 +209,76 @@ func TestRequestIDMiddleware_EchoesExistingHeader(t *testing.T) {
 	srv.Handler.ServeHTTP(rr, req)
 	assert.Equal(t, "my-fixed-id", rr.Header().Get("X-Request-Id"))
 }
+
+func TestHandleUpsertAsset_MissingRequiredFields_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+
+	tests := []struct {
+		name    string
+		body    map[string]any
+		wantErr []string
+	}{
+		{
+			name:    "all empty",
+			body:    map[string]any{},
+			wantErr: []string{"artifact_type", "source_system", "source_id"},
+		},
+		{
+			name:    "missing source_id",
+			body:    map[string]any{"artifact_type": "server", "source_system": "cmdb"},
+			wantErr: []string{"source_id"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := test.PostJSON(t, srv.Handler, "/v1/assets", tc.body)
+			require.Equal(t, http.StatusBadRequest, rr.Code)
+			assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+
+			var prob struct {
+				Status int `json:"status"`
+				Errors []struct {
+					Field string `json:"field"`
+				} `json:"errors"`
+			}
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&prob))
+			assert.Equal(t, http.StatusBadRequest, prob.Status)
+
+			got := make([]string, len(prob.Errors))
+			for i, e := range prob.Errors {
+				got[i] = e.Field
+			}
+			for _, want := range tc.wantErr {
+				assert.Contains(t, got, want)
+			}
+		})
+	}
+}
+
+func TestHandleUpsertRelationship_MissingRequiredFields_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+
+	rr := test.PostJSON(t, srv.Handler, "/v1/relationships", map[string]any{
+		"source_asset_id": uuid.New().String(),
+		"target_asset_id": uuid.New().String(),
+	})
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+
+	var prob struct {
+		Status int `json:"status"`
+		Errors []struct {
+			Field string `json:"field"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&prob))
+	assert.Equal(t, http.StatusBadRequest, prob.Status)
+
+	got := make([]string, len(prob.Errors))
+	for i, e := range prob.Errors {
+		got[i] = e.Field
+	}
+	assert.Contains(t, got, "artifact_type")
+	assert.Contains(t, got, "source_system")
+}

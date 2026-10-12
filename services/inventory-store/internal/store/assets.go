@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -32,7 +33,7 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	var cur struct {
 		id                  uuid.UUID
-		lastUpdatedAtSource *string
+		lastUpdatedAtSource *time.Time
 	}
 	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(&cur.id, &cur.lastUpdatedAtSource)
 	rowExists := true
@@ -44,7 +45,7 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	// Temporal dedup: skip new version if last_updated_at_source unchanged.
 	if rowExists && in.LastUpdatedAtSource != nil && cur.lastUpdatedAtSource != nil {
-		existing := *cur.lastUpdatedAtSource
+		existing := cur.lastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
 		incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
 		if existing == incoming {
 			// Re-delivery — return existing current row without creating a new version.
@@ -203,7 +204,7 @@ RETURNING id`
 	for _, in := range inputs {
 		// Temporal dedup check.
 		var curID uuid.UUID
-		var curLUAS *string
+		var curLUAS *time.Time
 		err := tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(&curID, &curLUAS)
 		rowExists := true
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -214,7 +215,7 @@ RETURNING id`
 
 		if rowExists && in.LastUpdatedAtSource != nil && curLUAS != nil {
 			incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-			if *curLUAS == incoming {
+			if curLUAS.UTC().Format("2006-01-02T15:04:05.999999999Z07:00") == incoming {
 				results = append(results, BatchResult{ID: curID, Outcome: "updated"})
 				continue
 			}

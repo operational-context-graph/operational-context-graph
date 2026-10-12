@@ -14,33 +14,29 @@ import (
 // maxTraceResults caps the result set for QueryTraceByID.
 const maxTraceResults = 10000
 
-const queryTraceSQL = `/*+ SET_VAR(query_timeout=25000) */
-SELECT timestamp, record_id, host, trace_id, span_id, parent_span_id,
+const queryTraceSQL = `SELECT timestamp, record_id, host, trace_id, span_id, parent_span_id,
        span_name, duration_nanos, status_code, CAST(attributes AS STRING)
 FROM ocg.traces
 WHERE timestamp >= ? AND timestamp < ? AND trace_id = ?
 ORDER BY timestamp, record_id
-LIMIT ?`
+LIMIT %d`
 
-// DB wraps the Doris MySQL connection pool and its prepared statements.
+// DB wraps the Doris MySQL connection pool.
 type DB struct {
-	db         *sql.DB
-	stmtTraces *sql.Stmt
+	db *sql.DB
 }
 
-// NewFromDB creates a DB from an already-opened *sql.DB and prepares statements.
+// NewFromDB creates a DB from an already-opened *sql.DB.
 func NewFromDB(ctx context.Context, sqlDB *sql.DB) (*DB, error) {
-	stmt, err := sqlDB.PrepareContext(ctx, queryTraceSQL)
-	if err != nil {
-		return nil, fmt.Errorf("prepare traces query: %w", err)
+	// Verify the schema is reachable before returning.
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("ping doris: %w", err)
 	}
-	return &DB{db: sqlDB, stmtTraces: stmt}, nil
+	return &DB{db: sqlDB}, nil
 }
 
-// Close releases prepared statements. The caller is responsible for closing the underlying *sql.DB.
-func (d *DB) Close() error {
-	return d.stmtTraces.Close()
-}
+// Close is a no-op — the caller owns the underlying *sql.DB.
+func (d *DB) Close() error { return nil }
 
 // Ping checks liveness.
 func (d *DB) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }

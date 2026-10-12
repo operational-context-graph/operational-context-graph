@@ -38,6 +38,14 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 			renderError(c, bindErr(err))
 			return
 		}
+		if err := validateRequired(
+			requiredField{"artifact_type", req.ArtifactType},
+			requiredField{"source_system", req.SourceSystem},
+			requiredField{"source_id", req.SourceID},
+		); err != nil {
+			renderError(c, err)
+			return
+		}
 		in := store.AssetInput{
 			ArtifactType: req.ArtifactType,
 			SourceSystem: req.SourceSystem,
@@ -89,11 +97,10 @@ func handleGetAsset(d db) gin.HandlerFunc {
 	}
 }
 
-
 func handleListAssets(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		artifactType := c.Query("type")
-		source := c.Query("source")
+		source := c.Query("source_system")
 		limit, _ := strconv.Atoi(c.Query("limit"))
 		if limit <= 0 {
 			limit = 100
@@ -133,6 +140,14 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 		}
 		inputs := make([]store.AssetInput, len(req.Assets))
 		for i, a := range req.Assets {
+			if err := validateRequired(
+				requiredField{"artifact_type", a.ArtifactType},
+				requiredField{"source_system", a.SourceSystem},
+				requiredField{"source_id", a.SourceID},
+			); err != nil {
+				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
+				return
+			}
 			in := store.AssetInput{
 				ArtifactType: a.ArtifactType,
 				SourceSystem: a.SourceSystem,

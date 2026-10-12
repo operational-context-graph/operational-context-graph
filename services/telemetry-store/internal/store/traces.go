@@ -13,11 +13,11 @@ import (
 
 // QueryTraceByID returns all spans for a trace_id within the time window.
 func (d *DB) QueryTraceByID(ctx context.Context, traceID string, from, to time.Time) ([]Trace, error) {
-	rows, err := d.stmtTraces.QueryContext(ctx,
+	q := fmt.Sprintf(queryTraceSQL, maxTraceResults)
+	rows, err := d.db.QueryContext(ctx, q,
 		from.UTC().Format("2006-01-02 15:04:05.000000"),
 		to.UTC().Format("2006-01-02 15:04:05.000000"),
-		traceID,
-		maxTraceResults)
+		traceID)
 	if err != nil {
 		return nil, fmt.Errorf("query trace: %w", err)
 	}

@@ -40,6 +40,13 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			renderError(c, bindErr(err))
 			return
 		}
+		if err := validateRequired(
+			requiredField{"artifact_type", req.ArtifactType},
+			requiredField{"source_system", req.SourceSystem},
+		); err != nil {
+			renderError(c, err)
+			return
+		}
 		in := store.RelationshipInput{
 			SourceAssetID: req.SourceAssetID,
 			TargetAssetID: req.TargetAssetID,
@@ -165,6 +172,13 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 		}
 		inputs := make([]store.RelationshipInput, len(req.Relationships))
 		for i, r := range req.Relationships {
+			if err := validateRequired(
+				requiredField{"artifact_type", r.ArtifactType},
+				requiredField{"source_system", r.SourceSystem},
+			); err != nil {
+				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
+				return
+			}
 			in := store.RelationshipInput{
 				SourceAssetID: r.SourceAssetID,
 				TargetAssetID: r.TargetAssetID,
