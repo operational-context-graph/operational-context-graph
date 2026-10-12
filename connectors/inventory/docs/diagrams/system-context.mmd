@@ -1,0 +1,23 @@
+---
+title: OCG Inventory Connector — System Context
+---
+C4Context
+    Person(operator, "DC Operations Engineer", "Monitors connector runs, inspects IKB")
+
+    System_Boundary(ocg, "Operational Context Graph") {
+        System(ingestion, "Data Ingestion", "Validates, normalises, writes canonical records via IngestionService gRPC")
+        System(ikb, "Infrastructure Knowledge Base", "Stores canonical inventory entities")
+        System(vault, "Secrets Vault (OpenBao)", "Issues X.509 service account certificates")
+        System(registry, "Schema Registry", "Validates logical_artifact_id + schema_version per envelope")
+    }
+
+    System_Ext(netbox, "NetBox", "DCIM/IPAM source of truth — REST API, paginated list endpoints")
+    System(connector, "connectors/inventory", "Reads NetBox, delivers raw records via IngestionService")
+
+    Rel(vault, connector, "Provides mTLS cert+key", "k8s secret mount")
+    Rel(connector, netbox, "Paginated GET", "HTTPS + token auth")
+    Rel(connector, ingestion, "IngestionService.Ingest", "gRPC / mTLS")
+    Rel(ingestion, registry, "Validates schema", "internal")
+    Rel(ingestion, ikb, "Writes canonical records", "internal")
+    Rel(operator, connector, "Observes exit code + summary log", "k8s Job logs")
+    Rel(operator, ikb, "Queries inventory", "OCG API")
