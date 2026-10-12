@@ -59,12 +59,7 @@ jobs:
       - name: Build Go modules
         if: matrix.language == 'go'
         run: |
-          find . -type f -name go.mod -not -path './.git/*' -not -path '*/vendor/*' \
-            -exec dirname {} \; | sort -u | while IFS= read -r mod; do
-              echo "::group::build $mod"
-              ( cd "$mod" && go build ./... )
-              echo "::endgroup::"
-          done
+          make build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
