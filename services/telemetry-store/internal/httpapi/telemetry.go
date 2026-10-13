@@ -18,13 +18,11 @@ import (
 const (
 	routeQueryLogs    = "query-logs"
 	routeQueryMetrics = "query-metrics"
-	routeQueryTrace   = "query-trace"
 )
 
 func registerTelemetryRoutes(rg *gin.RouterGroup, d telemetryDB) {
 	rg.GET("/logs", setRoute(routeQueryLogs), handleQueryLogs(d))
 	rg.GET("/metrics", setRoute(routeQueryMetrics), handleQueryMetrics(d))
-	rg.GET("/traces/:traceID", setRoute(routeQueryTrace), handleQueryTrace(d))
 }
 
 func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
@@ -132,70 +130,6 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 		resp := v1.MetricListResponse{Items: items}
 		if len(metrics) >= mq.Limit && mq.Limit > 0 {
 			last := metrics[len(metrics)-1]
-			cur := store.Cursor{TS: last.Timestamp, IRI: last.IRI}
-			resp.NextCursor = cur.Encode()
-		}
-		c.JSON(http.StatusOK, resp)
-	}
-}
-
-func handleQueryTrace(d telemetryDB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		traceID := c.Param("traceID")
-		if traceID == "" {
-			renderError(c, fmt.Errorf("%w: traceID required", apperr.ErrInvalidInput))
-			return
-		}
-		q, err := parseTimeRange(c)
-		if err != nil {
-			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
-			return
-		}
-		limit := parseLimit(c)
-		tq := store.TraceQuery{
-			From:    q.from,
-			To:      q.to,
-			TraceID: traceID,
-			Limit:   limit,
-		}
-		if after := c.Query("after"); after != "" {
-			cur, err := store.DecodeCursor(after)
-			if err != nil {
-				renderError(c, fmt.Errorf("%w: invalid cursor", apperr.ErrInvalidInput))
-				return
-			}
-			tq.AfterTS = &cur.TS
-			tq.AfterIRI = &cur.IRI
-		}
-		traces, err := d.QueryTraces(c.Request.Context(), tq)
-		if err != nil {
-			renderError(c, err)
-			return
-		}
-		items := make([]v1.TraceResponse, len(traces))
-		for i, t := range traces {
-			item := v1.TraceResponse{
-				Timestamp:          t.Timestamp.UTC().Format(time.RFC3339Nano),
-				IRI:                t.IRI,
-				HostName:           t.HostName,
-				TraceID:            t.TraceID,
-				SpanID:             t.SpanID,
-				ParentSpanID:       t.ParentSpanID,
-				SpanName:           t.SpanName,
-				DurationNanos:      t.DurationNanos,
-				StatusCode:         t.StatusCode,
-				ResourceAttributes: t.ResourceAttributes,
-				Attributes:         t.Attributes,
-			}
-			if t.ObservedTimestamp != nil {
-				s := t.ObservedTimestamp.UTC().Format(time.RFC3339Nano)
-				item.ObservedTimestamp = &s
-			}
-			items[i] = item
-		}
-		resp := v1.TraceListResponse{Items: items}
-		if len(traces) >= tq.Limit && tq.Limit > 0 {
-			last := traces[len(traces)-1]
 			cur := store.Cursor{TS: last.Timestamp, IRI: last.IRI}
 			resp.NextCursor = cur.Encode()
 		}

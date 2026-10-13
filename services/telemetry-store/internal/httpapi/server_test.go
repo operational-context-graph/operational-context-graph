@@ -27,7 +27,6 @@ import (
 type stubTelemetryDB struct {
 	queryLogsFn    func(ctx context.Context, q store.LogQuery) ([]store.Log, error)
 	queryMetricsFn func(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
-	queryTracesFn  func(ctx context.Context, q store.TraceQuery) ([]store.Trace, error)
 }
 
 func (s *stubTelemetryDB) QueryLogs(ctx context.Context, q store.LogQuery) ([]store.Log, error) {
@@ -39,12 +38,6 @@ func (s *stubTelemetryDB) QueryLogs(ctx context.Context, q store.LogQuery) ([]st
 func (s *stubTelemetryDB) QueryMetrics(ctx context.Context, q store.MetricQuery) ([]store.Metric, error) {
 	if s.queryMetricsFn != nil {
 		return s.queryMetricsFn(ctx, q)
-	}
-	return nil, nil
-}
-func (s *stubTelemetryDB) QueryTraces(ctx context.Context, q store.TraceQuery) ([]store.Trace, error) {
-	if s.queryTracesFn != nil {
-		return s.queryTracesFn(ctx, q)
 	}
 	return nil, nil
 }
@@ -113,55 +106,7 @@ func TestHandleQueryMetrics_MissingParams(t *testing.T) {
 func TestHandleQueryTrace_MissingParams(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
 	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/abc")
-	require.Equal(t, http.StatusOK, rr.Code)
-}
-
-func TestHandleQueryTrace_EmitsNextCursor(t *testing.T) {
-	now := time.Now().UTC()
-	spanID := "span-1"
-	stub := &stubTelemetryDB{
-		queryTracesFn: func(_ context.Context, q store.TraceQuery) ([]store.Trace, error) {
-			spans := make([]store.Trace, q.Limit)
-			for i := range spans {
-				spans[i] = store.Trace{Timestamp: now, IRI: "r1", SpanID: &spanID}
-			}
-			return spans, nil
-		},
-	}
-	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
-
-	from := now.Add(-time.Minute).Format(time.RFC3339)
-	to := now.Add(time.Minute).Format(time.RFC3339)
-	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/trace-abc?from="+from+"&to="+to+"&limit=10")
-
-	require.Equal(t, http.StatusOK, rr.Code)
-	var resp v1.TraceListResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Len(t, resp.Items, 10)
-	assert.NotEmpty(t, resp.NextCursor)
-}
-
-func TestHandleQueryTrace_CursorForwardedToStore(t *testing.T) {
-	now := time.Now().UTC()
-	var capturedQuery store.TraceQuery
-	stub := &stubTelemetryDB{
-		queryTracesFn: func(_ context.Context, q store.TraceQuery) ([]store.Trace, error) {
-			capturedQuery = q
-			return nil, nil
-		},
-	}
-	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
-
-	cur := store.Cursor{TS: now.Add(-time.Second), IRI: "prev-iri"}
-	from := now.Add(-time.Minute).Format(time.RFC3339)
-	to := now.Add(time.Minute).Format(time.RFC3339)
-	rr := test.GetRequest(t, srv.Handler,
-		"/v1/telemetry/traces/trace-abc?from="+from+"&to="+to+"&after="+cur.Encode())
-
-	require.Equal(t, http.StatusOK, rr.Code)
-	require.NotNil(t, capturedQuery.AfterTS)
-	require.NotNil(t, capturedQuery.AfterIRI)
-	assert.Equal(t, "prev-iri", *capturedQuery.AfterIRI)
+	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestHealthEndpoint_OK(t *testing.T) {

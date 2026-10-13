@@ -27,22 +27,6 @@ type MetricResponse struct {
 	Attributes         *string  `json:"attributes,omitempty"`
 }
 
-// TraceResponse is one trace span returned by GET /v1/telemetry/traces/:traceID.
-type TraceResponse struct {
-	Timestamp          string  `json:"timestamp"`
-	IRI                string  `json:"iri"`
-	ObservedTimestamp  *string `json:"observed_timestamp,omitempty"`
-	HostName           *string `json:"host_name,omitempty"`
-	TraceID            *string `json:"trace_id,omitempty"`
-	SpanID             *string `json:"span_id,omitempty"`
-	ParentSpanID       *string `json:"parent_span_id,omitempty"`
-	SpanName           *string `json:"span_name,omitempty"`
-	DurationNanos      *int64  `json:"duration_nanos,omitempty"`
-	StatusCode         *string `json:"status_code,omitempty"`
-	ResourceAttributes *string `json:"resource_attributes,omitempty"`
-	Attributes         *string `json:"attributes,omitempty"`
-}
-
 // LogListResponse is the body for GET /v1/telemetry/logs.
 type LogListResponse struct {
 	Items      []LogResponse `json:"items"`
@@ -55,13 +39,7 @@ type MetricListResponse struct {
 	NextCursor string           `json:"next_cursor,omitempty"`
 }
 
-// TraceListResponse is the body for GET /v1/telemetry/traces/:traceID.
-type TraceListResponse struct {
-	Items      []TraceResponse `json:"items"`
-	NextCursor string          `json:"next_cursor,omitempty"`
-}
-
-// IngestResponse is the body for POST /v1/telemetry/{logs,metrics,traces}.
+// IngestResponse is the body for POST /v1/telemetry/{logs,metrics}.
 type IngestResponse struct {
 	LoadedRows   int64  `json:"loaded_rows"`
 	FilteredRows int64  `json:"filtered_rows,omitempty"`

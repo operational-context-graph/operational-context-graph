@@ -11,9 +11,6 @@ import (
 	_ "github.com/go-mysql-org/go-mysql/driver"
 )
 
-// maxTraceResults caps the result set for QueryTraceByID.
-const maxTraceResults = 10000
-
 // DB wraps the Doris MySQL connection pool.
 type DB struct {
 	db *sql.DB

@@ -12,5 +12,4 @@ import (
 var (
 	ErrLogNotFound    = fmt.Errorf("log not found: %w", apperr.ErrNotFound)
 	ErrMetricNotFound = fmt.Errorf("metric not found: %w", apperr.ErrNotFound)
-	ErrTraceNotFound  = fmt.Errorf("trace not found: %w", apperr.ErrNotFound)
 )

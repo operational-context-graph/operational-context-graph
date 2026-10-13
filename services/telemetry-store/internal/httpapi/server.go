@@ -22,7 +22,6 @@ const routeKey = "route"
 type telemetryDB interface {
 	QueryLogs(ctx context.Context, q store.LogQuery) ([]store.Log, error)
 	QueryMetrics(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
-	QueryTraces(ctx context.Context, q store.TraceQuery) ([]store.Trace, error)
 	Ping(ctx context.Context) error
 	SchemaReady(ctx context.Context) error
 }

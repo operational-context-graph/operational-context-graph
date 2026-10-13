@@ -71,15 +71,6 @@ func insertMetric(t *testing.T, ts time.Time, iri, hostName, metricName string, 
 	require.NoError(t, err)
 }
 
-func insertTrace(t *testing.T, ts time.Time, iri, hostName, traceID, spanID string) {
-	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.traces (timestamp, iri, host_name, trace_id, span_id) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, traceID, spanID,
-	)
-	_, err := testDB.Exec(q)
-	require.NoError(t, err)
-}
 
 func TestPing(t *testing.T) {
 	db := newStore(t)
@@ -162,65 +153,4 @@ func TestQueryMetrics_TimeRange(t *testing.T) {
 	assert.True(t, found, "inserted metric row must appear in time-range query")
 }
 
-func TestQueryTraceByID(t *testing.T) {
-	ctx := context.Background()
-	db := newStore(t)
 
-	ts := time.Now().UTC().Truncate(time.Millisecond)
-	traceID := "4bf92f3577b34da6" + ts.Format("15040500")
-	iri := "urn:ocg:span:test:" + ts.Format("150405000")
-	insertTrace(t, ts, iri, "host-t", traceID, "span-001")
-
-	from := ts.Add(-time.Minute)
-	to := ts.Add(time.Minute)
-	spans, err := db.QueryTraceByID(ctx, traceID, from, to)
-	require.NoError(t, err)
-
-	var found bool
-	for _, s := range spans {
-		if s.IRI == iri {
-			found = true
-			require.NotNil(t, s.TraceID)
-			assert.Equal(t, traceID, *s.TraceID)
-		}
-	}
-	assert.True(t, found, "inserted trace span must appear in QueryTraceByID result")
-}
-
-func TestQueryTraces_KeysetCursor(t *testing.T) {
-	ctx := context.Background()
-	db := newStore(t)
-
-	base := time.Now().UTC().Truncate(time.Millisecond)
-	traceID := "4bf92f3577b34da6" + base.Format("15040500")
-
-	var iris []string
-	for i := 0; i < 3; i++ {
-		ts := base.Add(time.Duration(i) * time.Millisecond)
-		iri := fmt.Sprintf("urn:ocg:span:test:ks-%s-%d", base.Format("150405000"), i)
-		iris = append(iris, iri)
-		insertTrace(t, ts, iri, "host-ks", traceID, fmt.Sprintf("span-%03d", i))
-	}
-
-	from := base.Add(-time.Minute)
-	to := base.Add(time.Minute)
-
-	first, err := db.QueryTraces(ctx, store.TraceQuery{From: from, To: to, TraceID: traceID, Limit: 2})
-	require.NoError(t, err)
-	require.Len(t, first, 2)
-
-	last := first[len(first)-1]
-	second, err := db.QueryTraces(ctx, store.TraceQuery{
-		From: from, To: to, TraceID: traceID, Limit: 2,
-		AfterTS:  &last.Timestamp,
-		AfterIRI: &last.IRI,
-	})
-	require.NoError(t, err)
-	require.Len(t, second, 1)
-
-	for _, s := range first {
-		for _, r := range second {
-			assert.NotEqual(t, s.IRI, r.IRI, "pages must not overlap")
-		}
-	}
-}
