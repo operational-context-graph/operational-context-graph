@@ -68,7 +68,7 @@ func TestHandleQueryLogs_OK(t *testing.T) {
 	stub := &stubTelemetryDB{
 		queryLogsFn: func(_ context.Context, _ store.LogQuery) ([]store.Log, error) {
 			body := "hello"
-			return []store.Log{{Timestamp: now, RecordID: "r1", Body: &body}}, nil
+			return []store.Log{{Timestamp: now, IRI: "r1", Body: &body}}, nil
 		},
 	}
 	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
@@ -81,7 +81,7 @@ func TestHandleQueryLogs_OK(t *testing.T) {
 	var resp v1.LogListResponse
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Len(t, resp.Items, 1)
-	assert.Equal(t, "r1", resp.Items[0].RecordID)
+	assert.Equal(t, "r1", resp.Items[0].IRI)
 }
 
 func TestHandleQueryLogs_MissingParams(t *testing.T) {
@@ -123,7 +123,7 @@ func TestHandleQueryTrace_EmitsNextCursor(t *testing.T) {
 		queryTracesFn: func(_ context.Context, q store.TraceQuery) ([]store.Trace, error) {
 			spans := make([]store.Trace, q.Limit)
 			for i := range spans {
-				spans[i] = store.Trace{Timestamp: now, RecordID: "r1", SpanID: &spanID}
+				spans[i] = store.Trace{Timestamp: now, IRI: "r1", SpanID: &spanID}
 			}
 			return spans, nil
 		},
@@ -152,7 +152,7 @@ func TestHandleQueryTrace_CursorForwardedToStore(t *testing.T) {
 	}
 	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
 
-	cur := store.Cursor{TS: now.Add(-time.Second), RecordID: "prev-record"}
+	cur := store.Cursor{TS: now.Add(-time.Second), IRI: "prev-iri"}
 	from := now.Add(-time.Minute).Format(time.RFC3339)
 	to := now.Add(time.Minute).Format(time.RFC3339)
 	rr := test.GetRequest(t, srv.Handler,
@@ -160,8 +160,8 @@ func TestHandleQueryTrace_CursorForwardedToStore(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NotNil(t, capturedQuery.AfterTS)
-	require.NotNil(t, capturedQuery.AfterRecordID)
-	assert.Equal(t, "prev-record", *capturedQuery.AfterRecordID)
+	require.NotNil(t, capturedQuery.AfterIRI)
+	assert.Equal(t, "prev-iri", *capturedQuery.AfterIRI)
 }
 
 func TestHealthEndpoint_OK(t *testing.T) {

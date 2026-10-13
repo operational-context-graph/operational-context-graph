@@ -29,16 +29,17 @@ func (d *DB) QueryTraces(ctx context.Context, q TraceQuery) ([]Trace, error) {
 		q.TraceID,
 	}
 
-	if q.AfterTS != nil && q.AfterRecordID != nil {
+	if q.AfterTS != nil && q.AfterIRI != nil {
 		// Doris does not support row-value comparisons; use the expanded equivalent.
 		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
 		where += " AND (timestamp > ? OR (timestamp = ? AND iri > ?))"
-		args = append(args, tsStr, tsStr, *q.AfterRecordID)
+		args = append(args, tsStr, tsStr, *q.AfterIRI)
 	}
 
 	stmt := fmt.Sprintf(
-		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri AS record_id, host_name AS host, trace_id, span_id, parent_span_id,
-		 span_name, duration_nanos, status_code, CAST(attributes AS STRING)
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri, observed_timestamp, host_name,
+		 trace_id, span_id, parent_span_id, span_name, duration_nanos, status_code,
+		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
 		 FROM ocg.traces %s ORDER BY timestamp, iri LIMIT %d`, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
@@ -51,11 +52,18 @@ func (d *DB) QueryTraces(ctx context.Context, q TraceQuery) ([]Trace, error) {
 	for rows.Next() {
 		var t Trace
 		var ts dorissql.DateTime
-		if err := rows.Scan(&ts, &t.RecordID, &t.Host, &t.TraceID, &t.SpanID,
-			&t.ParentSpanID, &t.SpanName, &t.DurationNanos, &t.StatusCode, &t.Attributes); err != nil {
+		var obsTS dorissql.NullDateTime
+		if err := rows.Scan(&ts, &t.IRI, &obsTS, &t.HostName,
+			&t.TraceID, &t.SpanID, &t.ParentSpanID, &t.SpanName,
+			&t.DurationNanos, &t.StatusCode,
+			&t.ResourceAttributes, &t.Attributes); err != nil {
 			return nil, fmt.Errorf("scan trace: %w", err)
 		}
 		t.Timestamp = ts.Time
+		if obsTS.Valid {
+			ot := obsTS.Time
+			t.ObservedTimestamp = &ot
+		}
 		traces = append(traces, t)
 	}
 	return traces, rows.Err()

@@ -38,7 +38,7 @@ func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
 		lq := store.LogQuery{
 			From:     q.from,
 			To:       q.to,
-			Host:     c.Query("host"),
+			HostName: c.Query("host_name"),
 			Severity: c.Query("severity"),
 			Limit:    limit,
 		}
@@ -49,7 +49,7 @@ func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
 				return
 			}
 			lq.AfterTS = &cur.TS
-			lq.AfterRecordID = &cur.RecordID
+			lq.AfterIRI = &cur.IRI
 		}
 		logs, err := d.QueryLogs(c.Request.Context(), lq)
 		if err != nil {
@@ -58,20 +58,25 @@ func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
 		}
 		items := make([]v1.LogResponse, len(logs))
 		for i, l := range logs {
-			items[i] = v1.LogResponse{
-				Timestamp:  l.Timestamp.UTC().Format(time.RFC3339Nano),
-				RecordID:   l.RecordID,
-				Host:       l.Host,
-				Severity:   l.Severity,
-				Body:       l.Body,
-				Attributes: l.Attributes,
+			item := v1.LogResponse{
+				Timestamp:          l.Timestamp.UTC().Format(time.RFC3339Nano),
+				IRI:                l.IRI,
+				HostName:           l.HostName,
+				Severity:           l.Severity,
+				Body:               l.Body,
+				ResourceAttributes: l.ResourceAttributes,
+				Attributes:         l.Attributes,
 			}
+			if l.ObservedTimestamp != nil {
+				s := l.ObservedTimestamp.UTC().Format(time.RFC3339Nano)
+				item.ObservedTimestamp = &s
+			}
+			items[i] = item
 		}
 		resp := v1.LogListResponse{Items: items}
-		// emit next_cursor only when a full page was returned (there may be more).
 		if len(logs) >= lq.Limit && lq.Limit > 0 {
 			last := logs[len(logs)-1]
-			cur := store.Cursor{TS: last.Timestamp, RecordID: last.RecordID}
+			cur := store.Cursor{TS: last.Timestamp, IRI: last.IRI}
 			resp.NextCursor = cur.Encode()
 		}
 		c.JSON(http.StatusOK, resp)
@@ -89,7 +94,7 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 		mq := store.MetricQuery{
 			From:       q.from,
 			To:         q.to,
-			Host:       c.Query("host"),
+			HostName:   c.Query("host_name"),
 			MetricName: c.Query("metric_name"),
 			Limit:      limit,
 		}
@@ -100,7 +105,7 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 				return
 			}
 			mq.AfterTS = &cur.TS
-			mq.AfterRecordID = &cur.RecordID
+			mq.AfterIRI = &cur.IRI
 		}
 		metrics, err := d.QueryMetrics(c.Request.Context(), mq)
 		if err != nil {
@@ -109,20 +114,25 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 		}
 		items := make([]v1.MetricResponse, len(metrics))
 		for i, m := range metrics {
-			items[i] = v1.MetricResponse{
-				Timestamp:  m.Timestamp.UTC().Format(time.RFC3339Nano),
-				RecordID:   m.RecordID,
-				Host:       m.Host,
-				MetricName: m.MetricName,
-				Value:      m.Value,
-				Attributes: m.Attributes,
+			item := v1.MetricResponse{
+				Timestamp:          m.Timestamp.UTC().Format(time.RFC3339Nano),
+				IRI:                m.IRI,
+				HostName:           m.HostName,
+				MetricName:         m.MetricName,
+				Value:              m.Value,
+				ResourceAttributes: m.ResourceAttributes,
+				Attributes:         m.Attributes,
 			}
+			if m.ObservedTimestamp != nil {
+				s := m.ObservedTimestamp.UTC().Format(time.RFC3339Nano)
+				item.ObservedTimestamp = &s
+			}
+			items[i] = item
 		}
 		resp := v1.MetricListResponse{Items: items}
-		// emit next_cursor only when a full page was returned (there may be more).
 		if len(metrics) >= mq.Limit && mq.Limit > 0 {
 			last := metrics[len(metrics)-1]
-			cur := store.Cursor{TS: last.Timestamp, RecordID: last.RecordID}
+			cur := store.Cursor{TS: last.Timestamp, IRI: last.IRI}
 			resp.NextCursor = cur.Encode()
 		}
 		c.JSON(http.StatusOK, resp)
@@ -155,7 +165,7 @@ func handleQueryTrace(d telemetryDB) gin.HandlerFunc {
 				return
 			}
 			tq.AfterTS = &cur.TS
-			tq.AfterRecordID = &cur.RecordID
+			tq.AfterIRI = &cur.IRI
 		}
 		traces, err := d.QueryTraces(c.Request.Context(), tq)
 		if err != nil {
@@ -164,23 +174,29 @@ func handleQueryTrace(d telemetryDB) gin.HandlerFunc {
 		}
 		items := make([]v1.TraceResponse, len(traces))
 		for i, t := range traces {
-			items[i] = v1.TraceResponse{
-				Timestamp:     t.Timestamp.UTC().Format(time.RFC3339Nano),
-				RecordID:      t.RecordID,
-				Host:          t.Host,
-				TraceID:       t.TraceID,
-				SpanID:        t.SpanID,
-				ParentSpanID:  t.ParentSpanID,
-				SpanName:      t.SpanName,
-				DurationNanos: t.DurationNanos,
-				StatusCode:    t.StatusCode,
-				Attributes:    t.Attributes,
+			item := v1.TraceResponse{
+				Timestamp:          t.Timestamp.UTC().Format(time.RFC3339Nano),
+				IRI:                t.IRI,
+				HostName:           t.HostName,
+				TraceID:            t.TraceID,
+				SpanID:             t.SpanID,
+				ParentSpanID:       t.ParentSpanID,
+				SpanName:           t.SpanName,
+				DurationNanos:      t.DurationNanos,
+				StatusCode:         t.StatusCode,
+				ResourceAttributes: t.ResourceAttributes,
+				Attributes:         t.Attributes,
 			}
+			if t.ObservedTimestamp != nil {
+				s := t.ObservedTimestamp.UTC().Format(time.RFC3339Nano)
+				item.ObservedTimestamp = &s
+			}
+			items[i] = item
 		}
 		resp := v1.TraceListResponse{Items: items}
 		if len(traces) >= tq.Limit && tq.Limit > 0 {
 			last := traces[len(traces)-1]
-			cur := store.Cursor{TS: last.Timestamp, RecordID: last.RecordID}
+			cur := store.Cursor{TS: last.Timestamp, IRI: last.IRI}
 			resp.NextCursor = cur.Encode()
 		}
 		c.JSON(http.StatusOK, resp)

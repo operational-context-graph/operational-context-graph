@@ -51,34 +51,31 @@ func newStore(t *testing.T) *store.DB {
 	return db
 }
 
-// insertLog inserts a single row directly into ocg.logs using Stream Load SQL syntax.
-func insertLog(t *testing.T, ts time.Time, recordID, host, severity, body string) {
+func insertLog(t *testing.T, ts time.Time, iri, hostName, severity, body string) {
 	t.Helper()
 	q := fmt.Sprintf(
 		`INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, severity, body,
+		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body,
 	)
 	_, err := testDB.Exec(q)
 	require.NoError(t, err)
 }
 
-// insertMetric inserts a single row directly into ocg.metrics.
-func insertMetric(t *testing.T, ts time.Time, recordID, host, metricName string, value float64) {
+func insertMetric(t *testing.T, ts time.Time, iri, hostName, metricName string, value float64) {
 	t.Helper()
 	q := fmt.Sprintf(
 		`INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES ('%s', '%s', '%s', '%s', %f)`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, metricName, value,
+		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value,
 	)
 	_, err := testDB.Exec(q)
 	require.NoError(t, err)
 }
 
-// insertTrace inserts a single row directly into ocg.traces.
-func insertTrace(t *testing.T, ts time.Time, recordID, host, traceID, spanID string) {
+func insertTrace(t *testing.T, ts time.Time, iri, hostName, traceID, spanID string) {
 	t.Helper()
 	q := fmt.Sprintf(
 		`INSERT INTO ocg.traces (timestamp, iri, host_name, trace_id, span_id) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, traceID, spanID,
+		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, traceID, spanID,
 	)
 	_, err := testDB.Exec(q)
 	require.NoError(t, err)
@@ -99,8 +96,8 @@ func TestQueryLogs_TimeRange(t *testing.T) {
 	db := newStore(t)
 
 	ts := time.Now().UTC().Truncate(time.Millisecond)
-	recordID := "log-tr-" + ts.Format("150405000")
-	insertLog(t, ts, recordID, "host-a", "INFO", "hello world")
+	iri := "urn:ocg:log:test:" + ts.Format("150405000")
+	insertLog(t, ts, iri, "host-a", "INFO", "hello world")
 
 	from := ts.Add(-time.Minute)
 	to := ts.Add(time.Minute)
@@ -109,34 +106,34 @@ func TestQueryLogs_TimeRange(t *testing.T) {
 
 	var found bool
 	for _, l := range logs {
-		if l.RecordID == recordID {
+		if l.IRI == iri {
 			found = true
 		}
 	}
 	assert.True(t, found, "inserted log row must appear in time-range query")
 }
 
-func TestQueryLogs_HostFilter(t *testing.T) {
+func TestQueryLogs_HostNameFilter(t *testing.T) {
 	ctx := context.Background()
 	db := newStore(t)
 
 	ts := time.Now().UTC().Truncate(time.Millisecond)
-	idA := "log-hf-a-" + ts.Format("150405000")
-	idB := "log-hf-b-" + ts.Format("150405000")
-	insertLog(t, ts, idA, "host-filter-alpha", "INFO", "alpha")
-	insertLog(t, ts.Add(time.Millisecond), idB, "host-filter-beta", "INFO", "beta")
+	iriA := "urn:ocg:log:test:hf-a-" + ts.Format("150405000")
+	iriB := "urn:ocg:log:test:hf-b-" + ts.Format("150405000")
+	insertLog(t, ts, iriA, "host-filter-alpha", "INFO", "alpha")
+	insertLog(t, ts.Add(time.Millisecond), iriB, "host-filter-beta", "INFO", "beta")
 
 	from := ts.Add(-time.Minute)
 	to := ts.Add(time.Minute)
-	logs, err := db.QueryLogs(ctx, store.LogQuery{From: from, To: to, Host: "host-filter-alpha", Limit: 100})
+	logs, err := db.QueryLogs(ctx, store.LogQuery{From: from, To: to, HostName: "host-filter-alpha", Limit: 100})
 	require.NoError(t, err)
 
 	for _, l := range logs {
-		assert.Equal(t, idA, l.RecordID, "only host-filter-alpha rows should be returned")
+		assert.Equal(t, iriA, l.IRI, "only host-filter-alpha rows should be returned")
 	}
 	var found bool
 	for _, l := range logs {
-		if l.RecordID == idA {
+		if l.IRI == iriA {
 			found = true
 		}
 	}
@@ -148,8 +145,8 @@ func TestQueryMetrics_TimeRange(t *testing.T) {
 	db := newStore(t)
 
 	ts := time.Now().UTC().Truncate(time.Millisecond)
-	recordID := "met-tr-" + ts.Format("150405000")
-	insertMetric(t, ts, recordID, "host-m", "cpu_usage", 42.5)
+	iri := "urn:ocg:metric:test:" + ts.Format("150405000")
+	insertMetric(t, ts, iri, "host-m", "cpu_usage", 42.5)
 
 	from := ts.Add(-time.Minute)
 	to := ts.Add(time.Minute)
@@ -158,7 +155,7 @@ func TestQueryMetrics_TimeRange(t *testing.T) {
 
 	var found bool
 	for _, m := range metrics {
-		if m.RecordID == recordID {
+		if m.IRI == iri {
 			found = true
 		}
 	}
@@ -170,9 +167,9 @@ func TestQueryTraceByID(t *testing.T) {
 	db := newStore(t)
 
 	ts := time.Now().UTC().Truncate(time.Millisecond)
-	traceID := "trace-" + ts.Format("150405000")
-	recordID := "span-" + ts.Format("150405000")
-	insertTrace(t, ts, recordID, "host-t", traceID, "span-001")
+	traceID := "4bf92f3577b34da6" + ts.Format("15040500")
+	iri := "urn:ocg:span:test:" + ts.Format("150405000")
+	insertTrace(t, ts, iri, "host-t", traceID, "span-001")
 
 	from := ts.Add(-time.Minute)
 	to := ts.Add(time.Minute)
@@ -181,9 +178,9 @@ func TestQueryTraceByID(t *testing.T) {
 
 	var found bool
 	for _, s := range spans {
-		if s.RecordID == recordID {
+		if s.IRI == iri {
 			found = true
-			assert.NotNil(t, s.TraceID)
+			require.NotNil(t, s.TraceID)
 			assert.Equal(t, traceID, *s.TraceID)
 		}
 	}
@@ -195,12 +192,14 @@ func TestQueryTraces_KeysetCursor(t *testing.T) {
 	db := newStore(t)
 
 	base := time.Now().UTC().Truncate(time.Millisecond)
-	traceID := "trace-ks-" + base.Format("150405000")
+	traceID := "4bf92f3577b34da6" + base.Format("15040500")
 
+	var iris []string
 	for i := 0; i < 3; i++ {
 		ts := base.Add(time.Duration(i) * time.Millisecond)
-		rid := fmt.Sprintf("span-ks-%s-%d", base.Format("150405000"), i)
-		insertTrace(t, ts, rid, "host-ks", traceID, fmt.Sprintf("span-%03d", i))
+		iri := fmt.Sprintf("urn:ocg:span:test:ks-%s-%d", base.Format("150405000"), i)
+		iris = append(iris, iri)
+		insertTrace(t, ts, iri, "host-ks", traceID, fmt.Sprintf("span-%03d", i))
 	}
 
 	from := base.Add(-time.Minute)
@@ -213,15 +212,15 @@ func TestQueryTraces_KeysetCursor(t *testing.T) {
 	last := first[len(first)-1]
 	second, err := db.QueryTraces(ctx, store.TraceQuery{
 		From: from, To: to, TraceID: traceID, Limit: 2,
-		AfterTS:       &last.Timestamp,
-		AfterRecordID: &last.RecordID,
+		AfterTS:  &last.Timestamp,
+		AfterIRI: &last.IRI,
 	})
 	require.NoError(t, err)
 	require.Len(t, second, 1)
 
 	for _, s := range first {
 		for _, r := range second {
-			assert.NotEqual(t, s.RecordID, r.RecordID, "pages must not overlap")
+			assert.NotEqual(t, s.IRI, r.IRI, "pages must not overlap")
 		}
 	}
 }

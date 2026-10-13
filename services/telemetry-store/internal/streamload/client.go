@@ -4,6 +4,7 @@
 package streamload
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -57,7 +58,13 @@ func (c *Client) Load(ctx context.Context, table, label string, body io.Reader) 
 }
 
 func (c *Client) doLoad(ctx context.Context, url, label string, body io.Reader) (*LoadResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, body)
+	// Buffer the body so it can be replayed across the 307 redirect.
+	buf, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("read stream load body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(buf))
 	if err != nil {
 		return nil, fmt.Errorf("build stream load request: %w", err)
 	}
@@ -77,7 +84,7 @@ func (c *Client) doLoad(ctx context.Context, url, label string, body io.Reader) 
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 
-		req2, err := http.NewRequestWithContext(ctx, http.MethodPut, location, body)
+		req2, err := http.NewRequestWithContext(ctx, http.MethodPut, location, bytes.NewReader(buf))
 		if err != nil {
 			return nil, fmt.Errorf("build redirect request: %w", err)
 		}
@@ -113,7 +120,6 @@ func (c *Client) setHeaders(req *http.Request, label string) {
 	req.Header.Set("format", "json")
 	req.Header.Set("read_json_by_line", "true")
 	req.Header.Set("strip_outer_array", "false")
-	// load_to_single_tablet is not set: HASH-bucketed Unique Key tables do not support it (SDD §4.2).
 	req.Header.Set("label", label)
 }
 
