@@ -20,7 +20,7 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 	args := []any{q.From.UTC().Format("2006-01-02 15:04:05.000000"), q.To.UTC().Format("2006-01-02 15:04:05.000000")}
 
 	if q.Host != "" {
-		where += " AND host = ?"
+		where += " AND host_name = ?"
 		args = append(args, q.Host)
 	}
 	if q.MetricName != "" {
@@ -30,13 +30,13 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 	if q.AfterTS != nil && q.AfterRecordID != nil {
 		// Doris does not support row-value comparisons; use the expanded equivalent.
 		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
-		where += " AND (timestamp > ? OR (timestamp = ? AND record_id > ?))"
+		where += " AND (timestamp > ? OR (timestamp = ? AND iri > ?))"
 		args = append(args, tsStr, tsStr, *q.AfterRecordID)
 	}
 
 	stmt := fmt.Sprintf(
-		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, record_id, host, metric_name, value, CAST(attributes AS STRING)
-		 FROM ocg.metrics %s ORDER BY timestamp, record_id LIMIT %d`, where, q.Limit)
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri AS record_id, host_name AS host, metric_name, value, CAST(attributes AS STRING)
+		 FROM ocg.metrics %s ORDER BY timestamp, iri LIMIT %d`, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
 	if err != nil {

@@ -13,13 +13,37 @@ import (
 
 // QueryTraceByID returns all spans for a trace_id within the time window.
 func (d *DB) QueryTraceByID(ctx context.Context, traceID string, from, to time.Time) ([]Trace, error) {
-	q := fmt.Sprintf(queryTraceSQL, maxTraceResults)
-	rows, err := d.db.QueryContext(ctx, q,
-		from.UTC().Format("2006-01-02 15:04:05.000000"),
-		to.UTC().Format("2006-01-02 15:04:05.000000"),
-		traceID)
+	return d.QueryTraces(ctx, TraceQuery{From: from, To: to, TraceID: traceID})
+}
+
+// QueryTraces returns trace spans matching q.
+func (d *DB) QueryTraces(ctx context.Context, q TraceQuery) ([]Trace, error) {
+	if q.Limit <= 0 || q.Limit > maxTraceResults {
+		q.Limit = 1000
+	}
+
+	where := "WHERE timestamp >= ? AND timestamp < ? AND trace_id = ?"
+	args := []any{
+		q.From.UTC().Format("2006-01-02 15:04:05.000000"),
+		q.To.UTC().Format("2006-01-02 15:04:05.000000"),
+		q.TraceID,
+	}
+
+	if q.AfterTS != nil && q.AfterRecordID != nil {
+		// Doris does not support row-value comparisons; use the expanded equivalent.
+		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
+		where += " AND (timestamp > ? OR (timestamp = ? AND iri > ?))"
+		args = append(args, tsStr, tsStr, *q.AfterRecordID)
+	}
+
+	stmt := fmt.Sprintf(
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri AS record_id, host_name AS host, trace_id, span_id, parent_span_id,
+		 span_name, duration_nanos, status_code, CAST(attributes AS STRING)
+		 FROM ocg.traces %s ORDER BY timestamp, iri LIMIT %d`, where, q.Limit)
+
+	rows, err := d.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
-		return nil, fmt.Errorf("query trace: %w", err)
+		return nil, fmt.Errorf("query traces: %w", err)
 	}
 	defer rows.Close()
 

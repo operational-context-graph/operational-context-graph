@@ -67,9 +67,12 @@ type MetricQuery struct {
 
 // TraceQuery parameters for GET /v1/telemetry/traces/:traceID.
 type TraceQuery struct {
-	From    time.Time
-	To      time.Time
-	TraceID string
+	From          time.Time
+	To            time.Time
+	TraceID       string
+	Limit         int
+	AfterTS       *time.Time
+	AfterRecordID *string
 }
 
 // Cursor encodes the keyset pagination position for telemetry queries.

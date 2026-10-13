@@ -13,11 +13,14 @@ import (
 
 // Config holds all runtime configuration for telemetry-store.
 type Config struct {
-	HTTPPort           string `koanf:"HTTP_PORT"              validate:"required"`
-	DorisDSN           string `koanf:"DORIS_DSN"              validate:"required"`
-	LogLevel           string `koanf:"LOG_LEVEL"`
-	DorisBuckets       string `koanf:"DORIS_BUCKETS"`
-	DorisReplicationNum string `koanf:"DORIS_REPLICATION_NUM"`
+	HTTPPort                string `koanf:"HTTP_PORT"                  validate:"required"`
+	DorisDSN                string `koanf:"DORIS_DSN"                  validate:"required"`
+	DorisStreamLoadURL      string `koanf:"DORIS_STREAM_LOAD_URL"      validate:"required,url"`
+	DorisStreamLoadUser     string `koanf:"DORIS_STREAM_LOAD_USER"     validate:"required"`
+	DorisStreamLoadPassword string `koanf:"DORIS_STREAM_LOAD_PASSWORD" validate:"required"`
+	LogLevel                string `koanf:"LOG_LEVEL"`
+	DorisBuckets            string `koanf:"DORIS_BUCKETS"`
+	DorisReplicationNum     string `koanf:"DORIS_REPLICATION_NUM"`
 }
 
 // Load reads configuration from environment variables and validates it.

@@ -14,13 +14,6 @@ import (
 // maxTraceResults caps the result set for QueryTraceByID.
 const maxTraceResults = 10000
 
-const queryTraceSQL = `SELECT timestamp, record_id, host, trace_id, span_id, parent_span_id,
-       span_name, duration_nanos, status_code, CAST(attributes AS STRING)
-FROM ocg.traces
-WHERE timestamp >= ? AND timestamp < ? AND trace_id = ?
-ORDER BY timestamp, record_id
-LIMIT %d`
-
 // DB wraps the Doris MySQL connection pool.
 type DB struct {
 	db *sql.DB
@@ -46,4 +39,3 @@ func (d *DB) SchemaReady(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, "SELECT 1 FROM ocg.logs LIMIT 0")
 	return err
 }
-

@@ -141,7 +141,23 @@ func handleQueryTrace(d telemetryDB) gin.HandlerFunc {
 			renderError(c, fmt.Errorf("%w: %s", apperr.ErrInvalidInput, err.Error()))
 			return
 		}
-		traces, err := d.QueryTraceByID(c.Request.Context(), traceID, q.from, q.to)
+		limit := parseLimit(c)
+		tq := store.TraceQuery{
+			From:    q.from,
+			To:      q.to,
+			TraceID: traceID,
+			Limit:   limit,
+		}
+		if after := c.Query("after"); after != "" {
+			cur, err := store.DecodeCursor(after)
+			if err != nil {
+				renderError(c, fmt.Errorf("%w: invalid cursor", apperr.ErrInvalidInput))
+				return
+			}
+			tq.AfterTS = &cur.TS
+			tq.AfterRecordID = &cur.RecordID
+		}
+		traces, err := d.QueryTraces(c.Request.Context(), tq)
 		if err != nil {
 			renderError(c, err)
 			return
@@ -161,7 +177,13 @@ func handleQueryTrace(d telemetryDB) gin.HandlerFunc {
 				Attributes:    t.Attributes,
 			}
 		}
-		c.JSON(http.StatusOK, v1.TraceListResponse{Items: items})
+		resp := v1.TraceListResponse{Items: items}
+		if len(traces) >= tq.Limit && tq.Limit > 0 {
+			last := traces[len(traces)-1]
+			cur := store.Cursor{TS: last.Timestamp, RecordID: last.RecordID}
+			resp.NextCursor = cur.Encode()
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 

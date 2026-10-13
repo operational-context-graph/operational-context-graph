@@ -22,13 +22,13 @@ const routeKey = "route"
 type telemetryDB interface {
 	QueryLogs(ctx context.Context, q store.LogQuery) ([]store.Log, error)
 	QueryMetrics(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
-	QueryTraceByID(ctx context.Context, traceID string, from, to time.Time) ([]store.Trace, error)
+	QueryTraces(ctx context.Context, q store.TraceQuery) ([]store.Trace, error)
 	Ping(ctx context.Context) error
 	SchemaReady(ctx context.Context) error
 }
 
 // NewServer creates a configured Gin-backed HTTP server.
-func NewServer(d telemetryDB, addr string) *http.Server {
+func NewServer(d telemetryDB, sl streamLoader, addr string) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(requestIDMiddleware())
@@ -54,6 +54,7 @@ func NewServer(d telemetryDB, addr string) *http.Server {
 
 	v1 := r.Group("/v1/telemetry")
 	registerTelemetryRoutes(v1, d)
+	registerIngestRoutes(v1, sl)
 
 	return &http.Server{
 		Addr:         addr,

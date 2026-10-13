@@ -51,5 +51,13 @@ type MetricListResponse struct {
 
 // TraceListResponse is the body for GET /v1/telemetry/traces/:traceID.
 type TraceListResponse struct {
-	Items []TraceResponse `json:"items"`
+	Items      []TraceResponse `json:"items"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+}
+
+// IngestResponse is the body for POST /v1/telemetry/{logs,metrics,traces}.
+type IngestResponse struct {
+	LoadedRows   int64  `json:"loaded_rows"`
+	FilteredRows int64  `json:"filtered_rows,omitempty"`
+	ErrorURL     string `json:"error_url,omitempty"`
 }

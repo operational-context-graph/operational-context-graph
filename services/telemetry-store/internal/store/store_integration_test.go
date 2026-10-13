@@ -55,7 +55,7 @@ func newStore(t *testing.T) *store.DB {
 func insertLog(t *testing.T, ts time.Time, recordID, host, severity, body string) {
 	t.Helper()
 	q := fmt.Sprintf(
-		`INSERT INTO ocg.logs (timestamp, record_id, host, severity, body) VALUES ('%s', '%s', '%s', '%s', '%s')`,
+		`INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES ('%s', '%s', '%s', '%s', '%s')`,
 		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, severity, body,
 	)
 	_, err := testDB.Exec(q)
@@ -66,7 +66,7 @@ func insertLog(t *testing.T, ts time.Time, recordID, host, severity, body string
 func insertMetric(t *testing.T, ts time.Time, recordID, host, metricName string, value float64) {
 	t.Helper()
 	q := fmt.Sprintf(
-		`INSERT INTO ocg.metrics (timestamp, record_id, host, metric_name, value) VALUES ('%s', '%s', '%s', '%s', %f)`,
+		`INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES ('%s', '%s', '%s', '%s', %f)`,
 		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, metricName, value,
 	)
 	_, err := testDB.Exec(q)
@@ -77,7 +77,7 @@ func insertMetric(t *testing.T, ts time.Time, recordID, host, metricName string,
 func insertTrace(t *testing.T, ts time.Time, recordID, host, traceID, spanID string) {
 	t.Helper()
 	q := fmt.Sprintf(
-		`INSERT INTO ocg.traces (timestamp, record_id, host, trace_id, span_id) VALUES ('%s', '%s', '%s', '%s', '%s')`,
+		`INSERT INTO ocg.traces (timestamp, iri, host_name, trace_id, span_id) VALUES ('%s', '%s', '%s', '%s', '%s')`,
 		ts.UTC().Format("2006-01-02 15:04:05.000000"), recordID, host, traceID, spanID,
 	)
 	_, err := testDB.Exec(q)
@@ -188,4 +188,40 @@ func TestQueryTraceByID(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "inserted trace span must appear in QueryTraceByID result")
+}
+
+func TestQueryTraces_KeysetCursor(t *testing.T) {
+	ctx := context.Background()
+	db := newStore(t)
+
+	base := time.Now().UTC().Truncate(time.Millisecond)
+	traceID := "trace-ks-" + base.Format("150405000")
+
+	for i := 0; i < 3; i++ {
+		ts := base.Add(time.Duration(i) * time.Millisecond)
+		rid := fmt.Sprintf("span-ks-%s-%d", base.Format("150405000"), i)
+		insertTrace(t, ts, rid, "host-ks", traceID, fmt.Sprintf("span-%03d", i))
+	}
+
+	from := base.Add(-time.Minute)
+	to := base.Add(time.Minute)
+
+	first, err := db.QueryTraces(ctx, store.TraceQuery{From: from, To: to, TraceID: traceID, Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, first, 2)
+
+	last := first[len(first)-1]
+	second, err := db.QueryTraces(ctx, store.TraceQuery{
+		From: from, To: to, TraceID: traceID, Limit: 2,
+		AfterTS:       &last.Timestamp,
+		AfterRecordID: &last.RecordID,
+	})
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+
+	for _, s := range first {
+		for _, r := range second {
+			assert.NotEqual(t, s.RecordID, r.RecordID, "pages must not overlap")
+		}
+	}
 }

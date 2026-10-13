@@ -20,6 +20,7 @@ import (
 	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
 	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
 	"github.com/operational-context-graph/telemetry-store/internal/store"
+	"github.com/operational-context-graph/telemetry-store/internal/streamload"
 )
 
 func main() {
@@ -60,7 +61,9 @@ func run(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	srv := httpapi.NewServer(db, ":"+cfg.HTTPPort)
+	sl := streamload.NewClient(cfg.DorisStreamLoadURL, cfg.DorisStreamLoadUser, cfg.DorisStreamLoadPassword)
+
+	srv := httpapi.NewServer(db, sl, ":"+cfg.HTTPPort)
 	go func() {
 		slog.Info("starting telemetry-store", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
