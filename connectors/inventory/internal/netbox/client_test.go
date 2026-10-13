@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func fixture(count int, next *string, ids ...int) []byte {
+func fixture(total int, next *string, ids ...int) []byte {
 	results := make([]json.RawMessage, len(ids))
 	for idx, id := range ids {
 		results[idx] = json.RawMessage(fmt.Sprintf(`{"id":%d,"name":"device-%d","last_updated":"2026-07-10T07:47:31Z"}`, id, id))
 	}
-	page := pageResponse{Count: count, Next: next, Results: results}
+	page := pageResponse{Count: total, Next: next, Results: results}
 	b, _ := json.Marshal(page)
 	return b
 }
