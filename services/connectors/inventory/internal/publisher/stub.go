@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 )
 
 type StubPublisher struct {

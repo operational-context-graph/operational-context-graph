@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/config"
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/runner"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/runner"
 )
 
 func main() {

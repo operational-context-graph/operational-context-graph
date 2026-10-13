@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 )
 
 func msg(id int, payloadSize int) envelope.Message {

@@ -4,7 +4,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	pb "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 )
 
 const (

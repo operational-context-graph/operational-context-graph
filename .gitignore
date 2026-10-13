@@ -9,6 +9,7 @@ vendor/
 *.exe~
 *.test
 coverage/
+go.work
 go.work.sum
 
 # Compiled class file
@@ -122,7 +123,7 @@ Thumbs.db
 terraform.rc
 
 # Generated
-gen/go.sum
+gen/
 sbom.spdx.json
 
 # OpenSpec working artifacts (openspec/specs/ and openspec/config.yaml stay tracked)

@@ -5,7 +5,7 @@
 SHELL := /usr/bin/env bash
 
 SERVICE_DI := services/data-ingestion
-CONNECTOR_INVENTORY := connectors/inventory
+CONNECTOR_INVENTORY := services/connectors/inventory
 COVERAGE_DIR := $(CURDIR)/coverage
 
 .PHONY: build run test lint vet tidy mocks \

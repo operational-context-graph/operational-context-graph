@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	pb "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 )
 
 const bufSize = 1024 * 1024

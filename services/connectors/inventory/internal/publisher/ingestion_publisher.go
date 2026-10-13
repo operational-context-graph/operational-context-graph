@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
-	"github.com/operational-context-graph/operational-context-graph/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 )
 
 type GRPCPublisher struct {

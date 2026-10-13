@@ -1,4 +1,4 @@
-module github.com/operational-context-graph/operational-context-graph/connectors/inventory
+module github.com/operational-context-graph/operational-context-graph/services/connectors/inventory
 
 go 1.26.0
 
@@ -8,6 +8,7 @@ require (
 	github.com/knadh/koanf/providers/env v1.1.0
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.8
+	github.com/operational-context-graph/operational-context-graph/gen/go v0.0.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
@@ -30,3 +31,5 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 )
+
+replace github.com/operational-context-graph/operational-context-graph/gen/go => ../../../gen/go

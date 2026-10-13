@@ -8,7 +8,7 @@ Stores and serves all operational data for a data center. Provides telemetry, in
 
 ## Repository layout
 
-This is a polyglot monorepo. Sub-components live under `services/` (long-running servers), `connectors/` (batch jobs), `shared/`, and `frontend/`. The gRPC interface definitions are the source of truth for the API and live under `proto/`.
+This is a polyglot monorepo. Sub-components live under `services/` (long-running servers and batch connectors under `services/connectors/`), `shared/`, and `frontend/`. The gRPC interface definitions are the source of truth for the API and live under `proto/`.
 
 ## Requirements and Setup
 
