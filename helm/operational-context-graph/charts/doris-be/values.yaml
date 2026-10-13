@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the doris-be subchart.
+# Use upstream apache/doris image for dev/demo.
+# For production, override image to apeiro/doris-be:4.1.4-hardened (pinned to digest).
+enabled: true
+
+image:
+  repository: apache/doris
+  tag: "be-4.1.4"
+  pullPolicy: IfNotPresent
+
+storage:
+  size: 20Gi
+  # Set to your cluster's StorageClass, or leave empty to use the default.
+  storageClassName: ""
+
+# Fully-qualified DNS name of the Doris FE service, used by the BE to register.
+# Defaults to the FE headless-service DNS name within the same release.
+feAddress: ""
+
+# FE node name used in FE_SERVERS (format: <name>:<host>:<edit_log_port>).
+feNodeName: "fe1"
+
+# FE BDBJE edit-log port — must match doris-fe.ports.heartbeat (9010).
+feEditLogPort: 9010
+
+# Doris BE ports:
+#   9060 — Thrift RPC
+#   8040 — BE HTTP API (Stream Load coordinator target)
+#   9050 — heartbeat
+#   8060 — BRPC
+ports:
+  rpc: 9060
+  http: 8040
+  heartbeat: 9050
+  brpc: 8060
+
+nameOverride: ""
+fullnameOverride: ""

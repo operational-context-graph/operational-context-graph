@@ -2,11 +2,14 @@
 -- SPDX-License-Identifier: Apache-2.0
 --
 -- Creates the ocg.logs table.
--- replication_num must be 1 on a single-BE dev cluster; use 3 in production (SDD §4.6).
--- See: SDD §4.3 and Appendix A.
+-- replication_num must be 1 on a single-BE dev cluster; use 3 in production.
 
+-- +goose Up
+-- +goose StatementBegin
 CREATE DATABASE IF NOT EXISTS ocg;
+-- +goose StatementEnd
 
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS ocg.logs (
   `timestamp`            DATETIME(6)   NOT NULL,
   `iri`                  VARCHAR(512)  NOT NULL,
@@ -39,3 +42,6 @@ CREATE TABLE IF NOT EXISTS ocg.logs (
                "dynamic_partition.buckets"         = "10",
                "dynamic_partition.replication_num" = "3"
              );
+-- +goose StatementEnd
+
+-- +goose Down

@@ -1,0 +1,55 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "telemetry-store.fullname" . }}
+  labels:
+    {{- include "telemetry-store.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "telemetry-store.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "telemetry-store.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          envFrom:
+            - secretRef:
+                name: {{ .Values.dorisSecretName }}
+            - secretRef:
+                name: {{ .Values.dorisReadSecretName }}
+          env:
+            - name: HTTP_PORT
+              value: {{ .Values.env.HTTP_PORT | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: DORIS_REPLICATION_NUM
+              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
+            - name: DORIS_BUCKETS
+              value: {{ .Values.env.DORIS_BUCKETS | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
