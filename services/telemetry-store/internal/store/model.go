@@ -11,74 +11,54 @@ import (
 
 // Log is one row from ocg.logs.
 type Log struct {
-	Timestamp  time.Time `json:"timestamp"`
-	RecordID   string    `json:"record_id"`
-	Host       *string   `json:"host,omitempty"`
-	Severity   *string   `json:"severity,omitempty"`
-	Body       *string   `json:"body,omitempty"`
-	Attributes *string   `json:"attributes,omitempty"`
+	Timestamp          time.Time `json:"timestamp"`
+	IRI                string    `json:"iri"`
+	ObservedTimestamp  *time.Time `json:"observed_timestamp,omitempty"`
+	HostName           *string   `json:"host_name,omitempty"`
+	Severity           *string   `json:"severity,omitempty"`
+	Body               *string   `json:"body,omitempty"`
+	ResourceAttributes *string   `json:"resource_attributes,omitempty"`
+	Attributes         *string   `json:"attributes,omitempty"`
 }
 
 // Metric is one row from ocg.metrics.
 type Metric struct {
-	Timestamp  time.Time `json:"timestamp"`
-	RecordID   string    `json:"record_id"`
-	Host       *string   `json:"host,omitempty"`
-	MetricName *string   `json:"metric_name,omitempty"`
-	Value      *float64  `json:"value,omitempty"`
-	Attributes *string   `json:"attributes,omitempty"`
-}
-
-// Trace is one row from ocg.traces.
-type Trace struct {
-	Timestamp     time.Time `json:"timestamp"`
-	RecordID      string    `json:"record_id"`
-	Host          *string   `json:"host,omitempty"`
-	TraceID       *string   `json:"trace_id,omitempty"`
-	SpanID        *string   `json:"span_id,omitempty"`
-	ParentSpanID  *string   `json:"parent_span_id,omitempty"`
-	SpanName      *string   `json:"span_name,omitempty"`
-	DurationNanos *int64    `json:"duration_nanos,omitempty"`
-	StatusCode    *string   `json:"status_code,omitempty"`
-	Attributes    *string   `json:"attributes,omitempty"`
+	Timestamp          time.Time `json:"timestamp"`
+	IRI                string    `json:"iri"`
+	ObservedTimestamp  *time.Time `json:"observed_timestamp,omitempty"`
+	HostName           *string   `json:"host_name,omitempty"`
+	MetricName         *string   `json:"metric_name,omitempty"`
+	Value              *float64  `json:"value,omitempty"`
+	ResourceAttributes *string   `json:"resource_attributes,omitempty"`
+	Attributes         *string   `json:"attributes,omitempty"`
 }
 
 // LogQuery parameters for GET /v1/telemetry/logs.
 type LogQuery struct {
-	From          time.Time
-	To            time.Time
-	Host          string
-	Severity      string
-	Limit         int
-	AfterTS       *time.Time
-	AfterRecordID *string
+	From     time.Time
+	To       time.Time
+	HostName string
+	Severity string
+	Limit    int
+	AfterTS  *time.Time
+	AfterIRI *string
 }
 
 // MetricQuery parameters for GET /v1/telemetry/metrics.
 type MetricQuery struct {
-	From          time.Time
-	To            time.Time
-	Host          string
-	MetricName    string
-	Limit         int
-	AfterTS       *time.Time
-	AfterRecordID *string
+	From       time.Time
+	To         time.Time
+	HostName   string
+	MetricName string
+	Limit      int
+	AfterTS    *time.Time
+	AfterIRI   *string
 }
 
-// TraceQuery parameters for GET /v1/telemetry/traces/:traceID.
-type TraceQuery struct {
-	From          time.Time
-	To            time.Time
-	TraceID       string
-	Limit         int
-	AfterTS       *time.Time
-	AfterRecordID *string
-}
-
-// Cursor encodes the keyset pagination position for telemetry queries.
+// Cursor encodes the keyset pagination position as (timestamp, iri) per SDD §5.2.
 type Cursor struct {
-	TS       time.Time `json:"t"`
-	RecordID string    `json:"r"`
+	TS  time.Time `json:"t"`
+	IRI string    `json:"i"`
 }
 
 func (c Cursor) Encode() string {
@@ -94,4 +74,3 @@ func DecodeCursor(s string) (Cursor, error) {
 	var c Cursor
 	return c, json.Unmarshal(b, &c)
 }
-

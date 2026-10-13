@@ -19,23 +19,24 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 	where := "WHERE timestamp >= ? AND timestamp < ?"
 	args := []any{q.From.UTC().Format("2006-01-02 15:04:05.000000"), q.To.UTC().Format("2006-01-02 15:04:05.000000")}
 
-	if q.Host != "" {
+	if q.HostName != "" {
 		where += " AND host_name = ?"
-		args = append(args, q.Host)
+		args = append(args, q.HostName)
 	}
 	if q.Severity != "" {
 		where += " AND severity = ?"
 		args = append(args, q.Severity)
 	}
-	if q.AfterTS != nil && q.AfterRecordID != nil {
+	if q.AfterTS != nil && q.AfterIRI != nil {
 		// Doris does not support row-value comparisons; use the expanded equivalent.
 		tsStr := q.AfterTS.UTC().Format("2006-01-02 15:04:05.000000")
 		where += " AND (timestamp > ? OR (timestamp = ? AND iri > ?))"
-		args = append(args, tsStr, tsStr, *q.AfterRecordID)
+		args = append(args, tsStr, tsStr, *q.AfterIRI)
 	}
 
 	stmt := fmt.Sprintf(
-		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri AS record_id, host_name AS host, severity, body, CAST(attributes AS STRING)
+		`/*+ SET_VAR(query_timeout=25000) */ SELECT timestamp, iri, observed_timestamp, host_name, severity, body,
+		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
 		 FROM ocg.logs %s ORDER BY timestamp, iri LIMIT %d`, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
@@ -48,10 +49,16 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 	for rows.Next() {
 		var l Log
 		var ts dorissql.DateTime
-		if err := rows.Scan(&ts, &l.RecordID, &l.Host, &l.Severity, &l.Body, &l.Attributes); err != nil {
+		var obsTS dorissql.NullDateTime
+		if err := rows.Scan(&ts, &l.IRI, &obsTS, &l.HostName, &l.Severity, &l.Body,
+			&l.ResourceAttributes, &l.Attributes); err != nil {
 			return nil, fmt.Errorf("scan log: %w", err)
 		}
 		l.Timestamp = ts.Time
+		if obsTS.Valid {
+			t := obsTS.Time
+			l.ObservedTimestamp = &t
+		}
 		logs = append(logs, l)
 	}
 	return logs, rows.Err()

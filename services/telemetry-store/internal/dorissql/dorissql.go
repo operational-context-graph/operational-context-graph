@@ -47,6 +47,27 @@ func (d *DateTime) parse(s string) error {
 	return nil
 }
 
+// NullDateTime is a scan target for nullable Doris DATETIME(6) columns.
+type NullDateTime struct {
+	Time  time.Time
+	Valid bool
+}
+
+// Scan implements sql.Scanner.
+func (d *NullDateTime) Scan(src any) error {
+	if src == nil {
+		d.Valid = false
+		return nil
+	}
+	var dt DateTime
+	if err := dt.Scan(src); err != nil {
+		return err
+	}
+	d.Time = dt.Time
+	d.Valid = true
+	return nil
+}
+
 // RegisterTimeArgs registers a NamedValueChecker that converts time.Time query
 // arguments to the UTC DATETIME(6) text format Doris expects (Rule 1).
 // Call once at startup, before any sql.Open call.

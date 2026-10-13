@@ -22,7 +22,6 @@ import (
 const (
 	routeIngestLogs    = "ingest-logs"
 	routeIngestMetrics = "ingest-metrics"
-	routeIngestTraces  = "ingest-traces"
 
 	headerStreamLoadLabel = "X-OCG-Label"
 
@@ -37,7 +36,6 @@ type streamLoader interface {
 func registerIngestRoutes(rg *gin.RouterGroup, sl streamLoader) {
 	rg.POST("/logs", setRoute(routeIngestLogs), ndjsonBodyMiddleware(), handleIngest(sl, "logs"))
 	rg.POST("/metrics", setRoute(routeIngestMetrics), ndjsonBodyMiddleware(), handleIngest(sl, "metrics"))
-	rg.POST("/traces", setRoute(routeIngestTraces), ndjsonBodyMiddleware(), handleIngest(sl, "traces"))
 }
 
 // ndjsonBodyMiddleware checks Content-Type and applies a body-size cap.

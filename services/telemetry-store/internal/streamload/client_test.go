@@ -5,6 +5,7 @@ package streamload_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -122,7 +123,29 @@ func TestLoad_SetsCorrectHeaders(t *testing.T) {
 	assert.Equal(t, "json", capturedReq.Header.Get("format"))
 	assert.Equal(t, "true", capturedReq.Header.Get("read_json_by_line"))
 	assert.Equal(t, "false", capturedReq.Header.Get("strip_outer_array"))
-	assert.Empty(t, capturedReq.Header.Get("load_to_single_tablet"), "must not be set on HASH-bucketed tables")
+	assert.Empty(t, capturedReq.Header.Get("load_to_single_tablet"), "must not be set: HASH bucketing does not support it (SDD §4.2)")
 	assert.Equal(t, "my-label", capturedReq.Header.Get("label"))
 	assert.Contains(t, capturedReq.Header.Get("Authorization"), "Basic ")
 }
+
+func TestLoad_307Redirect_ResendsBody(t *testing.T) {
+	// Simulates the Doris FE→BE redirect: FE returns 307, BE receives the full body.
+	var beBody []byte
+	be := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		beBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(dorisResponse("Success", 1, 0, "")))
+	}))
+	defer be.Close()
+
+	fe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, be.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer fe.Close()
+
+	client := streamload.NewClient(fe.URL, "u", "p")
+	_, err := client.Load(context.Background(), "logs", "lbl", strings.NewReader(validNDJSON))
+	require.NoError(t, err)
+	assert.Equal(t, validNDJSON, string(beBody), "BE must receive the full NDJSON body after redirect")
+}
+
