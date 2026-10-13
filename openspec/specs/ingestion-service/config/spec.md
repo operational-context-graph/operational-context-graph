@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Config Specification
 
 ## Purpose
@@ -28,7 +34,7 @@ Config validation for the `IngestionService` scope: gRPC server host and port an
 
 ### Requirement: Environment variable hierarchy separator is double underscore
 
-Environment variables use the prefix `OCG_DI_`. The double-underscore `__` separates hierarchy levels; a single underscore is preserved as part of a field name.
+Environment variables MUST use the prefix `OCG_DI_`. The double-underscore `__` SHALL separate hierarchy levels; a single underscore is preserved as part of a field name.
 
 #### Scenario: Double underscore maps to hierarchy separator
 - **WHEN** `OCG_DI_GRPC__HOST=127.0.0.1` is set

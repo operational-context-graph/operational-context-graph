@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Ingest Handler Specification
 
 ## Purpose
@@ -33,6 +39,10 @@ The handler SHALL return `RESOURCE_EXHAUSTED` when `IngestRequest.messages` cont
 ### Requirement: Payload size limit enforced by transport, not handler
 
 Total payload size is enforced by `MaxRecvMsgSize` at the gRPC transport layer (see grpc-server spec). The handler SHALL NOT perform a byte-counting loop over envelope payloads. Oversized requests are rejected before the handler is invoked.
+
+#### Scenario: Oversized request never reaches handler
+- **WHEN** the total wire size of an `IngestRequest` exceeds `MaxPayloadBytes`
+- **THEN** the gRPC transport rejects it with `RESOURCE_EXHAUSTED` and the handler is not invoked
 
 ### Requirement: Handler construction fails without config
 
