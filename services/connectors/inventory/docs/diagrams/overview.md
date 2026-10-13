@@ -6,7 +6,7 @@
 flowchart LR
     VAULT["Secrets Vault (OpenBao)"]
     NETBOX["NetBox REST API"]
-    CONNECTOR["connectors/inventory"]
+    CONNECTOR["services/connectors/inventory"]
     DI["Data Ingestion IngestionService gRPC"]
 
     VAULT -- "cert+key (k8s mount)" --> CONNECTOR

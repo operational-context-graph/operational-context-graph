@@ -12,7 +12,7 @@ C4Context
     }
 
     System_Ext(netbox, "NetBox", "DCIM/IPAM source of truth — REST API, paginated list endpoints")
-    System(connector, "connectors/inventory", "Reads NetBox, delivers raw records via IngestionService")
+    System(connector, "services/connectors/inventory", "Reads NetBox, delivers raw records via IngestionService")
 
     Rel(vault, connector, "Provides mTLS cert+key", "k8s secret mount")
     Rel(connector, netbox, "Paginated GET", "HTTPS + token auth")
