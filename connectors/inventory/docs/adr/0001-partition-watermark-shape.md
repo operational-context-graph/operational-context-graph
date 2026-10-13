@@ -9,7 +9,7 @@ The connector uses `IngestionService` which does not manage gaps or watermarks â
 
 ## Implementation
 
-`internal/envelope` extracts `last_id` from the raw JSON record at build time:
+`internal/envelope` extracts `last_id` from the raw JSON record when building the message:
 
 ```go
 func Build(raw json.RawMessage, endpoint, lat, schemaVersion string) (Message, error) {
