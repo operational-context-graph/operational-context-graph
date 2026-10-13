@@ -73,3 +73,10 @@ ignore-packages:
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
+
+  # Packages below have permissive licenses (Apache-2.0 or MIT) but Syft also
+  # detects a secondary NOTICE/AUTHORS file that produces a LicenseRef-* hash
+  # which grant cannot resolve. The primary license is well-known and allowed.
+  - github.com/coreos/go-semver
+  - github.com/jackc/pgx/v5
+  - github.com/quic-go/quic-go
