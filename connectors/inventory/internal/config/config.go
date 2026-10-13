@@ -12,7 +12,7 @@ import (
 
 type Config struct {
 	NetBox    NetBoxConfig    `koanf:"netbox"    validate:"required"`
-	GRPC      GRPCConfig      `koanf:"grpc"      validate:"required"`
+	GRPC      DataIngestionConfig `koanf:"grpc"      validate:"required"`
 	Connector ConnectorConfig `koanf:"connector"`
 }
 
@@ -22,7 +22,7 @@ type NetBoxConfig struct {
 	PageSize int    `koanf:"page_size" validate:"min=1,max=10000"`
 }
 
-type GRPCConfig struct {
+type DataIngestionConfig struct {
 	Endpoint    string `koanf:"endpoint"     validate:"required"`
 	CertFile    string `koanf:"cert_file"    validate:"required"`
 	KeyFile     string `koanf:"key_file"     validate:"required"`
