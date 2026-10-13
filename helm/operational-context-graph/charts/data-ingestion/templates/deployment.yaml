@@ -26,6 +26,22 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.grpcContainerPort }}
+              protocol: TCP
+          {{- if .Values.tls.enabled }}
+          env:
+            - name: OCG_DI_GRPC__TLS_CERT_FILE
+              value: {{ .Values.tls.mountPath }}/tls.crt
+            - name: OCG_DI_GRPC__TLS_KEY_FILE
+              value: {{ .Values.tls.mountPath }}/tls.key
+            - name: OCG_DI_GRPC__TLS_CA_FILE
+              value: {{ .Values.tls.mountPath }}/ca.crt
+          volumeMounts:
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -36,3 +52,9 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+      {{- end }}

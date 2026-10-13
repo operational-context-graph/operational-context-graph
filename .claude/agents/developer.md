@@ -28,6 +28,24 @@ Read `AGENTS.md` before starting. Implement only the approved scope.
 - Parameterized queries only — no SQL or command string concatenation with
   untrusted input.
 
+## Package layout — `services/data-ingestion`
+
+- Each server package (`httpserver`, `grpcserver`) owns its own handlers. Do not
+  create a shared `handlers/` package.
+  - HTTP handlers live in `internal/httpserver/` (e.g. `health.go`).
+  - gRPC handlers live in `internal/grpcserver/`, one file per RPC service
+    (e.g. `ingest.go`, `backfill.go`, `otlp.go`). Server lifecycle stays in
+    `server.go`.
+- The `ingest` package holds the pipeline contract only: `Ingestor` interface,
+  `NoopIngestor`, domain types (`types.go`), and sentinel errors (`errors.go`).
+  Pipeline implementation goes in a separate ticket — do not add it here.
+- `MaxRecvMsgSize` is the sole payload size guard. Do not add an
+  application-layer byte-counting loop in gRPC handlers — the transport rejects
+  oversized messages with `RESOURCE_EXHAUSTED` before the handler is invoked.
+- gRPC shutdown: never call `grpc.Server.Stop()` synchronously after starting
+  `GracefulStop()` — both share an internal mutex and deadlock. Call `Stop()`
+  from a separate goroutine on the timeout path.
+
 ## Branch naming
 
 | Branch                | Purpose                                                  |
