@@ -30,6 +30,7 @@ allow:
   - Unlicense
   - Zlib
   - CC0-*
+  - BSL-1.0
 
 # Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
@@ -69,3 +70,6 @@ ignore-packages:
 
   # bufbuild/buf-action licensed under Apache-2.0
   - bufbuild/buf-action
+
+  # Exclude github.com/operational-context-graph/* due to being our own packages
+  - github.com/operational-context-graph/*
