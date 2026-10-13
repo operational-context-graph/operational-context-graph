@@ -10,9 +10,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
@@ -33,6 +35,9 @@ const envFileKey = envPrefix + "CONFIG_FILE"
 type Config struct {
 	Server  ServerConfig  `koanf:"server"`
 	Logging LoggingConfig `koanf:"logging"`
+	GRPC    GRPCConfig    `koanf:"grpc"`
+	Limits  LimitsConfig  `koanf:"limits"`
+	Retry   RetryConfig   `koanf:"retry"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -46,11 +51,50 @@ type LoggingConfig struct {
 	Level string `koanf:"level" validate:"required,oneof=debug info warn error"`
 }
 
+// GRPCConfig holds gRPC server settings.
+type GRPCConfig struct {
+	Host            string        `koanf:"host" validate:"required"`
+	Port            int           `koanf:"port" validate:"required,min=1,max=65535"`
+	TLSCertFile     string        `koanf:"tls_cert_file"`
+	TLSKeyFile      string        `koanf:"tls_key_file"`
+	TLSCAFile       string        `koanf:"tls_ca_file"`
+	ShutdownTimeout time.Duration `koanf:"shutdown_timeout"`
+}
+
+// LimitsConfig holds request-level limit settings for the gRPC handler.
+type LimitsConfig struct {
+	MaxMessages    int   `koanf:"max_messages"`
+	MaxPayloadBytes int64 `koanf:"max_payload_bytes"`
+}
+
+// RetryConfig holds retry hint settings returned in UNAVAILABLE responses.
+// The server always returns InitialBackoff as the hint; Multiplier and
+// MaxBackoff are validated and stored for future per-client backoff support.
+type RetryConfig struct {
+	InitialBackoff time.Duration `koanf:"initial_backoff"`
+	MaxBackoff     time.Duration `koanf:"max_backoff"`
+	Multiplier     float64       `koanf:"multiplier"`
+}
+
 // defaults returns the built-in configuration applied before any override.
 func defaults() *Config {
 	return &Config{
 		Server:  ServerConfig{Host: "0.0.0.0", Port: 8080},
 		Logging: LoggingConfig{Level: "info"},
+		GRPC: GRPCConfig{
+			Host:            "0.0.0.0",
+			Port:            9090,
+			ShutdownTimeout: 30 * time.Second,
+		},
+		Limits: LimitsConfig{
+			MaxMessages:    1000,
+			MaxPayloadBytes: 4 * 1024 * 1024, // 4 MiB
+		},
+		Retry: RetryConfig{
+			InitialBackoff: 1 * time.Second,
+			MaxBackoff:     60 * time.Second,
+			Multiplier:     1.0,
+		},
 	}
 }
 
@@ -73,9 +117,17 @@ func LoadFromFile(path string) (*Config, error) {
 		}
 	}
 
-	// Map OCG_DI_SERVER_PORT -> server.port, OCG_DI_LOGGING_LEVEL -> logging.level.
+	// Map env vars to koanf keys.
+	// Double underscore (__) separates hierarchy levels; single underscore is preserved as part of a field name.
+	// Examples:
+	//   OCG_DI_GRPC__ADDR             -> grpc.addr
+	//   OCG_DI_GRPC__TLS_CERT_FILE    -> grpc.tls_cert_file
+	//   OCG_DI_LIMITS__MAX_MESSAGES   -> limits.max_messages
+	//   OCG_DI_RETRY__INITIAL_BACKOFF -> retry.initial_backoff
 	transform := func(s string) string {
-		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, envPrefix)), "_", ".")
+		s = strings.TrimPrefix(s, envPrefix)
+		s = strings.ToLower(s)
+		return strings.ReplaceAll(s, "__", ".")
 	}
 	if err := k.Load(env.Provider(envPrefix, ".", transform), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
@@ -86,14 +138,79 @@ func LoadFromFile(path string) (*Config, error) {
 		DecoderConfig: &mapstructure.DecoderConfig{
 			Result:           cfg,
 			WeaklyTypedInput: true,
+			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				mapstructure.StringToTimeDurationHookFunc(),
+				mapstructure.StringToSliceHookFunc(","),
+			),
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	if err := validator.New().Struct(cfg); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// validateConfig runs structural validation followed by cross-field checks.
+func validateConfig(cfg *Config) error {
+	if err := validator.New().Struct(cfg); err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+
+	if err := validateTLS(&cfg.GRPC); err != nil {
+		return err
+	}
+	if err := validateLimits(&cfg.Limits); err != nil {
+		return err
+	}
+	if err := validateRetry(&cfg.Retry); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateTLS(g *GRPCConfig) error {
+	set := 0
+	for _, p := range []string{g.TLSCertFile, g.TLSKeyFile, g.TLSCAFile} {
+		if p != "" {
+			set++
+		}
+	}
+	if set != 0 && set != 3 {
+		return errors.New("validate config: grpc tls requires all three of tls_cert_file, tls_key_file, tls_ca_file or none")
+	}
+	if g.ShutdownTimeout <= 0 {
+		return errors.New("validate config: grpc.shutdown_timeout must be positive")
+	}
+	return nil
+}
+
+func validateLimits(l *LimitsConfig) error {
+	if l.MaxMessages <= 0 {
+		return errors.New("validate config: limits.max_messages must be positive")
+	}
+	if l.MaxPayloadBytes <= 0 {
+		return errors.New("validate config: limits.max_payload_bytes must be positive")
+	}
+	return nil
+}
+
+func validateRetry(r *RetryConfig) error {
+	if r.InitialBackoff <= 0 {
+		return errors.New("validate config: retry.initial_backoff must be positive")
+	}
+	if r.MaxBackoff <= 0 {
+		return errors.New("validate config: retry.max_backoff must be positive")
+	}
+	if r.MaxBackoff < r.InitialBackoff {
+		return errors.New("validate config: retry.max_backoff must be >= initial_backoff")
+	}
+	if r.Multiplier < 1.0 {
+		return errors.New("validate config: retry.multiplier must be >= 1.0")
+	}
+	return nil
 }
