@@ -49,7 +49,6 @@ func TestBuild_PayloadIsRaw(t *testing.T) {
 
 func TestBuild_MissingID(t *testing.T) {
 	msg, err := Build(json.RawMessage(`{"name": "no-id"}`), "dcim/devices/", "netbox.Device", "0.1.0")
-	// missing id field is not an error — zero-valued last_id
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"last_id": 0}, msg.Watermark)
 }
