@@ -24,8 +24,8 @@ type NetBoxConfig struct {
 
 type DataIngestionConfig struct {
 	Endpoint    string `koanf:"endpoint"     validate:"required"`
-	CertFile    string `koanf:"cert_file"    validate:"required"`
-	KeyFile     string `koanf:"key_file"     validate:"required"`
+	CertFile    string `koanf:"cert_file"`
+	KeyFile     string `koanf:"key_file"`
 	ConnectorID string `koanf:"connector_id" validate:"required"`
 }
 

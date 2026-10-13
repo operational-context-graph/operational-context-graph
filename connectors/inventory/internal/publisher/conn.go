@@ -6,10 +6,14 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
-func dialTLS(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
+func dial(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
+	if certFile == "" && keyFile == "" {
+		return grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err

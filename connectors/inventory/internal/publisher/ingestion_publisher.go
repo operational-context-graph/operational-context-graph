@@ -19,7 +19,7 @@ type GRPCPublisher struct {
 }
 
 func NewGRPCPublisher(endpoint, certFile, keyFile, connectorID string) (*GRPCPublisher, error) {
-	conn, err := dialTLS(endpoint, certFile, keyFile)
+	conn, err := dial(endpoint, certFile, keyFile)
 	if err != nil {
 		return nil, err
 	}

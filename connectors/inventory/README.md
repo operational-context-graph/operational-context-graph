@@ -30,8 +30,8 @@ See `configs/config.example.yaml` for defaults. All keys are overridable via env
 | `CONNECTOR_NETBOX__TOKEN` | `netbox.token` | NetBox API token |
 | `CONNECTOR_NETBOX__PAGE_SIZE` | `netbox.page_size` | Records per page (default 1000) |
 | `CONNECTOR_GRPC__ENDPOINT` | `grpc.endpoint` | Data Ingestion gRPC endpoint |
-| `CONNECTOR_GRPC__CERT_FILE` | `grpc.cert_file` | mTLS client certificate |
-| `CONNECTOR_GRPC__KEY_FILE` | `grpc.key_file` | mTLS client key |
+| `CONNECTOR_GRPC__CERT_FILE` | `grpc.cert_file` | mTLS client certificate (optional) |
+| `CONNECTOR_GRPC__KEY_FILE` | `grpc.key_file` | mTLS client key (optional) |
 | `CONNECTOR_GRPC__CONNECTOR_ID` | `grpc.connector_id` | Connector identity header |
 | `CONNECTOR_CONNECTOR__SCHEMA_VERSION` | `connector.schema_version` | Schema version tag on messages |
 | `CONNECTOR_CONNECTOR__LOGICAL_ARTIFACT_ID` | `connector.logical_artifact_id` | Map of endpoint path → artifact ID |
