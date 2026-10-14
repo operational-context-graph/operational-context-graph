@@ -44,6 +44,27 @@ jobs:
             ci
             chore
             revert
+
+          # Allow custom, component-specific scopes next to the common ones:
+          # 'ocg' - Operational Context Graph
+          # 'sc' - Satellite Connector
+          # 'tc' - Telemetry Connector
+          # 'ic' - Inventory Connector
+          # 'edc' - External Data Connector
+          # 'di' - Data Ingestion
+          # 'sv' - Secrets Vault
+          # 'ikb' - Infrastructure Knowledge Base
+          # 'dci' - Data Center Inventory
+          # 'sr' - Schema Registry
+          # 'ts' - Telemetry Store
+          # 'ir' - Insights Repository
+          # 'rar' - Recorded Actions Repository
+          # 'als' - Audit Log Service
+          # 'pas' - Permission & Authorization Service
+          # 'dl' - Document Library
+          # 'snb' - Semantic Network Builder
+          # 'sn' - Semantic Network
+          # 'br' - Bundle Repository
           scopes: |
             deps
             devops
@@ -51,6 +72,25 @@ jobs:
             deployment
             architecture
             github
+            ocg
+            sc
+            tc
+            ic
+            edc
+            di
+            sv
+            ikb
+            dci
+            sr
+            ts
+            ir
+            rar
+            als
+            pas
+            dl
+            snb
+            sn
+            br
           requireScope: false
 
       - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
