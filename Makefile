@@ -11,6 +11,7 @@ COVERAGE_DIR := $(CURDIR)/coverage
 	proto-lint proto-format proto-generate
 
 build: proto-generate ## Build all services
+	go work vendor
 	$(MAKE) -C $(SERVICE_DI) build
 
 run: ## Run the data-ingestion service (dev)
