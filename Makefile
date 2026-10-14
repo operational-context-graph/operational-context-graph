@@ -17,7 +17,7 @@ go-work-init: ## Initialize Go workspace (idempotent)
 	go work sync
 
 build: proto-generate go-work-init ## Build all services
-	go work vendor
+	GOWORK=off $(MAKE) -C $(SERVICE_DI) vendor
 	$(MAKE) -C $(SERVICE_DI) build
 
 run: ## Run the data-ingestion service (dev)
