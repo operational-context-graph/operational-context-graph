@@ -530,20 +530,6 @@ func TestRunMissingCAFile(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestShutdownZeroTimeout — ShutdownTimeout==0 uses default 30s path in shutdown().
-func TestShutdownZeroTimeout(t *testing.T) {
-	srv, err := grpcserver.NewServer(
-		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 0},
-		defaultLimits(), defaultRetry(), noop(),
-	)
-	require.NoError(t, err)
-
-	addr, cancel, errc := startServer(srv)
-	waitReady(t, addr)
-	cancel()
-	require.NoError(t, <-errc)
-}
-
 // --- 8.7: plaintext mode log ---
 
 func TestPlaintextModeStarts(t *testing.T) {

@@ -109,16 +109,16 @@ func TestMaxMessagesBoundary(t *testing.T) {
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 }
 
-// --- 5.5: nil payload counts as 0 bytes; payload size limit enforced by transport ---
+// --- 5.5: nil payload is valid — bytes fields default to nil in proto3 ---
 
-func TestNilPayloadCountsAsZeroBytes(t *testing.T) {
+func TestNilPayloadIsAccepted(t *testing.T) {
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: 50}
 	srv := newServer(t, noop(), limits, defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope(nil)},
 	})
-	require.NoError(t, err, "nil payload must not panic and must count as 0 bytes")
+	require.NoError(t, err, "nil payload is valid proto3; handler must not panic")
 }
 
 // --- 5.6: nil LimitsConfig or nil Ingestor at construction → non-nil error ---
@@ -262,7 +262,7 @@ func TestContextCancelledDuringIngest(t *testing.T) {
 }
 
 // --- 7.1: concurrent Ingest calls — data race check (run with -race) ---
-
+// The assertion is the race detector itself; result values are intentionally ignored.
 func TestConcurrentIngest(t *testing.T) {
 	srv := newServer(t, noop(), defaultLimits(), defaultRetry())
 

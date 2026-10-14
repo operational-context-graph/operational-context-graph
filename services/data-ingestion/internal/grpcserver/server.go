@@ -121,8 +121,7 @@ func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
 	// MaxRecvMsgSize is the sole payload size guard. Proto framing overhead
 	// (field tags, length prefixes, string fields) counts against this limit,
 	// so requests where overhead pushes wire size past MaxPayloadBytes are
-	// transport-rejected with RESOURCE_EXHAUSTED — same code as the old
-	// application-layer check.
+	// transport-rejected with RESOURCE_EXHAUSTED.
 	if s.limits.MaxPayloadBytes > math.MaxInt {
 		return nil, fmt.Errorf("grpcserver: limits.max_payload_bytes %d overflows int", s.limits.MaxPayloadBytes)
 	}
@@ -185,9 +184,6 @@ func (s *Server) tlsOption() (grpc.ServerOption, error) {
 // Stop() synchronously after GracefulStop() starts would deadlock.
 func (s *Server) shutdown(grpcSrv *grpc.Server) {
 	timeout := s.grpcCfg.ShutdownTimeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
 
 	graceDone := make(chan struct{})
 	go func() {
