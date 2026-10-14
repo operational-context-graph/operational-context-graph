@@ -115,10 +115,9 @@ operations:
           5. No global mutable state with side effects
           6. Proto changes regenerated via Buf; no hand-edited gen/ files
       - |-
-        Implementation ownership: implement applied tasks as the developer agent
-        (.claude/agents/developer.md) — follow its coding standards, branch naming,
-        and end-of-session handoff. Running /opsx:apply is the spec-to-code step,
-        not a bypass of review.
+        Implementation ownership: implement applied tasks as the 'developer' agent — follow
+        its coding standards, branch naming, and end-of-session handoff. Running /opsx:apply
+        is the spec-to-code step, not a bypass of review.
       - |-
         Route the change through the risk-based workflow in AGENTS.md: pick the
         change tier, then developer → code-reviewer → verification. High and Design
