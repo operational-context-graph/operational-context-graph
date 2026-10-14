@@ -6,6 +6,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 type stubTelemetryDB struct {
 	queryLogsFn    func(ctx context.Context, q store.LogQuery) ([]store.Log, error)
 	queryMetricsFn func(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
+	schemaReadyFn  func(ctx context.Context) error
 }
 
 func (s *stubTelemetryDB) QueryLogs(ctx context.Context, q store.LogQuery) ([]store.Log, error) {
@@ -41,8 +43,13 @@ func (s *stubTelemetryDB) QueryMetrics(ctx context.Context, q store.MetricQuery)
 	}
 	return nil, nil
 }
-func (s *stubTelemetryDB) Ping(_ context.Context) error        { return nil }
-func (s *stubTelemetryDB) SchemaReady(_ context.Context) error { return nil }
+func (s *stubTelemetryDB) Ping(_ context.Context) error { return nil }
+func (s *stubTelemetryDB) SchemaReady(ctx context.Context) error {
+	if s.schemaReadyFn != nil {
+		return s.schemaReadyFn(ctx)
+	}
+	return nil
+}
 
 // stubStreamLoader is a hand-written stub that satisfies the streamLoader interface.
 type stubStreamLoader struct {
@@ -113,6 +120,26 @@ func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
 	rr := test.GetRequest(t, srv.Handler, "/health")
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestLivenessEndpoint_OK(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
+	rr := test.GetRequest(t, srv.Handler, "/healthz")
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestReadinessEndpoint_OK(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
+	rr := test.GetRequest(t, srv.Handler, "/readyz")
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestReadinessEndpoint_SchemaNotReady_Returns503(t *testing.T) {
+	stub := &stubTelemetryDB{}
+	stub.schemaReadyFn = func(_ context.Context) error { return errors.New("table missing") }
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	rr := test.GetRequest(t, srv.Handler, "/readyz")
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
 }
 
 func TestRequestIDMiddleware_SetsHeader(t *testing.T) {

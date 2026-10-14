@@ -34,6 +34,29 @@ func NewServer(d telemetryDB, sl streamLoader, addr string) *http.Server {
 	r.Use(loggingMiddleware())
 	r.Use(panicRecoveryMiddleware())
 
+	// /healthz — liveness: DB reachable.
+	r.GET("/healthz", func(c *gin.Context) {
+		if err := d.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// /readyz — readiness: DB reachable and schema at expected version.
+	r.GET("/readyz", func(c *gin.Context) {
+		if err := d.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
+		if err := d.SchemaReady(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "schema not ready"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// /health — legacy combined check kept for backwards compatibility.
 	r.GET("/health", func(c *gin.Context) {
 		if err := d.Ping(c.Request.Context()); err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})

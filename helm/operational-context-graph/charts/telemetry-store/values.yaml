@@ -4,7 +4,7 @@
 
 # Default values for the telemetry-store subchart.
 enabled: true
-replicaCount: 1
+replicaCount: 3
 
 image:
   repository: ghcr.io/operational-context-graph/telemetry-store
