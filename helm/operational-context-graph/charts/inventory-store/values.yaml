@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the inventory-store subchart.
+enabled: true
+replicaCount: 2
+
+image:
+  repository: ghcr.io/operational-context-graph/inventory-store
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Container port the service listens on (matches HTTP_PORT default).
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Name of the pre-existing Kubernetes Secret that holds DATABASE_URL.
+# The Secret must be created before installing this chart.
+secretName: inventory-store-secret
+
+# Name of the pre-existing Kubernetes Secret that holds DATABASE_URL for the migrator job.
+# Defaults to the same secret as the service.
+migratorSecretName: ""
+
+migrator:
+  image:
+    repository: ghcr.io/operational-context-graph/inventory-store-migrator
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+# Non-secret database connection pool settings.
+db:
+  maxOpenConns: "25"
+  maxIdleConns: "5"
+  connMaxLifetime: "5m"
+
+env:
+  HTTP_PORT: "8080"
+  LOG_LEVEL: "info"
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""

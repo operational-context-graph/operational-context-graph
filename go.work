@@ -1,0 +1,6 @@
+go 1.27.1
+
+use (
+	./services/data-ingestion
+	./services/inventory-store
+)
