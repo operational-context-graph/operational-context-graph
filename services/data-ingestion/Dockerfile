@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
 # Runtime stage.
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
 EXPOSE 8080 9090
 USER nonroot:nonroot
