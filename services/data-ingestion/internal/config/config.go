@@ -10,7 +10,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -54,27 +53,33 @@ type LoggingConfig struct {
 
 // GRPCConfig holds gRPC server settings.
 type GRPCConfig struct {
-	Host            string        `koanf:"host" validate:"required"`
-	Port            int           `koanf:"port" validate:"required,min=1,max=65535"`
-	TLSCertFile     string        `koanf:"tls_cert_file"`
-	TLSKeyFile      string        `koanf:"tls_key_file"`
-	TLSCAFile       string        `koanf:"tls_ca_file"`
-	ShutdownTimeout time.Duration `koanf:"shutdown_timeout"`
+	Host            string        `koanf:"host"             validate:"required"`
+	Port            int           `koanf:"port"             validate:"required,min=1,max=65535"`
+	TLS             *TLSConfig    `koanf:"tls"              validate:"omitempty"`
+	ShutdownTimeout time.Duration `koanf:"shutdown_timeout" validate:"required,gt=0"`
+}
+
+// TLSConfig holds mTLS certificate paths. All three fields are required together;
+// omit the tls block entirely to disable TLS.
+type TLSConfig struct {
+	CertFile string `koanf:"cert_file" validate:"required"`
+	KeyFile  string `koanf:"key_file"  validate:"required"`
+	CAFile   string `koanf:"ca_file"   validate:"required"`
 }
 
 // LimitsConfig holds request-level limit settings for the gRPC handler.
 type LimitsConfig struct {
-	MaxMessages    int   `koanf:"max_messages"`
-	MaxPayloadBytes int64 `koanf:"max_payload_bytes"`
+	MaxMessages     int   `koanf:"max_messages"    validate:"required,gt=0"`
+	MaxPayloadBytes int64 `koanf:"max_payload_bytes" validate:"required,gt=0"`
 }
 
 // RetryConfig holds retry hint settings returned in UNAVAILABLE responses.
 // The server always returns InitialBackoff as the hint; Multiplier and
 // MaxBackoff are validated and stored for future per-client backoff support.
 type RetryConfig struct {
-	InitialBackoff time.Duration `koanf:"initial_backoff"`
-	MaxBackoff     time.Duration `koanf:"max_backoff"`
-	Multiplier     float64       `koanf:"multiplier"`
+	InitialBackoff time.Duration `koanf:"initial_backoff" validate:"required,gt=0"`
+	MaxBackoff     time.Duration `koanf:"max_backoff"     validate:"required,gtefield=InitialBackoff"`
+	Multiplier     float64       `koanf:"multiplier"      validate:"required,gte=1.0"`
 }
 
 // defaults returns the built-in configuration applied before any override.
@@ -155,63 +160,10 @@ func LoadFromFile(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// validateConfig runs structural validation followed by cross-field checks.
+// validateConfig validates the configuration using struct tags.
 func validateConfig(cfg *Config) error {
 	if err := validator.New().Struct(cfg); err != nil {
 		return fmt.Errorf("validate config: %w", err)
-	}
-
-	if err := validateTLS(&cfg.GRPC); err != nil {
-		return err
-	}
-	if err := validateLimits(&cfg.Limits); err != nil {
-		return err
-	}
-	if err := validateRetry(&cfg.Retry); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func validateTLS(g *GRPCConfig) error {
-	set := 0
-	for _, p := range []string{g.TLSCertFile, g.TLSKeyFile, g.TLSCAFile} {
-		if p != "" {
-			set++
-		}
-	}
-	if set != 0 && set != 3 {
-		return errors.New("validate config: grpc tls requires all three of tls_cert_file, tls_key_file, tls_ca_file or none")
-	}
-	if g.ShutdownTimeout <= 0 {
-		return errors.New("validate config: grpc.shutdown_timeout must be positive")
-	}
-	return nil
-}
-
-func validateLimits(l *LimitsConfig) error {
-	if l.MaxMessages <= 0 {
-		return errors.New("validate config: limits.max_messages must be positive")
-	}
-	if l.MaxPayloadBytes <= 0 {
-		return errors.New("validate config: limits.max_payload_bytes must be positive")
-	}
-	return nil
-}
-
-func validateRetry(r *RetryConfig) error {
-	if r.InitialBackoff <= 0 {
-		return errors.New("validate config: retry.initial_backoff must be positive")
-	}
-	if r.MaxBackoff <= 0 {
-		return errors.New("validate config: retry.max_backoff must be positive")
-	}
-	if r.MaxBackoff < r.InitialBackoff {
-		return errors.New("validate config: retry.max_backoff must be >= initial_backoff")
-	}
-	if r.Multiplier < 1.0 {
-		return errors.New("validate config: retry.multiplier must be >= 1.0")
 	}
 	return nil
 }

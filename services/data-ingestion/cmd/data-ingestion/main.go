@@ -49,7 +49,7 @@ func run() error {
 
 	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
-	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLSCertFile != "")
+	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
 	grpcErrC := make(chan error, 1)
 	go func() {

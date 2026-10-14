@@ -142,26 +142,25 @@ func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
 	return opts, nil
 }
 
-// tlsOption returns a grpc.ServerOption for mTLS when all three TLS paths are
-// set, or nil when none are set. Partial configuration is rejected by config
-// validation before Run is called, so we only handle both-or-neither here.
+// tlsOption returns a grpc.ServerOption for mTLS when TLS is configured,
+// or nil when TLS is disabled.
 func (s *Server) tlsOption() (grpc.ServerOption, error) {
-	if s.grpcCfg.TLSCertFile == "" {
+	if s.grpcCfg.TLS == nil {
 		return nil, nil
 	}
 
-	cert, err := tls.LoadX509KeyPair(s.grpcCfg.TLSCertFile, s.grpcCfg.TLSKeyFile)
+	cert, err := tls.LoadX509KeyPair(s.grpcCfg.TLS.CertFile, s.grpcCfg.TLS.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("grpcserver: load TLS key pair: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(s.grpcCfg.TLSCAFile)
+	caPEM, err := os.ReadFile(s.grpcCfg.TLS.CAFile)
 	if err != nil {
-		return nil, fmt.Errorf("grpcserver: read CA file %q: %w", s.grpcCfg.TLSCAFile, err)
+		return nil, fmt.Errorf("grpcserver: read CA file %q: %w", s.grpcCfg.TLS.CAFile, err)
 	}
 	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("grpcserver: no valid certificates found in CA file %q", s.grpcCfg.TLSCAFile)
+		return nil, fmt.Errorf("grpcserver: no valid certificates found in CA file %q", s.grpcCfg.TLS.CAFile)
 	}
 
 	tlsCfg := &tls.Config{

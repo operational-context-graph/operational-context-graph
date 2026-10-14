@@ -7,6 +7,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,23 +87,24 @@ func TestGRPCAddrPresent(t *testing.T) {
 func TestTLSCertOnly(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv("OCG_DI_GRPC__TLS_CERT_FILE", "/tmp/cert.pem")
+	t.Setenv("OCG_DI_GRPC__TLS__CERT_FILE", "/tmp/cert.pem")
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "tls")
+	assert.Contains(t, strings.ToLower(err.Error()), "tls")
 }
 
 func TestTLSAllThreePresent(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv("OCG_DI_GRPC__TLS_CERT_FILE", "/tmp/cert.pem")
-	t.Setenv("OCG_DI_GRPC__TLS_KEY_FILE", "/tmp/key.pem")
-	t.Setenv("OCG_DI_GRPC__TLS_CA_FILE", "/tmp/ca.pem")
+	t.Setenv("OCG_DI_GRPC__TLS__CERT_FILE", "/tmp/cert.pem")
+	t.Setenv("OCG_DI_GRPC__TLS__KEY_FILE", "/tmp/key.pem")
+	t.Setenv("OCG_DI_GRPC__TLS__CA_FILE", "/tmp/ca.pem")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
-	assert.Equal(t, "/tmp/cert.pem", cfg.GRPC.TLSCertFile)
+	require.NotNil(t, cfg.GRPC.TLS)
+	assert.Equal(t, "/tmp/cert.pem", cfg.GRPC.TLS.CertFile)
 }
 
 func TestTLSNoneSet(t *testing.T) {
@@ -111,7 +113,7 @@ func TestTLSNoneSet(t *testing.T) {
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
-	assert.Empty(t, cfg.GRPC.TLSCertFile)
+	assert.Nil(t, cfg.GRPC.TLS)
 }
 
 // --- ShutdownTimeout ---
@@ -252,7 +254,7 @@ func TestMaxBackoffLessThanInitial(t *testing.T) {
 
 	_, err := LoadFromFile(cfgFile)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max_backoff")
+	assert.Contains(t, strings.ToLower(err.Error()), "maxbackoff")
 }
 
 func TestMaxBackoffEqualToInitial(t *testing.T) {
@@ -283,7 +285,7 @@ func TestMultiplierBelowOne(t *testing.T) {
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "multiplier")
+	assert.Contains(t, strings.ToLower(err.Error()), "multiplier")
 }
 
 func TestMultiplierExactlyOne(t *testing.T) {
