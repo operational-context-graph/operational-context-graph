@@ -242,11 +242,13 @@ func certKeyPEM(t *testing.T, c tls.Certificate) (certPEM, keyPEM []byte) {
 func tlsGRPCCfg(t *testing.T, fix *tlsFixture) *config.GRPCConfig {
 	t.Helper()
 	return &config.GRPCConfig{
-		Host:            "127.0.0.1",
-		Port:            1, // unused when server is started via RunOnListener
-		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
-		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
-		TLSCAFile:       fix.caCertFile,
+		Host: "127.0.0.1",
+		Port: 1, // unused when server is started via RunOnListener
+		TLS: &config.TLSConfig{
+			CertFile: filepath.Join(fix.dir, "server.crt"),
+			KeyFile:  filepath.Join(fix.dir, "server.key"),
+			CAFile:   fix.caCertFile,
+		},
 		ShutdownTimeout: 5 * time.Second,
 	}
 }
@@ -479,11 +481,13 @@ func TestRunInvalidCAFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(caFile, []byte("not-pem"), 0600))
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            "127.0.0.1",
-		Port:            1, // unused: TLS error occurs before bind
-		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
-		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
-		TLSCAFile:       caFile,
+		Host: "127.0.0.1",
+		Port: 1, // unused: TLS error occurs before bind
+		TLS: &config.TLSConfig{
+			CertFile: filepath.Join(fix.dir, "server.crt"),
+			KeyFile:  filepath.Join(fix.dir, "server.key"),
+			CAFile:   caFile,
+		},
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)
@@ -497,11 +501,13 @@ func TestRunMissingCertFile(t *testing.T) {
 	fix := buildTLSFixture(t)
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            "127.0.0.1",
-		Port:            1,
-		TLSCertFile:     "/nonexistent/server.crt",
-		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
-		TLSCAFile:       fix.caCertFile,
+		Host: "127.0.0.1",
+		Port: 1,
+		TLS: &config.TLSConfig{
+			CertFile: "/nonexistent/server.crt",
+			KeyFile:  filepath.Join(fix.dir, "server.key"),
+			CAFile:   fix.caCertFile,
+		},
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)
@@ -516,11 +522,13 @@ func TestRunMissingCAFile(t *testing.T) {
 	fix := buildTLSFixture(t)
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            "127.0.0.1",
-		Port:            1,
-		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
-		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
-		TLSCAFile:       "/nonexistent/ca.pem",
+		Host: "127.0.0.1",
+		Port: 1,
+		TLS: &config.TLSConfig{
+			CertFile: filepath.Join(fix.dir, "server.crt"),
+			KeyFile:  filepath.Join(fix.dir, "server.key"),
+			CAFile:   "/nonexistent/ca.pem",
+		},
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)

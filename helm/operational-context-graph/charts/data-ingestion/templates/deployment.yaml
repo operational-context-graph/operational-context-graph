@@ -31,11 +31,11 @@ spec:
               protocol: TCP
           {{- if .Values.tls.enabled }}
           env:
-            - name: OCG_DI_GRPC__TLS_CERT_FILE
+            - name: OCG_DI_GRPC__TLS__CERT_FILE
               value: {{ .Values.tls.mountPath }}/tls.crt
-            - name: OCG_DI_GRPC__TLS_KEY_FILE
+            - name: OCG_DI_GRPC__TLS__KEY_FILE
               value: {{ .Values.tls.mountPath }}/tls.key
-            - name: OCG_DI_GRPC__TLS_CA_FILE
+            - name: OCG_DI_GRPC__TLS__CA_FILE
               value: {{ .Values.tls.mountPath }}/ca.crt
           volumeMounts:
             - name: tls
