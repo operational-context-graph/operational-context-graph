@@ -5,19 +5,18 @@
 # syntax=docker/dockerfile:1
 
 # Build stage.
-# Build context must be the repository root so the replace directive resolves gen/go.
+# Build context must be the repository root so go.work resolves gen/go.
 # Example: docker build -f services/data-ingestion/Dockerfile .
 FROM golang:1.27 AS build
 WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
 COPY services/data-ingestion/go.mod services/data-ingestion/go.sum services/data-ingestion/
-COPY services/data-ingestion/vendor/ services/data-ingestion/vendor/
+RUN go work init gen/go services/data-ingestion && go mod download -x 2>/dev/null; true
 
 COPY gen/go/ gen/go/
 COPY services/data-ingestion/ services/data-ingestion/
-WORKDIR /src/services/data-ingestion
-RUN CGO_ENABLED=0 GOWORK=off go build -mod=vendor -trimpath -o /out/data-ingestion \
+RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
 # Runtime stage.
