@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin/binding"
 	"github.com/operational-context-graph/inventory-store/internal/config"
 	"github.com/operational-context-graph/inventory-store/internal/database"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
@@ -48,8 +47,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer pool.Close()
-
-	binding.EnableDecoderDisallowUnknownFields = true
 
 	db := store.NewFromPool(pool)
 

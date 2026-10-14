@@ -47,12 +47,11 @@ func TestNullJSON(t *testing.T) {
 	assert.NotNil(t, val)
 }
 
-func TestObservedAtGuard_FormatStability(t *testing.T) {
-	// The temporal dedup guard compares last_updated_at_source as a formatted string.
-	// Verify the format used in UpsertAsset is stable across round-trips.
-	ts := time.Date(2026, 3, 15, 12, 30, 45, 123456789, time.UTC)
-	formatted := ts.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-	assert.NotEmpty(t, formatted)
-	// Same timestamp formatted twice must be identical.
-	assert.Equal(t, formatted, ts.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"))
+func TestTimestampDedup_SameInstantDifferentZone(t *testing.T) {
+	// The temporal dedup guard uses time.Equal, which compares the instant in time
+	// regardless of timezone. Verify that the same instant in UTC and +02:00 is equal.
+	utc := time.Date(2026, 3, 15, 12, 30, 45, 123456789, time.UTC)
+	plus2 := utc.In(time.FixedZone("UTC+2", 2*60*60))
+	assert.True(t, utc.Equal(plus2), "same instant in different zones must be equal")
+	assert.False(t, utc.Equal(utc.Add(time.Nanosecond)), "distinct instants must not be equal")
 }

@@ -81,7 +81,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 	}
 	srv := httpapi.NewServer(stub, ":0")
 
-	rr := test.PostJSON(t, srv.Handler, "/v1/assets", map[string]any{
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathAssets, map[string]any{
 		"artifact_type": "server",
 		"source_system": "cmdb",
 		"source_id":     "srv-001",
@@ -99,7 +99,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 func TestHandleUpsertAsset_InvalidJSON(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
 
-	rr := test.PostJSON(t, srv.Handler, "/v1/assets", "not-an-object")
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathAssets, "not-an-object")
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
@@ -117,7 +117,7 @@ func TestHandleGetAsset_NotFound(t *testing.T) {
 	}
 	srv := httpapi.NewServer(stub, ":0")
 
-	rr := test.GetRequest(t, srv.Handler, "/v1/assets/"+uuid.New().String())
+	rr := test.GetRequest(t, srv.Handler, strings.Replace(httpapi.PathAssetByID, ":id", uuid.New().String(), 1))
 
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
@@ -129,34 +129,34 @@ func TestHandleGetAsset_NotFound(t *testing.T) {
 
 func TestHandleGetAsset_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/assets/not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, strings.Replace(httpapi.PathAssetByID, ":id", "not-a-uuid", 1))
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleGetRelationship_NotFound(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/relationships/"+uuid.New().String())
+	rr := test.GetRequest(t, srv.Handler, strings.Replace(httpapi.PathRelationshipByID, ":id", uuid.New().String(), 1))
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleGetRelationship_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/relationships/not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, strings.Replace(httpapi.PathRelationshipByID, ":id", "not-a-uuid", 1))
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestHandleFilterRelationships_InvalidUUID(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/relationships?asset_id=not-a-uuid")
+	rr := test.GetRequest(t, srv.Handler, httpapi.PathRelationships+"?asset_id=not-a-uuid")
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
 
 func TestHandleFilterRelationships_EmptyResult(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/v1/relationships")
+	rr := test.GetRequest(t, srv.Handler, httpapi.PathRelationships)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp v1.RelationshipListResponse
 	test.DecodeJSON(t, rr, &resp)
@@ -179,7 +179,7 @@ func TestRequestIDMiddleware_SetsHeader(t *testing.T) {
 
 func TestHandleUpsertAsset_WrongContentType_Returns415(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
-	rr := test.PostRaw(t, srv.Handler, "/v1/assets", "text/plain", `{"artifact_type":"server","source_system":"cmdb","source_id":"x"}`)
+	rr := test.PostRaw(t, srv.Handler, httpapi.PathAssets, "text/plain", `{"artifact_type":"server","source_system":"cmdb","source_id":"x"}`)
 	assert.Equal(t, http.StatusUnsupportedMediaType, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
@@ -189,7 +189,7 @@ func TestHandleUpsertAsset_OversizedBody_Returns413(t *testing.T) {
 	// Build a valid JSON object whose string value exceeds the 4 MiB cap.
 	// The JSON parser reads past the opening quote before MaxBytesReader cuts it.
 	big := `{"artifact_type":"` + strings.Repeat("a", 5*1024*1024) + `"}`
-	rr := test.PostRaw(t, srv.Handler, "/v1/assets", "application/json", big)
+	rr := test.PostRaw(t, srv.Handler, httpapi.PathAssets, "application/json", big)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }
@@ -232,7 +232,7 @@ func TestHandleUpsertAsset_MissingRequiredFields_Returns400(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rr := test.PostJSON(t, srv.Handler, "/v1/assets", tc.body)
+			rr := test.PostJSON(t, srv.Handler, httpapi.PathAssets, tc.body)
 			require.Equal(t, http.StatusBadRequest, rr.Code)
 			assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 
@@ -259,7 +259,7 @@ func TestHandleUpsertAsset_MissingRequiredFields_Returns400(t *testing.T) {
 func TestHandleUpsertRelationship_MissingRequiredFields_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
 
-	rr := test.PostJSON(t, srv.Handler, "/v1/relationships", map[string]any{
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathRelationships, map[string]any{
 		"source_asset_id": uuid.New().String(),
 		"target_asset_id": uuid.New().String(),
 	})

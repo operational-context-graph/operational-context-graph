@@ -18,19 +18,24 @@ import (
 )
 
 const (
-	routeUpsertRelationship      = "upsert-relationship"
-	routeUpsertRelationshipBatch = "upsert-relationship-batch"
-	routeGetRelationship         = "get-relationship"
-	routeListRelationships       = "list-relationships"
-	routeFilterRelationships     = "filter-relationships"
+	RouteUpsertRelationship      = "upsert-relationship"
+	RouteUpsertRelationshipBatch = "upsert-relationship-batch"
+	RouteGetRelationship         = "get-relationship"
+	RouteListRelationships       = "list-relationships"
+	RouteFilterRelationships     = "filter-relationships"
+
+	PathRelationships         = "/v1/relationships"
+	PathRelationshipByID      = "/v1/relationships/:id"
+	PathRelationshipsBatch    = "/v1/relationships/batch"
+	PathAssetRelationships    = "/v1/assets/:id/relationships"
 )
 
 func registerRelationshipRoutes(rg *gin.RouterGroup, d db) {
-	rg.POST("/relationships", setRoute(routeUpsertRelationship), handleUpsertRelationship(d))
-	rg.POST("/relationships/batch", setRoute(routeUpsertRelationshipBatch), handleUpsertRelationshipBatch(d))
-	rg.GET("/relationships/:id", setRoute(routeGetRelationship), handleGetRelationship(d))
-	rg.GET("/relationships", setRoute(routeFilterRelationships), handleFilterRelationships(d))
-	rg.GET("/assets/:id/relationships", setRoute(routeListRelationships), handleListRelationships(d))
+	rg.POST("/relationships", setRoute(RouteUpsertRelationship), handleUpsertRelationship(d))
+	rg.POST("/relationships/batch", setRoute(RouteUpsertRelationshipBatch), handleUpsertRelationshipBatch(d))
+	rg.GET("/relationships/:id", setRoute(RouteGetRelationship), handleGetRelationship(d))
+	rg.GET("/relationships", setRoute(RouteFilterRelationships), handleFilterRelationships(d))
+	rg.GET("/assets/:id/relationships", setRoute(RouteListRelationships), handleListRelationships(d))
 }
 
 func handleUpsertRelationship(d db) gin.HandlerFunc {

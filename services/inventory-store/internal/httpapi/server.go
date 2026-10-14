@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
 	"github.com/operational-context-graph/inventory-store/internal/store"
@@ -36,6 +37,7 @@ type db interface {
 // NewServer creates a configured Gin-backed HTTP server.
 func NewServer(d db, addr string) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
+	binding.EnableDecoderDisallowUnknownFields = true
 	r := gin.New()
 	r.Use(requestIDMiddleware())
 	r.Use(loggingMiddleware())

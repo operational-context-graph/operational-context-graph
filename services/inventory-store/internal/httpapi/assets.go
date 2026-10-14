@@ -18,17 +18,21 @@ import (
 )
 
 const (
-	routeUpsertAsset      = "upsert-asset"
-	routeUpsertAssetBatch = "upsert-asset-batch"
-	routeGetAsset         = "get-asset"
-	routeListAssets       = "list-assets"
+	RouteUpsertAsset      = "upsert-asset"
+	RouteUpsertAssetBatch = "upsert-asset-batch"
+	RouteGetAsset         = "get-asset"
+	RouteListAssets       = "list-assets"
+
+	PathAssets      = "/v1/assets"
+	PathAssetByID   = "/v1/assets/:id"
+	PathAssetsBatch = "/v1/assets/batch"
 )
 
 func registerAssetRoutes(rg *gin.RouterGroup, d db) {
-	rg.POST("/assets", setRoute(routeUpsertAsset), handleUpsertAsset(d))
-	rg.POST("/assets/batch", setRoute(routeUpsertAssetBatch), handleUpsertAssetBatch(d))
-	rg.GET("/assets/:id", setRoute(routeGetAsset), handleGetAsset(d))
-	rg.GET("/assets", setRoute(routeListAssets), handleListAssets(d))
+	rg.POST("/assets", setRoute(RouteUpsertAsset), handleUpsertAsset(d))
+	rg.POST("/assets/batch", setRoute(RouteUpsertAssetBatch), handleUpsertAssetBatch(d))
+	rg.GET("/assets/:id", setRoute(RouteGetAsset), handleGetAsset(d))
+	rg.GET("/assets", setRoute(RouteListAssets), handleListAssets(d))
 }
 
 func handleUpsertAsset(d db) gin.HandlerFunc {

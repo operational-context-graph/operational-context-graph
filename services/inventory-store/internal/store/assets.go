@@ -45,9 +45,7 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	// Temporal dedup: skip new version if last_updated_at_source unchanged.
 	if rowExists && in.LastUpdatedAtSource != nil && cur.lastUpdatedAtSource != nil {
-		existing := cur.lastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-		incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-		if existing == incoming {
+		if cur.lastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
 			// Re-delivery — return existing current row without creating a new version.
 			if err := tx.Commit(ctx); err != nil {
 				return Asset{}, false, fmt.Errorf("commit redelivery tx: %w", err)
@@ -214,8 +212,7 @@ RETURNING id`
 		}
 
 		if rowExists && in.LastUpdatedAtSource != nil && curLUAS != nil {
-			incoming := in.LastUpdatedAtSource.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-			if curLUAS.UTC().Format("2006-01-02T15:04:05.999999999Z07:00") == incoming {
+			if curLUAS.Equal(*in.LastUpdatedAtSource) {
 				results = append(results, BatchResult{ID: curID, Outcome: "updated"})
 				continue
 			}
