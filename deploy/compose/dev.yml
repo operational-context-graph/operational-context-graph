@@ -3,7 +3,7 @@
 # For production use the hardened images (see services/inventory-store/Dockerfile).
 
 networks:
-  ocg:
+  inventory-ocg:
     driver: bridge
 
 services:
@@ -25,7 +25,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - ocg
+      - inventory-ocg
 
   inventory-store:
     image: ghcr.io/operational-context-graph/inventory-store:local
@@ -42,7 +42,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - ocg
+      - inventory-ocg
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -60,7 +60,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - ocg
+      - inventory-ocg
 
 volumes:
   postgres-data:
