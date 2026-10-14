@@ -19,13 +19,14 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
 
 // envPrefix namespaces environment variables for this service.
-// For example OCG_DI_SERVER_PORT maps to the server.port key.
+// Double-underscore (__) separates hierarchy levels; single underscore is part of a field name.
+// For example OCG_DI_GRPC__TLS_CERT_FILE maps to the grpc.tls_cert_file key.
 const envPrefix = "OCG_DI_"
 
 // envFileKey is the environment variable that points to an optional config file.
@@ -124,12 +125,12 @@ func LoadFromFile(path string) (*Config, error) {
 	//   OCG_DI_GRPC__TLS_CERT_FILE    -> grpc.tls_cert_file
 	//   OCG_DI_LIMITS__MAX_MESSAGES   -> limits.max_messages
 	//   OCG_DI_RETRY__INITIAL_BACKOFF -> retry.initial_backoff
-	transform := func(s string) string {
-		s = strings.TrimPrefix(s, envPrefix)
-		s = strings.ToLower(s)
-		return strings.ReplaceAll(s, "__", ".")
+	transform := func(k, v string) (string, any) {
+		k = strings.TrimPrefix(k, envPrefix)
+		k = strings.ToLower(k)
+		return strings.ReplaceAll(k, "__", "."), v
 	}
-	if err := k.Load(env.Provider(envPrefix, ".", transform), nil); err != nil {
+	if err := k.Load(env.Provider(".", env.Opt{Prefix: envPrefix, TransformFunc: transform}), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
 	}
 
