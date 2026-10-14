@@ -258,8 +258,7 @@ func TestContextCancelledDuringIngest(t *testing.T) {
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
-	// context.Canceled is not ErrOverloaded → maps to INTERNAL
-	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
 
 // --- 7.1: concurrent Ingest calls — data race check (run with -race) ---
@@ -281,7 +280,7 @@ func TestConcurrentIngest(t *testing.T) {
 	wg.Wait()
 }
 
-// --- 7.2: partition and watermark fields mapped ---
+// --- 7.2: partition and watermark fields mapped independently ---
 
 func TestPartitionFieldMapped(t *testing.T) {
 	var captured []ingest.IngestRecord
@@ -301,5 +300,53 @@ func TestPartitionFieldMapped(t *testing.T) {
 	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
-	assert.Equal(t, map[string]interface{}{"key": "val"}, captured[0].Watermark)
+	assert.Equal(t, `{"key":"val"}`, captured[0].Partition)
+	assert.Nil(t, captured[0].Watermark, "watermark must be nil when not set")
+}
+
+func TestWatermarkFieldMapped(t *testing.T) {
+	var captured []ingest.IngestRecord
+	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		captured = batch
+		return ingest.IngestResult{Accepted: len(batch)}, nil
+	}}, defaultLimits(), defaultRetry())
+
+	watermarkStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(42)})
+	require.NoError(t, err)
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "a",
+		SchemaVersion:     "v1",
+		Payload:           []byte("x"),
+		Watermark:         watermarkStruct,
+	}
+	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	require.Len(t, captured, 1)
+	assert.Empty(t, captured[0].Partition, "partition must be empty when not set")
+	assert.Equal(t, map[string]interface{}{"offset": float64(42)}, captured[0].Watermark)
+}
+
+func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
+	var captured []ingest.IngestRecord
+	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		captured = batch
+		return ingest.IngestResult{Accepted: len(batch)}, nil
+	}}, defaultLimits(), defaultRetry())
+
+	partitionStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "east"})
+	require.NoError(t, err)
+	watermarkStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(99)})
+	require.NoError(t, err)
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "a",
+		SchemaVersion:     "v1",
+		Payload:           []byte("x"),
+		Partition:         partitionStruct,
+		Watermark:         watermarkStruct,
+	}
+	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	require.Len(t, captured, 1)
+	assert.Equal(t, `{"shard":"east"}`, captured[0].Partition)
+	assert.Equal(t, map[string]interface{}{"offset": float64(99)}, captured[0].Watermark)
 }

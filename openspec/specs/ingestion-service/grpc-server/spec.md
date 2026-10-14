@@ -14,7 +14,7 @@ The gRPC server lifecycle component starts `IngestionService` on a configurable 
 
 ### Requirement: Server starts on configured host and port
 
-`Server.Run(ctx)` SHALL bind the gRPC listener on `GRPCConfig.Host:GRPCConfig.Port` and begin serving. It SHALL return a non-nil error and not start when the port is already in use.
+`Server.Run(ctx)` SHALL bind the gRPC listener on `GRPCConfig.Host:GRPCConfig.Port` and begin serving. It SHALL return a non-nil error and not start when the port is already in use. `Server.RunOnListener(ctx, lis)` SHALL accept an already-bound `net.Listener` and begin serving on it, allowing callers to pre-bind the port and eliminate TOCTOU races.
 
 #### Scenario: Successful start
 - **WHEN** `GRPCConfig.Host` and `GRPCConfig.Port` are valid and the port is free
@@ -25,8 +25,8 @@ The gRPC server lifecycle component starts `IngestionService` on a configurable 
 - **THEN** `Server.Run` returns a non-nil error immediately without blocking
 
 #### Scenario: Already-cancelled context
-- **WHEN** `Run` is called with an already-cancelled context
-- **THEN** `Run` returns without starting the listener or accepting any connections
+- **WHEN** `Run` or `RunOnListener` is called with an already-cancelled context
+- **THEN** the method returns nil without starting the listener or accepting any connections; for `RunOnListener` the supplied listener is closed
 
 ### Requirement: mTLS enforced when all TLS paths are configured
 
@@ -75,6 +75,10 @@ The gRPC server SHALL set `MaxRecvMsgSize` to exactly `LimitsConfig.MaxPayloadBy
 #### Scenario: Oversized wire message rejected by transport
 - **WHEN** a client sends a request whose total wire size exceeds `MaxPayloadBytes`
 - **THEN** the gRPC transport rejects it with `RESOURCE_EXHAUSTED` before the handler is invoked
+
+#### Scenario: MaxPayloadBytes overflow caught at startup
+- **WHEN** `LimitsConfig.MaxPayloadBytes` exceeds the platform `int` maximum (relevant on 32-bit platforms)
+- **THEN** `Server.RunOnListener` returns a non-nil error before the gRPC server is created
 
 ### Requirement: Startup logs registered services
 

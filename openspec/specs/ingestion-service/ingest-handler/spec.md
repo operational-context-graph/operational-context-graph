@@ -98,15 +98,35 @@ When `Ingestor.Ingest` returns a non-nil error that is not `ErrOverloaded`, the 
 
 ### Requirement: Context propagated without panic
 
-The handler SHALL propagate the request context to `Ingestor.Ingest` and SHALL NOT panic when the context is already cancelled or is cancelled during the call.
+The handler SHALL propagate the request context to `Ingestor.Ingest` and SHALL NOT panic when the context is already cancelled or is cancelled during the call. When `Ingestor.Ingest` returns `context.Canceled` or `context.DeadlineExceeded`, the handler SHALL map it to `UNAVAILABLE` (not `INTERNAL`).
 
 #### Scenario: Context already cancelled on entry
 - **WHEN** the request context is already cancelled when the handler is invoked
 - **THEN** the handler does not panic; it either calls `Ingestor.Ingest` (which propagates the cancellation) or returns an appropriate gRPC error
 
 #### Scenario: Context cancelled during Ingestor.Ingest
-- **WHEN** the context is cancelled while `Ingestor.Ingest` is executing
-- **THEN** `Ingestor.Ingest` returns a context error; the handler maps it to `UNAVAILABLE`
+- **WHEN** the context is cancelled while `Ingestor.Ingest` is executing and `Ingestor.Ingest` returns `context.Canceled`
+- **THEN** the handler maps the error to gRPC status `UNAVAILABLE`, not `INTERNAL`
+
+### Requirement: Partition and Watermark fields mapped independently
+
+`MessageEnvelope.partition` (a `google.protobuf.Struct`) SHALL be JSON-encoded and stored as `IngestRecord.Partition` (string). `MessageEnvelope.watermark` (a `google.protobuf.Struct`) SHALL be stored as `IngestRecord.Watermark` (`map[string]any`). The two fields are independent: setting one does not affect the other.
+
+#### Scenario: Partition field mapped to JSON string
+- **WHEN** `MessageEnvelope.partition` is set and `watermark` is absent
+- **THEN** `IngestRecord.Partition` contains the JSON encoding of the partition struct and `IngestRecord.Watermark` is nil
+
+#### Scenario: Watermark field mapped to map
+- **WHEN** `MessageEnvelope.watermark` is set and `partition` is absent
+- **THEN** `IngestRecord.Watermark` contains the watermark key-value pairs and `IngestRecord.Partition` is empty
+
+#### Scenario: Partition and Watermark both set are mapped independently
+- **WHEN** both `MessageEnvelope.partition` and `MessageEnvelope.watermark` are set
+- **THEN** `IngestRecord.Partition` contains the JSON-encoded partition and `IngestRecord.Watermark` contains the watermark map, independently
+
+#### Scenario: Invalid partition struct causes INVALID_ARGUMENT
+- **WHEN** `MessageEnvelope.partition` cannot be JSON-encoded
+- **THEN** the handler returns `INVALID_ARGUMENT`
 
 ### Requirement: Nil Ingestor rejected at construction
 

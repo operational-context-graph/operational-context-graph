@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"slices"
@@ -56,14 +57,27 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 // error if another Run is already active, the listener cannot be bound, or TLS
 // configuration fails.
 func (s *Server) Run(ctx context.Context) error {
+	lis, err := net.Listen("tcp", net.JoinHostPort(s.grpcCfg.Host, strconv.Itoa(s.grpcCfg.Port)))
+	if err != nil {
+		return fmt.Errorf("grpcserver: listen %s:%d: %w", s.grpcCfg.Host, s.grpcCfg.Port, err)
+	}
+	return s.RunOnListener(ctx, lis)
+}
+
+// RunOnListener starts the gRPC server on an already-bound listener and blocks
+// until ctx is cancelled. It returns an error if another Run is already active
+// or TLS configuration fails. The listener is closed when Run returns.
+func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 	if !s.running.CompareAndSwap(false, true) {
+		_ = lis.Close()
 		return errors.New("grpcserver: Run is already active on this Server")
 	}
 	defer s.running.Store(false)
 
-	// Respect already-cancelled context before binding.
+	// Respect already-cancelled context before serving.
 	select {
 	case <-ctx.Done():
+		_ = lis.Close()
 		return nil
 	default:
 	}
@@ -88,11 +102,6 @@ func (s *Server) Run(ctx context.Context) error {
 	slices.Sort(services)
 	slog.Info("grpc services registered", "services", services)
 
-	lis, err := net.Listen("tcp", net.JoinHostPort(s.grpcCfg.Host, strconv.Itoa(s.grpcCfg.Port)))
-	if err != nil {
-		return fmt.Errorf("grpcserver: listen %s:%d: %w", s.grpcCfg.Host, s.grpcCfg.Port, err)
-	}
-
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- grpcSrv.Serve(lis)
@@ -114,6 +123,9 @@ func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
 	// so requests where overhead pushes wire size past MaxPayloadBytes are
 	// transport-rejected with RESOURCE_EXHAUSTED — same code as the old
 	// application-layer check.
+	if s.limits.MaxPayloadBytes > math.MaxInt {
+		return nil, fmt.Errorf("grpcserver: limits.max_payload_bytes %d overflows int", s.limits.MaxPayloadBytes)
+	}
 	maxRecv := int(s.limits.MaxPayloadBytes)
 
 	opts := []grpc.ServerOption{

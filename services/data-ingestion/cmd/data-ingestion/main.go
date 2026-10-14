@@ -57,6 +57,11 @@ func run() error {
 	}()
 
 	httpErr := httpSrv.Run(ctx)
+	// If the HTTP server exits for any reason (error or clean shutdown) cancel
+	// the shared context so the gRPC goroutine also exits. Without this, a
+	// startup bind error on the HTTP side would leave the process blocked on
+	// <-grpcErrC forever because grpcSrv.Run only exits when ctx is cancelled.
+	stop()
 
 	grpcErr := <-grpcErrC
 

@@ -14,6 +14,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -37,22 +38,26 @@ import (
 
 // --- helpers ---
 
-// freeHostPort allocates a free TCP port on 127.0.0.1 and returns host and port separately.
-func freeHostPort(t *testing.T) (host, port string) {
+// listenFree binds a free TCP port on 127.0.0.1 and returns the open listener.
+// The caller must close the listener (or pass it to RunOnListener which closes it).
+func listenFree(t *testing.T) net.Listener {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+	return l
+}
+
+// freeHostPort binds a free TCP port, closes the listener, and returns host
+// and port. There is an inherent TOCTOU window between Close and the server's
+// own Listen, but on loopback this window is negligible in practice. Prefer
+// listenFree + RunOnListener where the server API allows it.
+func freeHostPort(t *testing.T) (host, port string) {
+	t.Helper()
+	l := listenFree(t)
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
 	l.Close()
 	return h, p
-}
-
-// freeAddr returns a free address as "host:port" for use with dial helpers.
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	host, port := freeHostPort(t)
-	return net.JoinHostPort(host, port)
 }
 
 func defaultGRPCCfg(host, port string) *config.GRPCConfig {
@@ -71,9 +76,27 @@ func newTestServer(t *testing.T, grpcCfg *config.GRPCConfig) *grpcserver.Server 
 	return srv
 }
 
-// startServer runs the server in a goroutine and returns a cancel func and
-// error channel. Call cancel() to trigger shutdown.
-func startServer(srv *grpcserver.Server) (context.CancelFunc, <-chan error) {
+// startServer runs the server on a pre-bound listener in a goroutine and
+// returns the listener address, a cancel func, and an error channel.
+// Using RunOnListener eliminates the TOCTOU race of freeHostPort.
+func startServer(srv *grpcserver.Server) (addr string, cancel context.CancelFunc, errc <-chan error) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	addr = lis.Addr().String()
+	ctx, c := context.WithCancel(context.Background())
+	ch := make(chan error, 1)
+	go func() {
+		ch <- srv.RunOnListener(ctx, lis)
+	}()
+	return addr, c, ch
+}
+
+// startServerOnAddr runs the server using its configured host/port (Run, not
+// RunOnListener). Used only when the TLS config embeds specific file paths that
+// must already be written and the port was freed just before this call.
+func startServerOnAddr(srv *grpcserver.Server) (context.CancelFunc, <-chan error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
 	go func() {
@@ -216,12 +239,11 @@ func certKeyPEM(t *testing.T, c tls.Certificate) (certPEM, keyPEM []byte) {
 	return
 }
 
-func tlsGRPCCfg(t *testing.T, host, port string, fix *tlsFixture) *config.GRPCConfig {
+func tlsGRPCCfg(t *testing.T, fix *tlsFixture) *config.GRPCConfig {
 	t.Helper()
-	p, _ := strconv.Atoi(port)
 	return &config.GRPCConfig{
-		Host:            host,
-		Port:            p,
+		Host:            "127.0.0.1",
+		Port:            1, // unused when server is started via RunOnListener
 		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
 		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
 		TLSCAFile:       fix.caCertFile,
@@ -271,14 +293,20 @@ func TestRunPortAlreadyInUse(t *testing.T) {
 // --- 8.3: already-cancelled context → returns without starting ---
 
 func TestRunAlreadyCancelledContext(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	srv := newTestServer(t, defaultGRPCCfg(host, port))
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(),
+	)
+	require.NoError(t, err)
+
+	lis, lisErr := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, lisErr)
+	addr := lis.Addr().String()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := srv.Run(ctx)
+	err = srv.RunOnListener(ctx, lis)
 	require.NoError(t, err)
 
 	// Confirm nothing is listening
@@ -292,17 +320,19 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 // --- 8.4: second concurrent Run → error ---
 
 func TestRunReentrancy(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	srv := newTestServer(t, defaultGRPCCfg(host, port))
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(),
+	)
+	require.NoError(t, err)
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer cancel()
 	waitReady(t, addr)
 
 	// Second Run must fail immediately.
 	ctx2 := context.Background()
-	err := srv.Run(ctx2)
+	err = srv.Run(ctx2)
 	require.Error(t, err)
 
 	cancel()
@@ -328,12 +358,10 @@ func dialMTLS(t *testing.T, addr string, clientCert tls.Certificate, caPool *x50
 }
 
 func TestMTLSValidClientAccepted(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
 	fix := buildTLSFixture(t)
-	srv := newTestServer(t, tlsGRPCCfg(t, host, port, fix))
+	srv := newTestServer(t, tlsGRPCCfg(t, fix))
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -359,12 +387,10 @@ func TestMTLSValidClientAccepted(t *testing.T) {
 }
 
 func TestMTLSNoClientCertRejected(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
 	fix := buildTLSFixture(t)
-	srv := newTestServer(t, tlsGRPCCfg(t, host, port, fix))
+	srv := newTestServer(t, tlsGRPCCfg(t, fix))
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -391,12 +417,10 @@ func TestMTLSNoClientCertRejected(t *testing.T) {
 }
 
 func TestMTLSWrongCARejected(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
 	fix := buildTLSFixture(t)
-	srv := newTestServer(t, tlsGRPCCfg(t, host, port, fix))
+	srv := newTestServer(t, tlsGRPCCfg(t, fix))
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -421,12 +445,10 @@ func TestMTLSWrongCARejected(t *testing.T) {
 }
 
 func TestMTLSExpiredClientCertRejected(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
 	fix := buildTLSFixture(t)
-	srv := newTestServer(t, tlsGRPCCfg(t, host, port, fix))
+	srv := newTestServer(t, tlsGRPCCfg(t, fix))
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -451,77 +473,72 @@ func TestMTLSExpiredClientCertRejected(t *testing.T) {
 // --- 8.6: invalid CA file → Run returns error ---
 
 func TestRunInvalidCAFile(t *testing.T) {
-	host, port := freeHostPort(t)
-	p, _ := strconv.Atoi(port)
 	dir := t.TempDir()
-
 	fix := buildTLSFixture(t)
 	caFile := filepath.Join(dir, "bad-ca.pem")
 	require.NoError(t, os.WriteFile(caFile, []byte("not-pem"), 0600))
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            host,
-		Port:            p,
+		Host:            "127.0.0.1",
+		Port:            1, // unused: TLS error occurs before bind
 		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
 		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
 		TLSCAFile:       caFile,
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)
-	err := srv.Run(context.Background())
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	err = srv.RunOnListener(context.Background(), lis)
 	require.Error(t, err)
 }
 
 func TestRunMissingCertFile(t *testing.T) {
-	host, port := freeHostPort(t)
-	p, _ := strconv.Atoi(port)
 	fix := buildTLSFixture(t)
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            host,
-		Port:            p,
+		Host:            "127.0.0.1",
+		Port:            1,
 		TLSCertFile:     "/nonexistent/server.crt",
 		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
 		TLSCAFile:       fix.caCertFile,
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)
-	err := srv.Run(context.Background())
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	err = srv.RunOnListener(context.Background(), lis)
 	require.Error(t, err)
 }
 
 // TestRunMissingCAFile — cert/key load OK, CA file missing (os.ReadFile error).
 func TestRunMissingCAFile(t *testing.T) {
-	host, port := freeHostPort(t)
-	p, _ := strconv.Atoi(port)
 	fix := buildTLSFixture(t)
 
 	grpcCfg := &config.GRPCConfig{
-		Host:            host,
-		Port:            p,
+		Host:            "127.0.0.1",
+		Port:            1,
 		TLSCertFile:     filepath.Join(fix.dir, "server.crt"),
 		TLSKeyFile:      filepath.Join(fix.dir, "server.key"),
 		TLSCAFile:       "/nonexistent/ca.pem",
 		ShutdownTimeout: 5 * time.Second,
 	}
 	srv := newTestServer(t, grpcCfg)
-	err := srv.Run(context.Background())
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	err = srv.RunOnListener(context.Background(), lis)
 	require.Error(t, err)
 }
 
 // TestShutdownZeroTimeout — ShutdownTimeout==0 uses default 30s path in shutdown().
 func TestShutdownZeroTimeout(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	p, _ := strconv.Atoi(port)
-
 	srv, err := grpcserver.NewServer(
-		&config.GRPCConfig{Host: host, Port: p, ShutdownTimeout: 0},
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 0},
 		defaultLimits(), defaultRetry(), noop(),
 	)
 	require.NoError(t, err)
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	waitReady(t, addr)
 	cancel()
 	require.NoError(t, <-errc)
@@ -530,11 +547,13 @@ func TestShutdownZeroTimeout(t *testing.T) {
 // --- 8.7: plaintext mode log ---
 
 func TestPlaintextModeStarts(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	srv := newTestServer(t, defaultGRPCCfg(host, port))
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(),
+	)
+	require.NoError(t, err)
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -561,14 +580,9 @@ func TestPlaintextModeStarts(t *testing.T) {
 // --- 8.8: graceful shutdown — in-flight RPC completes ---
 
 func TestGracefulShutdownDrainsRPC(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	p, _ := strconv.Atoi(port)
 	start := make(chan struct{})
 	done := make(chan struct{})
 
-	srvObj := newTestServer(t, defaultGRPCCfg(host, port))
-	// Override ingestor with one that signals when it starts and waits for done.
 	slowIngestor := &fakeIngestor{fn: func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		close(start)
 		select {
@@ -578,13 +592,12 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 		return ingest.IngestResult{Accepted: 1}, nil
 	}}
 	slowSrv, err := grpcserver.NewServer(
-		&config.GRPCConfig{Host: host, Port: p, ShutdownTimeout: 5 * time.Second},
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
 		defaultLimits(), defaultRetry(), slowIngestor,
 	)
 	require.NoError(t, err)
-	_ = srvObj
 
-	cancel, errc := startServer(slowSrv)
+	addr, cancel, errc := startServer(slowSrv)
 	waitReady(t, addr)
 
 	conn, err := dialInsecure(t, addr)
@@ -620,9 +633,6 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 // --- 8.9: hard-stop after ShutdownTimeout ---
 
 func TestHardStopAfterShutdownTimeout(t *testing.T) {
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
-	p, _ := strconv.Atoi(port)
 	stuck := make(chan struct{})
 
 	stuckIngestor := &fakeIngestor{fn: func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
@@ -632,12 +642,12 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 	}}
 
 	srv, err := grpcserver.NewServer(
-		&config.GRPCConfig{Host: host, Port: p, ShutdownTimeout: 200 * time.Millisecond},
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 200 * time.Millisecond},
 		defaultLimits(), defaultRetry(), stuckIngestor,
 	)
 	require.NoError(t, err)
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	waitReady(t, addr)
 
 	conn, err := dialInsecure(t, addr)
@@ -657,9 +667,9 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 	<-stuck
 	cancel()
 
-	start := time.Now()
+	startTime := time.Now()
 	require.NoError(t, <-errc)
-	elapsed := time.Since(start)
+	elapsed := time.Since(startTime)
 	// Run must return within ShutdownTimeout + 500ms safety margin.
 	assert.Less(t, elapsed, 700*time.Millisecond)
 }
@@ -674,15 +684,14 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 	const maxPayload = 1024
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: maxPayload}
-	host, port := freeHostPort(t)
-	addr := net.JoinHostPort(host, port)
 
 	srv, err := grpcserver.NewServer(
-		defaultGRPCCfg(host, port), limits, defaultRetry(), noop(),
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		limits, defaultRetry(), noop(),
 	)
 	require.NoError(t, err)
 
-	cancel, errc := startServer(srv)
+	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
 		<-errc
@@ -714,4 +723,24 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
+
+// TestMaxPayloadBytesOverflow — MaxPayloadBytes > math.MaxInt must be caught at Run time.
+func TestMaxPayloadBytesOverflow(t *testing.T) {
+	if math.MaxInt == math.MaxInt64 {
+		t.Skip("int is 64-bit on this platform; overflow not possible")
+	}
+	limits := &config.LimitsConfig{
+		MaxMessages:     10,
+		MaxPayloadBytes: math.MaxInt64,
+	}
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		limits, defaultRetry(), noop(),
+	)
+	require.NoError(t, err)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	err = srv.RunOnListener(context.Background(), lis)
+	require.Error(t, err)
 }

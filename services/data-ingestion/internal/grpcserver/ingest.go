@@ -6,6 +6,7 @@ package grpcserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -67,7 +68,12 @@ func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.In
 			ContentType:       env.ContentType,
 		}
 		if env.Partition != nil {
-			batch[i].Watermark = env.Partition.AsMap()
+			// Encode partition struct as a stable JSON string used as storage key.
+			b, err := json.Marshal(env.Partition.AsMap())
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
+			}
+			batch[i].Partition = string(b)
 		}
 		if env.Watermark != nil {
 			batch[i].Watermark = env.Watermark.AsMap()
@@ -98,6 +104,10 @@ func (s *IngestionServiceServer) mapIngestError(err error) error {
 			return base.Err()
 		}
 		return withRetry.Err()
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.Unavailable, "request cancelled")
 	}
 
 	slog.Error("unexpected pipeline error", "err", err)
