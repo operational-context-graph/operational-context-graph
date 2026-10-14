@@ -11,7 +11,10 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -31,8 +34,9 @@ const envFileKey = envPrefix + "CONFIG_FILE"
 
 // Config is the validated runtime configuration.
 type Config struct {
-	Server  ServerConfig  `koanf:"server"`
-	Logging LoggingConfig `koanf:"logging"`
+	Server   ServerConfig   `koanf:"server"`
+	Logging  LoggingConfig  `koanf:"logging"`
+	Database DatabaseConfig `koanf:"database"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -46,12 +50,53 @@ type LoggingConfig struct {
 	Level string `koanf:"level" validate:"required,oneof=debug info warn error"`
 }
 
+// DatabaseConfig holds PostgreSQL connection settings for the outbox. The
+// password is supplied only via OCG_DI_DATABASE_PASSWORD (from a Secret); it is
+// never a committed config-file field.
+type DatabaseConfig struct {
+	Host        string `koanf:"host" validate:"required"`
+	Port        int    `koanf:"port" validate:"required,min=1,max=65535"`
+	Name        string `koanf:"name" validate:"required"`
+	User        string `koanf:"user" validate:"required"`
+	Password    string `koanf:"password"`
+	SSLMode     string `koanf:"sslmode" validate:"required,oneof=disable allow prefer require verify-ca verify-full"`
+	MaxConns    int    `koanf:"maxconns" validate:"min=0"`
+	OutboxTable string `koanf:"outboxtable" validate:"required"`
+}
+
 // defaults returns the built-in configuration applied before any override.
 func defaults() *Config {
 	return &Config{
 		Server:  ServerConfig{Host: "0.0.0.0", Port: 8080},
 		Logging: LoggingConfig{Level: "info"},
+		Database: DatabaseConfig{
+			Host:        "localhost",
+			Port:        5432,
+			Name:        "ocg",
+			User:        "ocg",
+			SSLMode:     "disable",
+			MaxConns:    10,
+			OutboxTable: "outbox",
+		},
 	}
+}
+
+// DatabaseDSN builds the pgx connection string from the Database settings. The
+// password is URL-escaped; pool_max_conns is set when MaxConns is positive.
+func (c *Config) DatabaseDSN() string {
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.Database.User, c.Database.Password),
+		Host:   net.JoinHostPort(c.Database.Host, strconv.Itoa(c.Database.Port)),
+		Path:   "/" + c.Database.Name,
+	}
+	q := url.Values{}
+	q.Set("sslmode", c.Database.SSLMode)
+	if c.Database.MaxConns > 0 {
+		q.Set("pool_max_conns", strconv.Itoa(c.Database.MaxConns))
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // Load builds the configuration from defaults, an optional file referenced by

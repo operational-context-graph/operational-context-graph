@@ -23,7 +23,7 @@ func testConfig() *config.Config {
 }
 
 func TestServerHealthRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -34,7 +34,7 @@ func TestServerHealthRoute(t *testing.T) {
 }
 
 func TestServerReadyRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)

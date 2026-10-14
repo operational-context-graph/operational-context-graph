@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: postgres
+description: Development-only PostgreSQL for the OCG outbox. Disabled in production, where the service reuses the existing OCG PostgreSQL instance.
+type: application
+version: 0.1.0
+appVersion: "16"

@@ -26,6 +26,26 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+          env:
+            - name: OCG_DI_DATABASE_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: OCG_DI_DATABASE_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OCG_DI_DATABASE_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: OCG_DI_DATABASE_USER
+              value: {{ .Values.database.user | quote }}
+            - name: OCG_DI_DATABASE_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: OCG_DI_DATABASE_MAXCONNS
+              value: {{ .Values.database.maxconns | quote }}
+            - name: OCG_DI_DATABASE_OUTBOXTABLE
+              value: {{ .Values.database.outboxtable | quote }}
+            - name: OCG_DI_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
           livenessProbe:
             httpGet:
               path: /healthz

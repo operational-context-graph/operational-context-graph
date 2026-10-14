@@ -12,14 +12,18 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
 )
 
 func main() {
@@ -29,17 +33,35 @@ func main() {
 	}
 }
 
-// run loads configuration, starts the server, and blocks until shutdown.
+// run loads configuration, connects to the outbox database, applies migrations,
+// starts the server, and blocks until shutdown.
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	srv := httpserver.New(cfg)
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseDSN())
+	if err != nil {
+		return fmt.Errorf("connect outbox database: %w", err)
+	}
+	defer pool.Close()
+
+	if err := outbox.Migrate(ctx, pool); err != nil {
+		return fmt.Errorf("apply outbox migrations: %w", err)
+	}
+
+	// outbox.Writer is the pipeline's durable sink. The full ingest Pipeline
+	// (Schema Registry client #274 + Source Mapping Execution Engine) is not
+	// wired yet, so the writer is constructed here and will be injected into the
+	// pipeline — and called by the OTLP/gRPC receivers — once those land.
+	writer := outbox.New(pool, cfg.Database.OutboxTable)
+	_ = writer
+
+	srv := httpserver.New(cfg, pool)
 
 	slog.Info("starting data-ingestion", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	if err := srv.Run(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {

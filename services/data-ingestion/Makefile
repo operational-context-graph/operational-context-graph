@@ -32,4 +32,4 @@ tidy: ## Tidy go.mod
 	go mod tidy
 
 mocks: ## Generate mocks (requires mockery)
-	mockery
+	go tool mockery

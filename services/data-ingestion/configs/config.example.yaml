@@ -10,3 +10,12 @@ server:
   port: 8080
 logging:
   level: info
+database:
+  host: localhost
+  port: 5432
+  name: ocg
+  user: ocg
+  sslmode: disable
+  maxconns: 10
+  # The password is NOT configured here. Supply it via the
+  # OCG_DI_DATABASE_PASSWORD environment variable (sourced from a Secret).

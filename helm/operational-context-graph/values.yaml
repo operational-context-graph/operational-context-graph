@@ -4,6 +4,12 @@
 
 global: {}
 
+# Bundled development PostgreSQL. Disabled by default: production reuses the
+# existing OCG PostgreSQL instance (see the database block below). Enable it for
+# local/dev via values.local.yaml.
+postgres:
+  enabled: false
+
 data-ingestion:
   enabled: true
   replicaCount: 1
@@ -14,3 +20,15 @@ data-ingestion:
   service:
     type: ClusterIP
     port: 8080
+  # Points at the existing OCG PostgreSQL instance. Set host and the Secret that
+  # holds the password for your environment. The password is never stored here.
+  database:
+    host: ocg-postgresql
+    port: 5432
+    name: ocg
+    user: ocg
+    sslmode: require
+    maxconns: 10
+    passwordSecret:
+      name: ocg-database
+      key: password
