@@ -16,6 +16,11 @@ Read `AGENTS.md` before starting. Implement only the approved scope.
 
 ## Coding standards
 
+Use the [coding-guidelines](.claude/skills/coding-guidelines/SKILL.md) skill for understanding the language-specific
+coding guidelines for all programming languages in the project.
+
+In addition, follow these standards:
+
 - No credentials, API keys, tokens, or PII in source code or logs.
   Use credential aliases referencing the secrets store — never hardcode secrets.
 - No `latest` tags in container base images. Pin to a specific digest or version.
