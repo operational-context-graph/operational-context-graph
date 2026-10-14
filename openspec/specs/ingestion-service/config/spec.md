@@ -40,7 +40,7 @@ Environment variables MUST use the prefix `OCG_DI_`. The double-underscore `__` 
 - **WHEN** `OCG_DI_GRPC__HOST=127.0.0.1` is set
 - **THEN** the resolved `GRPCConfig.Host` is `"127.0.0.1"`
 
-#### Scenario: Single underscore preserved in field name
+#### Scenario: Double underscore separates hierarchy; single underscore is part of the field name
 - **WHEN** `OCG_DI_GRPC__TLS_CERT_FILE=/etc/tls/tls.crt` is set
 - **THEN** the resolved `GRPCConfig.TLSCertFile` is `"/etc/tls/tls.crt"`
 
