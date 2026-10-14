@@ -7,20 +7,57 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
 	"github.com/operational-context-graph/inventory-store/internal/store"
-	"github.com/operational-context-graph/inventory-store/migrations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const ddl = `
+CREATE TABLE IF NOT EXISTS assets (
+    id                      UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    artifact_type           TEXT          NOT NULL,
+    source_system           TEXT          NOT NULL,
+    source_id               TEXT          NOT NULL,
+    extensions              JSONB,
+    created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    created_at_source       TIMESTAMPTZ,
+    last_updated_at_source  TIMESTAMPTZ,
+    valid_from              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    valid_to                TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_assets_natural_key_current
+    ON assets (source_system, source_id)
+    WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_assets_artifact_type
+    ON assets (artifact_type)
+    WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_assets_created_at_id
+    ON assets (created_at, id)
+    WHERE valid_to IS NULL;
+CREATE TABLE IF NOT EXISTS relationships (
+    id                      UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_asset_id         UUID          NOT NULL REFERENCES assets(id),
+    target_asset_id         UUID          NOT NULL REFERENCES assets(id),
+    artifact_type           TEXT          NOT NULL,
+    source_system           TEXT          NOT NULL,
+    extensions              JSONB,
+    created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    created_at_source       TIMESTAMPTZ,
+    last_updated_at_source  TIMESTAMPTZ,
+    UNIQUE (source_asset_id, target_asset_id, artifact_type)
+);
+CREATE INDEX IF NOT EXISTS idx_relationships_source
+    ON relationships (source_asset_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_target
+    ON relationships (target_asset_id);
+`
 
 var testPool *pgxpool.Pool
 
@@ -30,28 +67,12 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	ctx := context.Background()
-
-	// Run migrations using the real migration files so the test schema
-	// always matches production and cannot drift from the inline DDL.
-	sqlDB, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		panic("open sql db for migrations: " + err.Error())
-	}
-	if err := sqlDB.Ping(); err != nil {
-		panic("ping db for migrations: " + err.Error())
-	}
-	provider, err := migrations.NewProvider(sqlDB)
-	if err != nil {
-		panic("create goose provider: " + err.Error())
-	}
-	if _, err := provider.Up(ctx); err != nil {
-		panic("apply migrations: " + err.Error())
-	}
-	sqlDB.Close()
-
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		panic("open pool: " + err.Error())
+	}
+	if _, err := pool.Exec(ctx, ddl); err != nil {
+		panic("apply schema: " + err.Error())
 	}
 	testPool = pool
 	code := m.Run()
