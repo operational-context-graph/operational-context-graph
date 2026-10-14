@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the telemetry-store subchart.
+enabled: true
+replicaCount: 3
+
+image:
+  repository: ghcr.io/operational-context-graph/telemetry-store
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Container port the service listens on (matches HTTP_PORT default).
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Name of the pre-existing Kubernetes Secret holding Doris write credentials:
+#   DORIS_STREAM_LOAD_URL, DORIS_STREAM_LOAD_USER, DORIS_STREAM_LOAD_PASSWORD.
+# The Secret must be created before installing this chart.
+dorisSecretName: telemetry-store-doris-secret
+
+# Name of the pre-existing Kubernetes Secret holding Doris read credentials:
+#   DORIS_DSN.
+# The Secret must be created before installing this chart.
+dorisReadSecretName: telemetry-store-doris-read-secret
+
+# Name of the pre-existing Kubernetes Secret holding the DDL account DSN for the migrator Job.
+# Goose applies DDL over the MySQL wire protocol (:9030); the secret must provide DORIS_MIGRATE_DSN
+# in the format: <ddl_user>:<password>@tcp(<fe-host>:9030)/<database>
+# The DDL account requires CREATE/ALTER/DROP privilege — distinct from the service's LOAD_PRIV account.
+# The migrator runs as a pre-install/pre-upgrade Job; service pods never apply migrations.
+# The Secret must be created before installing this chart.
+dorisMigratorSecretName: telemetry-store-doris-ddl-secret
+
+migrator:
+  image:
+    repository: ghcr.io/operational-context-graph/telemetry-store-migrator
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+env:
+  HTTP_PORT: "8080"
+  LOG_LEVEL: "info"
+  # replication_num: 3 for production.
+  # Override to "1" in values.local.yaml for a single-BE dev cluster.
+  DORIS_REPLICATION_NUM: "3"
+  DORIS_BUCKETS: "10"
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""
