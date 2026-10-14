@@ -85,6 +85,22 @@ The override file [`values.local.yaml`](../../helm/operational-context-graph/val
 
 Remove the release with `helm uninstall ocg`.
 
+## Docker publishing
+
+See Github [documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+```bash
+# 1. Log in to GitHub Container Registry (GHCR)
+docker login ghcr.io -u <USER>
+
+# 2. Build the image
+docker build -t ghcr.io/operational-context-graph/data-ingestion:latest services/data-ingestion
+
+# 3. Push the image to GHCR
+docker push ghcr.io/operational-context-graph/data-ingestion:latest
+```
+
+
 ## Endpoints
 
 | Method | Path | Description |
