@@ -16,6 +16,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion ./cmd/data-ingestion
 
 # Runtime stage.
 FROM gcr.io/distroless/static:nonroot
+LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
 EXPOSE 8080
 USER nonroot:nonroot
