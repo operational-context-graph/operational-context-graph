@@ -12,6 +12,7 @@ require (
 	github.com/knadh/koanf/providers/env/v2 v2.0.2
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.8
+	github.com/operational-context-graph/operational-context-graph/gen/go v0.0.0
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -52,3 +53,5 @@ require (
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/operational-context-graph/operational-context-graph/gen/go => ../../gen/go
