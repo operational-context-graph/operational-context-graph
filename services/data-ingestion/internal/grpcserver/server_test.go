@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
+	collectorlogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
@@ -71,7 +72,7 @@ func defaultGRPCCfg(host, port string) *config.GRPCConfig {
 
 func newTestServer(t *testing.T, grpcCfg *config.GRPCConfig) *grpcserver.Server {
 	t.Helper()
-	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop())
+	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{})
 	require.NoError(t, err)
 	return srv
 }
@@ -256,25 +257,25 @@ func tlsGRPCCfg(t *testing.T, fix *tlsFixture) *config.GRPCConfig {
 // --- 8.2: port already in use → error immediately ---
 
 func TestNewServerNilGRPCCfg(t *testing.T) {
-	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop())
+	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilLimits(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop())
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilRetry(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop())
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop(), &grpcserver.NoopSchemaRegistryClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilIngestor(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil)
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil, &grpcserver.NoopSchemaRegistryClient{})
 	require.Error(t, err)
 }
 
@@ -297,7 +298,7 @@ func TestRunPortAlreadyInUse(t *testing.T) {
 func TestRunAlreadyCancelledContext(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -324,7 +325,7 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 func TestRunReentrancy(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -543,7 +544,7 @@ func TestRunMissingCAFile(t *testing.T) {
 func TestPlaintextModeStarts(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -587,7 +588,7 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 	}}
 	slowSrv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), slowIngestor,
+		defaultLimits(), defaultRetry(), slowIngestor, &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -637,7 +638,7 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 200 * time.Millisecond},
-		defaultLimits(), defaultRetry(), stuckIngestor,
+		defaultLimits(), defaultRetry(), stuckIngestor, &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -681,7 +682,7 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(),
+		limits, defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 
@@ -730,11 +731,45 @@ func TestMaxPayloadBytesOverflow(t *testing.T) {
 	}
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(),
+		limits, defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
 	)
 	require.NoError(t, err)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	err = srv.RunOnListener(context.Background(), lis)
+	require.Error(t, err)
+}
+
+// --- OTLP receiver wiring ---
+
+func TestServer_WithOTLPReceiver(t *testing.T) {
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},
+	)
+	require.NoError(t, err)
+
+	addr, cancel, errc := startServer(srv)
+	defer func() {
+		cancel()
+		<-errc
+	}()
+	waitReady(t, addr)
+
+	conn, cerr := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, cerr)
+	defer conn.Close()
+
+	// Verify OTLP logs service is reachable (empty request returns success).
+	logsClient := collectorlogsv1.NewLogsServiceClient(conn)
+	_, err = logsClient.Export(context.Background(), &collectorlogsv1.ExportLogsServiceRequest{})
+	require.NoError(t, err)
+}
+
+func TestServer_NilSchemaClient(t *testing.T) {
+	_, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(), nil,
+	)
 	require.Error(t, err)
 }
