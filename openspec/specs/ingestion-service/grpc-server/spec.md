@@ -15,12 +15,10 @@ The gRPC server lifecycle component starts `IngestionService` on a configurable 
 ### Requirement: Server starts on configured host and port
 
 `Server.Run(ctx)` SHALL bind the gRPC listener on `GRPCConfig.Host:GRPCConfig.Port` and
-begin serving. It SHALL return a non-nil error and not start when the port is already in
-use. `Server.RunOnListener(ctx, lis)` SHALL accept an already-bound `net.Listener` and
-begin serving on it, allowing callers to pre-bind the port and eliminate TOCTOU races.
-`RunOnListener` SHALL register all services stored in the `[]serviceRegistrar` slice —
-including `OCGReceiver` (`IngestionService`) and `OTLPReceiver` (Logs, Metrics, Traces)
-— on the same `grpc.Server` before accepting connections.
+begin serving, returning a non-nil error when the port is already in use.
+`Server.RunOnListener(ctx, lis)` SHALL accept an already-bound `net.Listener` and serve
+on it. `RunOnListener` SHALL register all services in the `[]serviceRegistrar` slice on
+the shared `grpc.Server` before accepting connections.
 
 #### Scenario: Successful start
 - **WHEN** `GRPCConfig.Host` and `GRPCConfig.Port` are valid and the port is free
