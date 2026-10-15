@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -21,21 +22,21 @@ import (
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
-// IngestionServiceServer implements the gRPC IngestionService.
-type IngestionServiceServer struct {
+// OCGReceiver implements the gRPC IngestionService.
+type OCGReceiver struct {
 	ingestionv1.UnimplementedIngestionServiceServer
 	ingestor ingest.Ingestor
 	limits   *config.LimitsConfig
 	retry    *config.RetryConfig
 }
 
-// NewIngestionServiceServer constructs the server. Returns an error when any
+// NewOCGReceiver constructs an OCGReceiver. Returns an error when any
 // argument is nil to catch wiring mistakes at startup, not at first RPC.
-func NewIngestionServiceServer(
+func NewOCGReceiver(
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
-) (*IngestionServiceServer, error) {
+) (*OCGReceiver, error) {
 	if ingestor == nil {
 		return nil, fmt.Errorf("grpcserver: ingestor must not be nil")
 	}
@@ -45,18 +46,23 @@ func NewIngestionServiceServer(
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: retry must not be nil")
 	}
-	return &IngestionServiceServer{ingestor: ingestor, limits: limits, retry: retry}, nil
+	return &OCGReceiver{ingestor: ingestor, limits: limits, retry: retry}, nil
 }
 
-// Ingest implements IngestionServiceServer.Ingest.
-func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.IngestRequest) (*ingestionv1.IngestResponse, error) {
+// register mounts the IngestionService onto s.
+func (r *OCGReceiver) register(grpcSrv *grpc.Server) {
+	ingestionv1.RegisterIngestionServiceServer(grpcSrv, r)
+}
+
+// Ingest implements OCGReceiver.Ingest.
+func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest) (*ingestionv1.IngestResponse, error) {
 	if req == nil || len(req.Messages) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "messages must not be empty")
 	}
 
-	if len(req.Messages) > s.limits.MaxMessages {
+	if len(req.Messages) > r.limits.MaxMessages {
 		return nil, status.Errorf(codes.ResourceExhausted,
-			"batch exceeds maximum message count (%d)", s.limits.MaxMessages)
+			"batch exceeds maximum message count (%d)", r.limits.MaxMessages)
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
@@ -80,9 +86,9 @@ func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.In
 		}
 	}
 
-	result, err := s.ingestor.Ingest(ctx, batch)
+	result, err := r.ingestor.Ingest(ctx, batch)
 	if err != nil {
-		return nil, s.mapIngestError(err)
+		return nil, r.mapIngestError(err)
 	}
 
 	return &ingestionv1.IngestResponse{
@@ -93,11 +99,11 @@ func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.In
 }
 
 // mapIngestError converts pipeline errors to gRPC status errors.
-func (s *IngestionServiceServer) mapIngestError(err error) error {
+func (r *OCGReceiver) mapIngestError(err error) error {
 	if errors.Is(err, ingest.ErrOverloaded) {
 		base := status.New(codes.Unavailable, "pipeline overloaded")
 		withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-			RetryDelay: durationpb.New(s.retry.InitialBackoff),
+			RetryDelay: durationpb.New(r.retry.InitialBackoff),
 		})
 		if attachErr != nil {
 			slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", attachErr)

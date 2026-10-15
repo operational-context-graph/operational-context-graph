@@ -43,9 +43,9 @@ func defaultRetry() *config.RetryConfig {
 	return &config.RetryConfig{InitialBackoff: 5 * time.Second, MaxBackoff: 60 * time.Second, Multiplier: 1.0}
 }
 
-func newServer(t *testing.T, ingestor ingest.Ingestor, limits *config.LimitsConfig, retry *config.RetryConfig) *grpcserver.IngestionServiceServer {
+func newServer(t *testing.T, ingestor ingest.Ingestor, limits *config.LimitsConfig, retry *config.RetryConfig) *grpcserver.OCGReceiver {
 	t.Helper()
-	srv, err := grpcserver.NewIngestionServiceServer(ingestor, limits, retry)
+	srv, err := grpcserver.NewOCGReceiver(ingestor, limits, retry)
 	require.NoError(t, err)
 	return srv
 }
@@ -124,17 +124,17 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 // --- 5.6: nil LimitsConfig or nil Ingestor at construction → non-nil error ---
 
 func TestNilLimitsAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewIngestionServiceServer(noop(), nil, defaultRetry())
+	_, err := grpcserver.NewOCGReceiver(noop(), nil, defaultRetry())
 	require.Error(t, err)
 }
 
 func TestNilIngestorAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewIngestionServiceServer(nil, defaultLimits(), defaultRetry())
+	_, err := grpcserver.NewOCGReceiver(nil, defaultLimits(), defaultRetry())
 	require.Error(t, err)
 }
 
 func TestNilRetryAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewIngestionServiceServer(noop(), defaultLimits(), nil)
+	_, err := grpcserver.NewOCGReceiver(noop(), defaultLimits(), nil)
 	require.Error(t, err)
 }
 

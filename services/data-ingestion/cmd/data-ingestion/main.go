@@ -42,7 +42,7 @@ func run() error {
 
 	httpSrv := httpserver.New(cfg)
 
-	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, &ingest.NoopIngestor{})
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, &ingest.NoopIngestor{}, &grpcserver.NoopSchemaRegistryClient{})
 	if err != nil {
 		return err
 	}

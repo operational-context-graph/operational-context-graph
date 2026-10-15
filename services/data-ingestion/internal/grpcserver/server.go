@@ -22,22 +22,26 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
+
+// serviceRegistrar registers gRPC services onto a grpc.Server.
+type serviceRegistrar interface {
+	register(s *grpc.Server)
+}
 
 // Server manages the gRPC listener lifecycle.
 type Server struct {
 	grpcCfg  *config.GRPCConfig
 	limits   *config.LimitsConfig
-	retry    *config.RetryConfig
-	ingestor ingest.Ingestor
+	services []serviceRegistrar
 	running  atomic.Bool
 }
 
-// NewServer constructs a Server. Returns an error when any argument is nil.
-func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor) (*Server, error) {
+// NewServer constructs a Server. All arguments are required and must not be nil.
+// Returns an error when any argument is nil.
+func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient) (*Server, error) {
 	if grpcCfg == nil {
 		return nil, errors.New("grpcserver: grpcCfg must not be nil")
 	}
@@ -50,7 +54,19 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if ingestor == nil {
 		return nil, errors.New("grpcserver: ingestor must not be nil")
 	}
-	return &Server{grpcCfg: grpcCfg, limits: limits, retry: retry, ingestor: ingestor}, nil
+	ocgReceiver, err := NewOCGReceiver(ingestor, limits, retry)
+	if err != nil {
+		return nil, err
+	}
+	otlpReceiver, err := newOTLPReceiver(schemaClient, ingestor, retry)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		grpcCfg:  grpcCfg,
+		limits:   limits,
+		services: []serviceRegistrar{ocgReceiver, otlpReceiver},
+	}, nil
 }
 
 // Run starts the gRPC server and blocks until ctx is cancelled. It returns an
@@ -89,11 +105,9 @@ func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 
 	grpcSrv := grpc.NewServer(opts...)
 
-	handler, err := NewIngestionServiceServer(s.ingestor, s.limits, s.retry)
-	if err != nil {
-		return fmt.Errorf("grpcserver: build handler: %w", err)
+	for _, svc := range s.services {
+		svc.register(grpcSrv)
 	}
-	ingestionv1.RegisterIngestionServiceServer(grpcSrv, handler)
 
 	services := make([]string, 0, len(grpcSrv.GetServiceInfo()))
 	for name := range grpcSrv.GetServiceInfo() {
