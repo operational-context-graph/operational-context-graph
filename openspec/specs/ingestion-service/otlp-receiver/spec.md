@@ -103,18 +103,11 @@ an empty string and `Watermark` SHALL be nil. `ContentType` SHALL be
 
 ### Requirement: Ingestor errors mapped to retryable status codes
 
-A non-nil error from `Ingestor.Ingest` SHALL be mapped as follows:
-- `errors.Is(err, context.DeadlineExceeded)` → `codes.DeadlineExceeded` with message
-  `"request deadline exceeded"`.
-- `errors.Is(err, context.Canceled)` → `codes.Canceled` with message `"request canceled"`.
-- `errors.Is(err, ingest.ErrOverloaded)` → `codes.Unavailable` with a fixed message
-  `"pipeline unavailable"` and a `google.rpc.RetryInfo` extension carrying
-  `retry.InitialBackoff` as the retry delay. No internal error detail is included.
-- Any other non-nil error → log with `slog.Error` and return `codes.Internal` with
-  message `"internal error"`.
-
-The same `DeadlineExceeded` / `Canceled` mapping applies when `ctx.Err()` is non-nil
-before `Ingestor.Ingest` is called.
+Non-nil errors from `Ingestor.Ingest` SHALL be mapped to gRPC status codes: `ErrOverloaded`
+→ `Unavailable` + `RetryInfo`; `context.DeadlineExceeded` → `DeadlineExceeded`;
+`context.Canceled` → `Canceled`; unexpected → `Internal` (logged). The same mapping
+applies when `ctx.Err()` is non-nil before `Ingestor.Ingest` is called. `Unavailable`
+responses use the fixed message `"pipeline unavailable"` with no internal error detail.
 
 #### Scenario: Ingestor returns back-pressure error (ErrOverloaded)
 - **WHEN** `Ingestor.Ingest` returns `ingest.ErrOverloaded`
