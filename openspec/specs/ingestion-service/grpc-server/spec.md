@@ -14,7 +14,13 @@ The gRPC server lifecycle component starts `IngestionService` on a configurable 
 
 ### Requirement: Server starts on configured host and port
 
-`Server.Run(ctx)` SHALL bind the gRPC listener on `GRPCConfig.Host:GRPCConfig.Port` and begin serving. It SHALL return a non-nil error and not start when the port is already in use. `Server.RunOnListener(ctx, lis)` SHALL accept an already-bound `net.Listener` and begin serving on it, allowing callers to pre-bind the port and eliminate TOCTOU races.
+`Server.Run(ctx)` SHALL bind the gRPC listener on `GRPCConfig.Host:GRPCConfig.Port` and
+begin serving. It SHALL return a non-nil error and not start when the port is already in
+use. `Server.RunOnListener(ctx, lis)` SHALL accept an already-bound `net.Listener` and
+begin serving on it, allowing callers to pre-bind the port and eliminate TOCTOU races.
+`RunOnListener` SHALL register all services stored in the `[]serviceRegistrar` slice —
+including `OCGReceiver` (`IngestionService`) and `OTLPReceiver` (Logs, Metrics, Traces)
+— on the same `grpc.Server` before accepting connections.
 
 #### Scenario: Successful start
 - **WHEN** `GRPCConfig.Host` and `GRPCConfig.Port` are valid and the port is free
@@ -27,6 +33,10 @@ The gRPC server lifecycle component starts `IngestionService` on a configurable 
 #### Scenario: Already-cancelled context
 - **WHEN** `Run` or `RunOnListener` is called with an already-cancelled context
 - **THEN** the method returns nil without starting the listener or accepting any connections; for `RunOnListener` the supplied listener is closed
+
+#### Scenario: OTLP services present in registered-services log
+- **WHEN** `Server.Run` starts successfully
+- **THEN** the startup log lists `opentelemetry.proto.collector.logs.v1.LogsService`, `opentelemetry.proto.collector.metrics.v1.MetricsService`, and `opentelemetry.proto.collector.trace.v1.TraceService` alongside `ocg.ingestion.v1.IngestionService`
 
 ### Requirement: mTLS enforced when all TLS paths are configured
 
@@ -111,6 +121,22 @@ When the parent context is cancelled, `Server.Run` SHALL call `GracefulStop()` t
 #### Scenario: Second concurrent Run call fails
 - **WHEN** two goroutines call `Run` on the same `Server` simultaneously
 - **THEN** the second call returns a non-nil error without binding a second listener
+
+### Requirement: `NewServer` constructs all receivers; OTLP is always-on
+
+`NewServer(grpcCfg, limits, retry, ingestor, schemaClient)` SHALL construct both an
+`OCGReceiver` and an `OTLPReceiver` from the supplied arguments and store them as
+`[]serviceRegistrar`. All five parameters are required; `NewServer` SHALL return a
+non-nil error when any of them is nil. `RunOnListener` iterates the slice and calls
+`register(grpcSrv)` on each receiver — no nil-check, no optional OTLP path.
+
+#### Scenario: All arguments valid — both service families registered
+- **WHEN** `NewServer` is called with all non-nil arguments
+- **THEN** `RunOnListener` registers `IngestionService` plus all three OTLP services
+
+#### Scenario: Nil schemaClient — construction fails
+- **WHEN** `NewServer` is called with a nil `SchemaRegistryClient`
+- **THEN** `NewServer` returns a non-nil error; no server is started
 
 ## Non-goals
 
