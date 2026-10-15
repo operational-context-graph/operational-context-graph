@@ -39,12 +39,6 @@ Read `AGENTS.md` before starting. Implement only the approved scope.
 - The `ingest` package holds the pipeline contract only: `Ingestor` interface,
   `NoopIngestor`, domain types (`types.go`), and sentinel errors (`errors.go`).
   Pipeline implementation goes in a separate ticket — do not add it here.
-- `MaxRecvMsgSize` is the sole payload size guard. Do not add an
-  application-layer byte-counting loop in gRPC handlers — the transport rejects
-  oversized messages with `RESOURCE_EXHAUSTED` before the handler is invoked.
-- gRPC shutdown: never call `grpc.Server.Stop()` synchronously after starting
-  `GracefulStop()` — both share an internal mutex and deadlock. Call `Stop()`
-  from a separate goroutine on the timeout path.
 
 ## Branch naming
 
