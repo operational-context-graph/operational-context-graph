@@ -25,7 +25,7 @@ import (
 
 // envPrefix namespaces environment variables for this service.
 // Double-underscore (__) separates hierarchy levels; single underscore is part of a field name.
-// For example OCG_DI_GRPC__TLS_CERT_FILE maps to the grpc.tls_cert_file key.
+// For example OCG_DI_GRPC__TLS__CERT_FILE maps to the grpc.tls.cert_file key.
 const envPrefix = "OCG_DI_"
 
 // envFileKey is the environment variable that points to an optional config file.

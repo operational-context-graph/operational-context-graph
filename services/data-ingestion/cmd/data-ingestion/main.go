@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Command data-ingestion is the entrypoint for the Data Ingestion service.
-//
-// It wires configuration, builds the HTTP server and gRPC server, and runs
-// both until the process receives an interrupt or termination signal.
+// It wires configuration and runs the HTTP and gRPC servers.
+// Both servers run until the process receives SIGINT or SIGTERM.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -37,6 +37,12 @@ func run() error {
 		return err
 	}
 
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.Logging.Level)); err != nil {
+		return fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, err)
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -51,24 +57,25 @@ func run() error {
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
-	grpcErrC := make(chan error, 1)
-	go func() {
-		grpcErrC <- grpcSrv.Run(ctx)
-	}()
+	errC := make(chan error, 2)
+	go func() { errC <- httpSrv.Run(ctx) }()
+	go func() { errC <- grpcSrv.Run(ctx) }()
 
-	httpErr := httpSrv.Run(ctx)
-	// Cancel the shared context so the gRPC goroutine exits when the HTTP server
-	// stops for any reason. Without this, an HTTP bind error would leave the
-	// process blocked on <-grpcErrC forever.
-	// The reverse is also true: if grpcSrv.Run returns (e.g. bind error), grpcErrC
-	// closes, <-grpcErrC unblocks, and main returns — taking the HTTP server down.
+	// Wait for either server to stop. Cancel the context so the other exits too.
+	first := <-errC
 	stop()
+	second := <-errC
 
-	grpcErr := <-grpcErrC
+	return firstRealError(first, second)
+}
 
-	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
-		return httpErr
+// firstRealError returns the first non-nil error that is not http.ErrServerClosed.
+func firstRealError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
 	}
-	return grpcErr
+	return nil
 }
 

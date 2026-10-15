@@ -60,29 +60,26 @@ func newOTLPReceiver(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor
 
 // register mounts the three OTLP collector services onto s.
 func (r *OTLPReceiver) register(s *grpc.Server) {
-	collectorlogsv1.RegisterLogsServiceServer(s, &otlpLogsHandler{r: r, ingestor: r.ingestor})
-	collectormetricsv1.RegisterMetricsServiceServer(s, &otlpMetricsHandler{r: r, ingestor: r.ingestor})
-	collectortracesv1.RegisterTraceServiceServer(s, &otlpTracesHandler{r: r, ingestor: r.ingestor})
+	collectorlogsv1.RegisterLogsServiceServer(s, &otlpLogsHandler{r: r})
+	collectormetricsv1.RegisterMetricsServiceServer(s, &otlpMetricsHandler{r: r})
+	collectortracesv1.RegisterTraceServiceServer(s, &otlpTracesHandler{r: r})
 }
 
 // ── handler structs ──────────────────────────────────────────────────────────
 
 type otlpLogsHandler struct {
 	collectorlogsv1.UnimplementedLogsServiceServer
-	r        *OTLPReceiver
-	ingestor ingest.Ingestor
+	r *OTLPReceiver
 }
 
 type otlpMetricsHandler struct {
 	collectormetricsv1.UnimplementedMetricsServiceServer
-	r        *OTLPReceiver
-	ingestor ingest.Ingestor
+	r *OTLPReceiver
 }
 
 type otlpTracesHandler struct {
 	collectortracesv1.UnimplementedTraceServiceServer
-	r        *OTLPReceiver
-	ingestor ingest.Ingestor
+	r *OTLPReceiver
 }
 
 // ── Export methods ───────────────────────────────────────────────────────────
@@ -94,7 +91,7 @@ func (h *otlpLogsHandler) Export(
 	if len(req.GetResourceLogs()) == 0 {
 		return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultLogSchema, h.ingestor); err != nil {
+	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultLogSchema); err != nil {
 		return nil, err
 	}
 	return &collectorlogsv1.ExportLogsServiceResponse{}, nil
@@ -107,7 +104,7 @@ func (h *otlpMetricsHandler) Export(
 	if len(req.GetResourceMetrics()) == 0 {
 		return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultMetricSchema, h.ingestor); err != nil {
+	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultMetricSchema); err != nil {
 		return nil, err
 	}
 	return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
@@ -120,7 +117,7 @@ func (h *otlpTracesHandler) Export(
 	if len(req.GetResourceSpans()) == 0 {
 		return &collectortracesv1.ExportTraceServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultTraceSchema, h.ingestor); err != nil {
+	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultTraceSchema); err != nil {
 		return nil, err
 	}
 	return &collectortracesv1.ExportTraceServiceResponse{}, nil
@@ -134,15 +131,17 @@ func (r *OTLPReceiver) export(
 	ctx context.Context,
 	msg proto.Message,
 	defaultFn func(context.Context) (SchemaKey, error),
-	ingestor ingest.Ingestor,
 ) error {
 	if err := ctx.Err(); err != nil {
-		return status.Error(codes.Canceled, "request context done")
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
+		}
+		return status.Error(codes.Canceled, "request canceled")
 	}
 
 	key, err := schemaFromMetadata(ctx, defaultFn)
 	if err != nil {
-		return otlpUnavailable(err, r.retry)
+		return otlpUnavailable(r.retry)
 	}
 
 	payload, err := proto.Marshal(msg)
@@ -158,12 +157,19 @@ func (r *OTLPReceiver) export(
 		ContentType:       &ct,
 	}
 
-	result, err := ingestor.Ingest(ctx, []ingest.IngestRecord{record})
+	result, err := r.ingestor.Ingest(ctx, []ingest.IngestRecord{record})
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return status.Error(codes.Canceled, "request context done")
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 		}
-		return otlpUnavailable(err, r.retry)
+		if errors.Is(err, context.Canceled) {
+			return status.Error(codes.Canceled, "request canceled")
+		}
+		if errors.Is(err, ingest.ErrOverloaded) {
+			return otlpUnavailable(r.retry)
+		}
+		slog.Error("unexpected pipeline error", "err", err)
+		return status.Error(codes.Internal, "internal error")
 	}
 
 	if result.Rejected > 0 {
@@ -219,9 +225,9 @@ func firstNonEmpty(vs []string) string {
 	return ""
 }
 
-// otlpUnavailable wraps err as codes.Unavailable with a RetryInfo extension.
-func otlpUnavailable(err error, retry *config.RetryConfig) error {
-	base := status.Newf(codes.Unavailable, "pipeline unavailable: %v", err)
+// otlpUnavailable returns codes.Unavailable with a RetryInfo hint.
+func otlpUnavailable(retry *config.RetryConfig) error {
+	base := status.New(codes.Unavailable, "pipeline unavailable")
 	withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
 		RetryDelay: durationpb.New(retry.InitialBackoff),
 	})
