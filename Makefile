@@ -11,13 +11,15 @@ COVERAGE_DIR := $(CURDIR)/coverage
 	proto-lint proto-format proto-generate
 
 build: proto-generate ## Build all services
-	$(MAKE) -C $(SERVICE_DI) build
+	go build github.com/operational-context-graph/operational-context-graph/services/data-ingestion/...
+	go build github.com/operational-context-graph/inventory-store/...
 
 run: ## Run the data-ingestion service (dev)
 	$(MAKE) -C $(SERVICE_DI) run
 
 vet: ## Vet all services
-	$(MAKE) -C $(SERVICE_DI) vet
+	go vet github.com/operational-context-graph/operational-context-graph/services/data-ingestion/...
+	go vet github.com/operational-context-graph/inventory-store/...
 
 test: ## Test all services
 	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
@@ -39,3 +41,4 @@ proto-format:
 
 proto-generate:
 	buf generate
+
