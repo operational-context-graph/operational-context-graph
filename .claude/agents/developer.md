@@ -28,18 +28,6 @@ Read `AGENTS.md` before starting. Implement only the approved scope.
 - Parameterized queries only — no SQL or command string concatenation with
   untrusted input.
 
-## Package layout — `services/data-ingestion`
-
-- Each server package (`httpserver`, `grpcserver`) owns its own handlers. Do not
-  create a shared `handlers/` package.
-  - HTTP handlers live in `internal/httpserver/` (e.g. `health.go`).
-  - gRPC handlers live in `internal/grpcserver/`, one file per RPC service
-    (e.g. `ingest.go`, `backfill.go`, `otlp.go`). Server lifecycle stays in
-    `server.go`.
-- The `ingest` package holds the pipeline contract only: `Ingestor` interface,
-  `NoopIngestor`, domain types (`types.go`), and sentinel errors (`errors.go`).
-  Pipeline implementation goes in a separate ticket — do not add it here.
-
 ## Branch naming
 
 | Branch                | Purpose                                                  |
