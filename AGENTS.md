@@ -13,7 +13,7 @@ This repository is a polyglot monorepo. Sub-components live in their own directo
 - Each language has its own workspace manager, and they coexist without knowing about each other: Go uses `go.work`, Python uses uv with `pyproject.toml`, and TypeScript uses pnpm with `pnpm-workspace.yaml`. Use the manager that matches the sub-component you change. Do not cross language boundaries.
 - Cross-component contracts are Protocol Buffers under `proto/`, compiled into language stubs under `gen/` with Buf (`buf.gen.yaml`). Edit the `.proto` source and regenerate. Never hand-edit generated code in `gen/`.
 - Build, lint, and test through `make`. The root `Makefile` orchestrates per-language and per-component targets. Run the target for the sub-component you changed, and scope verification to that sub-component.
-- Place a new sub-component in its own directory under `services/`, `shared/`, or `frontend/`. Give it its own manifest and register it in the matching workspace configuration.
+- Place a new sub-component in its own directory under `services/`, `shared/`, or `frontend/`. Give it its own manifest and register it in the matching workspace configuration. Place batch jobs (connectors) under `services/connectors/`.
 
 ## Writing standards
 

@@ -1,0 +1,28 @@
+netbox:
+  base_url: "http://localhost:8081"
+  page_size: 1000
+
+grpc:
+  endpoint: "localhost:50051"
+  cert_file: ""
+  key_file: ""
+  connector_id: "ocg-inventory-connector"
+
+connector:
+  schema_version: "0.1.0"
+  endpoints: []
+  logical_artifact_ids:
+    "dcim/devices/": "netbox.Device"
+    "dcim/racks/": "netbox.Rack"
+    "dcim/sites/": "netbox.Site"
+    "dcim/regions/": "netbox.Region"
+    "dcim/locations/": "netbox.Location"
+    "dcim/interfaces/": "netbox.Interface"
+    "dcim/cables/": "netbox.Cable"
+    "dcim/cable-terminations/": "netbox.CableTermination"
+    "dcim/inventory-items/": "netbox.InventoryItem"
+    "ipam/ip-addresses/": "netbox.IPAddress"
+    "ipam/prefixes/": "netbox.Prefix"
+    "ipam/vlans/": "netbox.VLAN"
+    "virtualization/virtual-machines/": "netbox.VirtualMachine"
+    "virtualization/clusters/": "netbox.Cluster"
