@@ -1,0 +1,32 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "doris-fe.fullname" . }}
+  labels:
+    {{- include "doris-fe.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.ports.rpc }}
+      targetPort: rpc
+      protocol: TCP
+      name: rpc
+    - port: {{ .Values.ports.query }}
+      targetPort: query
+      protocol: TCP
+      name: query
+    - port: {{ .Values.ports.heartbeat }}
+      targetPort: heartbeat
+      protocol: TCP
+      name: heartbeat
+  selector:
+    {{- include "doris-fe.selectorLabels" . | nindent 4 }}

@@ -7,3 +7,29 @@ data-ingestion:
     repository: data-ingestion
     tag: dev
     pullPolicy: Never
+
+inventory-store:
+  image:
+    repository: inventory-store
+    tag: dev
+    pullPolicy: Never
+  migrator:
+    image:
+      repository: inventory-store-migrator
+      tag: dev
+      pullPolicy: Never
+
+telemetry-store:
+  image:
+    repository: telemetry-store
+    tag: dev
+    pullPolicy: Never
+  migrator:
+    image:
+      repository: telemetry-store-migrator
+      tag: dev
+      pullPolicy: Never
+  env:
+    # Single-BE dev cluster requires replication_num=1.
+    DORIS_REPLICATION_NUM: "1"
+

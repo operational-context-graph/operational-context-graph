@@ -1,0 +1,137 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package httpapi
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/operational-context-graph/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/telemetry-store/internal/store"
+)
+
+const routeKey = "route"
+
+// telemetryDB is the interface HTTP handlers require from the store layer.
+type telemetryDB interface {
+	QueryLogs(ctx context.Context, q store.LogQuery) ([]store.Log, error)
+	QueryMetrics(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
+	Ping(ctx context.Context) error
+	SchemaReady(ctx context.Context) error
+}
+
+// NewServer creates a configured Gin-backed HTTP server.
+func NewServer(d telemetryDB, sl streamLoader, addr string) *http.Server {
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(requestIDMiddleware())
+	r.Use(loggingMiddleware())
+	r.Use(panicRecoveryMiddleware())
+
+	// /healthz — liveness: DB reachable.
+	r.GET("/healthz", func(c *gin.Context) {
+		if err := d.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// /readyz — readiness: DB reachable and schema at expected version.
+	r.GET("/readyz", func(c *gin.Context) {
+		if err := d.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
+		if err := d.SchemaReady(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "schema not ready"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// /health — legacy combined check kept for backwards compatibility.
+	r.GET("/health", func(c *gin.Context) {
+		if err := d.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
+		if err := d.SchemaReady(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "schema not ready"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	r.NoRoute(func(c *gin.Context) {
+		c.Set(routeKey, "unmatched")
+		renderError(c, apperr.ErrNotFound)
+	})
+
+	v1 := r.Group("/v1/telemetry")
+	registerTelemetryRoutes(v1, d)
+	registerIngestRoutes(v1, sl)
+
+	return &http.Server{
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  35 * time.Second,
+		WriteTimeout: 35 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+}
+
+func requestIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.GetHeader("X-Request-Id")
+		if id == "" {
+			id = uuid.New().String()
+		}
+		c.Header("X-Request-Id", id)
+		c.Next()
+	}
+}
+
+func loggingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		route, _ := c.Get(routeKey)
+		slog.Info("request",
+			"route", route,
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", c.Writer.Status(),
+			"latency_ms", time.Since(start).Milliseconds(),
+			"request_id", c.GetHeader("X-Request-Id"),
+		)
+	}
+}
+
+// setRoute stores the stable route name in the Gin context for the logging middleware.
+func setRoute(name string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(routeKey, name)
+		c.Next()
+	}
+}
+
+// panicRecoveryMiddleware recovers from panics, logs them via slog, and returns a 500 problem response.
+func panicRecoveryMiddleware() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		route, _ := c.Get(routeKey)
+		slog.Error("panic recovered",
+			"panic", recovered,
+			"route", route,
+			"request_id", c.GetHeader("X-Request-Id"),
+		)
+		renderError(c, fmt.Errorf("internal server error"))
+		c.Abort()
+	})
+}

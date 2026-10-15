@@ -1,0 +1,68 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- $feAddress := .Values.feAddress | default (printf "%s-%s" .Release.Name "doris-fe") -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "doris-be.fullname" . }}
+  labels:
+    {{- include "doris-be.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "doris-be.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "doris-be.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "doris-be.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: rpc
+              containerPort: {{ .Values.ports.rpc }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              protocol: TCP
+            - name: heartbeat
+              containerPort: {{ .Values.ports.heartbeat }}
+              protocol: TCP
+            - name: brpc
+              containerPort: {{ .Values.ports.brpc }}
+              protocol: TCP
+          env:
+            - name: FE_SERVERS
+              value: "{{ .Values.feNodeName }}:{{ $feAddress }}:{{ .Values.feEditLogPort }}"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /opt/apache-doris/be/storage
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storage.storageClassName }}
+        storageClassName: {{ .Values.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

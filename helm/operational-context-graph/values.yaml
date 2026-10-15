@@ -14,3 +14,65 @@ data-ingestion:
   service:
     type: ClusterIP
     port: 8080
+
+inventory-store:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/operational-context-graph/inventory-store
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  migrator:
+    image:
+      repository: ghcr.io/operational-context-graph/inventory-store-migrator
+      tag: "0.1.0"
+      pullPolicy: IfNotPresent
+  secretName: inventory-store-secret
+
+telemetry-store:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ghcr.io/operational-context-graph/telemetry-store
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  migrator:
+    image:
+      repository: ghcr.io/operational-context-graph/telemetry-store-migrator
+      tag: "0.1.0"
+      pullPolicy: IfNotPresent
+  dorisSecretName: telemetry-store-doris-secret
+  dorisReadSecretName: telemetry-store-doris-read-secret
+  dorisMigratorSecretName: telemetry-store-doris-ddl-secret
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
+  secretName: postgres-secret
+  storage:
+    size: 10Gi
+    storageClassName: ""
+
+doris-fe:
+  enabled: true
+  image:
+    repository: apache/doris
+    tag: "fe-4.1.4"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 5Gi
+    storageClassName: ""
+
+doris-be:
+  enabled: true
+  image:
+    repository: apache/doris
+    tag: "be-4.1.4"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 20Gi
+    storageClassName: ""
+
