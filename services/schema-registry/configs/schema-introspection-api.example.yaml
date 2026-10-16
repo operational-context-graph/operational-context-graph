@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Supply database.url and cursor keys through secret-backed environment variables.
+server:
+  host: 0.0.0.0
+  port: 8081
+database:
+  pool_max_connections: 8
+  reserved_connections: 1
+admission:
+  max_in_flight: 7
+logging:
+  level: info
