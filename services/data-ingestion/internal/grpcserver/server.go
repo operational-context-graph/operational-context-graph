@@ -72,23 +72,23 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 // Run starts the gRPC server and blocks until ctx is cancelled. It returns an
 // error if another Run is already active, the listener cannot be bound, or TLS
 // configuration fails.
-func (s *Server) Run(ctx context.Context) error {
-	lis, err := net.Listen("tcp", net.JoinHostPort(s.grpcCfg.Host, strconv.Itoa(s.grpcCfg.Port)))
+func (srv *Server) Run(ctx context.Context) error {
+	lis, err := net.Listen("tcp", net.JoinHostPort(srv.grpcCfg.Host, strconv.Itoa(srv.grpcCfg.Port)))
 	if err != nil {
-		return fmt.Errorf("grpcserver: listen %s:%d: %w", s.grpcCfg.Host, s.grpcCfg.Port, err)
+		return fmt.Errorf("grpcserver: listen %s:%d: %w", srv.grpcCfg.Host, srv.grpcCfg.Port, err)
 	}
-	return s.RunOnListener(ctx, lis)
+	return srv.RunOnListener(ctx, lis)
 }
 
 // RunOnListener starts the gRPC server on an already-bound listener and blocks
 // until ctx is cancelled. It returns an error if another Run is already active
 // or TLS configuration fails. The listener is closed when Run returns.
-func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
-	if !s.running.CompareAndSwap(false, true) {
+func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
+	if !srv.running.CompareAndSwap(false, true) {
 		_ = lis.Close()
 		return errors.New("grpcserver: Run is already active on this Server")
 	}
-	defer s.running.Store(false)
+	defer srv.running.Store(false)
 
 	// Respect already-cancelled context before serving.
 	select {
@@ -98,14 +98,14 @@ func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 	default:
 	}
 
-	opts, err := s.serverOptions()
+	opts, err := srv.serverOptions()
 	if err != nil {
 		return err
 	}
 
 	grpcSrv := grpc.NewServer(opts...)
 
-	for _, svc := range s.services {
+	for _, svc := range srv.services {
 		svc.register(grpcSrv)
 	}
 
@@ -123,7 +123,7 @@ func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 
 	select {
 	case <-ctx.Done():
-		s.shutdown(grpcSrv)
+		srv.shutdown(grpcSrv)
 		return nil
 	case err := <-serveErr:
 		return err
@@ -131,21 +131,21 @@ func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 }
 
 // serverOptions builds gRPC server options from configuration.
-func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
+func (srv *Server) serverOptions() ([]grpc.ServerOption, error) {
 	// MaxRecvMsgSize is the sole payload size guard. Proto framing overhead
 	// (field tags, length prefixes, string fields) counts against this limit,
 	// so requests where overhead pushes wire size past MaxPayloadBytes are
 	// transport-rejected with RESOURCE_EXHAUSTED.
-	if s.limits.MaxPayloadBytes > math.MaxInt {
-		return nil, fmt.Errorf("grpcserver: limits.max_payload_bytes %d overflows int", s.limits.MaxPayloadBytes)
+	if srv.limits.MaxPayloadBytes > math.MaxInt {
+		return nil, fmt.Errorf("grpcserver: limits.max_payload_bytes %d overflows int", srv.limits.MaxPayloadBytes)
 	}
-	maxRecv := int(s.limits.MaxPayloadBytes)
+	maxRecv := int(srv.limits.MaxPayloadBytes)
 
 	opts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxRecv),
 	}
 
-	tlsOpts, err := s.tlsOption()
+	tlsOpts, err := srv.tlsOption()
 	if err != nil {
 		return nil, err
 	}
@@ -158,23 +158,23 @@ func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
 
 // tlsOption returns a grpc.ServerOption for mTLS when TLS is configured,
 // or nil when TLS is disabled.
-func (s *Server) tlsOption() (grpc.ServerOption, error) {
-	if s.grpcCfg.TLS == nil {
+func (srv *Server) tlsOption() (grpc.ServerOption, error) {
+	if srv.grpcCfg.TLS == nil {
 		return nil, nil
 	}
 
-	cert, err := tls.LoadX509KeyPair(s.grpcCfg.TLS.CertFile, s.grpcCfg.TLS.KeyFile)
+	cert, err := tls.LoadX509KeyPair(srv.grpcCfg.TLS.CertFile, srv.grpcCfg.TLS.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("grpcserver: load TLS key pair: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(s.grpcCfg.TLS.CAFile)
+	caPEM, err := os.ReadFile(srv.grpcCfg.TLS.CAFile)
 	if err != nil {
-		return nil, fmt.Errorf("grpcserver: read CA file %q: %w", s.grpcCfg.TLS.CAFile, err)
+		return nil, fmt.Errorf("grpcserver: read CA file %q: %w", srv.grpcCfg.TLS.CAFile, err)
 	}
 	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("grpcserver: no valid certificates found in CA file %q", s.grpcCfg.TLS.CAFile)
+		return nil, fmt.Errorf("grpcserver: no valid certificates found in CA file %q", srv.grpcCfg.TLS.CAFile)
 	}
 
 	tlsCfg := &tls.Config{
@@ -195,8 +195,8 @@ func (s *Server) tlsOption() (grpc.ServerOption, error) {
 // We never call Stop() from the same goroutine as GracefulStop(): both share an
 // internal mutex and GracefulStop holds it through handlersWG.Wait(), so calling
 // Stop() synchronously after GracefulStop() starts would deadlock.
-func (s *Server) shutdown(grpcSrv *grpc.Server) {
-	timeout := s.grpcCfg.ShutdownTimeout
+func (srv *Server) shutdown(grpcSrv *grpc.Server) {
+	timeout := srv.grpcCfg.ShutdownTimeout
 
 	graceDone := make(chan struct{})
 	go func() {

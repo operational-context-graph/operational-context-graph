@@ -69,14 +69,14 @@ func NewOCGReceiver(h *OCGHandler) *OCGReceiver {
 }
 
 // Ingest implements IngestionService.Ingest.
-func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest) (*ingestionv1.IngestResponse, error) {
+func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest) (*ingestionv1.IngestResponse, error) {
 	if req == nil || len(req.Messages) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "messages must not be empty")
 	}
 
-	if len(req.Messages) > r.handler.limits.MaxMessages {
+	if len(req.Messages) > recv.handler.limits.MaxMessages {
 		return nil, status.Errorf(codes.ResourceExhausted,
-			"batch exceeds maximum message count (%d)", r.handler.limits.MaxMessages)
+			"batch exceeds maximum message count (%d)", recv.handler.limits.MaxMessages)
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
@@ -100,9 +100,9 @@ func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest
 		}
 	}
 
-	result, err := r.handler.ingestor.Ingest(ctx, batch)
+	result, err := recv.handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
-		return nil, r.handler.mapIngestError(err)
+		return nil, recv.handler.mapIngestError(err)
 	}
 
 	return &ingestionv1.IngestResponse{

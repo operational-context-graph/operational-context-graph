@@ -59,11 +59,11 @@ func newOTLPHandler(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor,
 	return &OTLPHandler{schemaClient: schemaClient, ingestor: ingestor, retry: retry}, nil
 }
 
-// register mounts the three OTLP collector services onto s.
-func (h *OTLPHandler) register(s *grpc.Server) {
-	collectorlogsv1.RegisterLogsServiceServer(s, &otlpLogsReceiver{recv: h})
-	collectormetricsv1.RegisterMetricsServiceServer(s, &otlpMetricsReceiver{recv: h})
-	collectortracesv1.RegisterTraceServiceServer(s, &otlpTracesReceiver{recv: h})
+// register mounts the three OTLP collector services onto grpcSrv.
+func (h *OTLPHandler) register(grpcSrv *grpc.Server) {
+	collectorlogsv1.RegisterLogsServiceServer(grpcSrv, &otlpLogsReceiver{recv: h})
+	collectormetricsv1.RegisterMetricsServiceServer(grpcSrv, &otlpMetricsReceiver{recv: h})
+	collectortracesv1.RegisterTraceServiceServer(grpcSrv, &otlpTracesReceiver{recv: h})
 }
 
 // ── receiver structs ─────────────────────────────────────────────────────────
@@ -85,40 +85,40 @@ type otlpTracesReceiver struct {
 
 // ── Export methods ───────────────────────────────────────────────────────────
 
-func (r *otlpLogsReceiver) Export(
+func (recv *otlpLogsReceiver) Export(
 	ctx context.Context,
 	req *collectorlogsv1.ExportLogsServiceRequest,
 ) (*collectorlogsv1.ExportLogsServiceResponse, error) {
 	if len(req.GetResourceLogs()) == 0 {
 		return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 	}
-	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultLogSchema); err != nil {
+	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultLogSchema); err != nil {
 		return nil, err
 	}
 	return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 }
 
-func (r *otlpMetricsReceiver) Export(
+func (recv *otlpMetricsReceiver) Export(
 	ctx context.Context,
 	req *collectormetricsv1.ExportMetricsServiceRequest,
 ) (*collectormetricsv1.ExportMetricsServiceResponse, error) {
 	if len(req.GetResourceMetrics()) == 0 {
 		return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 	}
-	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultMetricSchema); err != nil {
+	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultMetricSchema); err != nil {
 		return nil, err
 	}
 	return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 }
 
-func (r *otlpTracesReceiver) Export(
+func (recv *otlpTracesReceiver) Export(
 	ctx context.Context,
 	req *collectortracesv1.ExportTraceServiceRequest,
 ) (*collectortracesv1.ExportTraceServiceResponse, error) {
 	if len(req.GetResourceSpans()) == 0 {
 		return &collectortracesv1.ExportTraceServiceResponse{}, nil
 	}
-	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultTraceSchema); err != nil {
+	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultTraceSchema); err != nil {
 		return nil, err
 	}
 	return &collectortracesv1.ExportTraceServiceResponse{}, nil
