@@ -5,5 +5,5 @@
 data-ingestion:
   image:
     repository: data-ingestion
-    tag: latest
+    tag: dev
     pullPolicy: Never
