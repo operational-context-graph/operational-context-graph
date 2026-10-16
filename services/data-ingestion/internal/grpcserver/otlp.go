@@ -6,6 +6,7 @@ package grpcserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
@@ -22,13 +24,16 @@ import (
 	collectorlogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectormetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectortracesv1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
+	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
 const (
-	otlpContentType   = "application/x-protobuf"
+	otlpContentType   = "application/json"
 	metaArtifactType  = "logical_artifact_type"
 	metaSchemaVersion = "schema_version"
 )
@@ -59,31 +64,145 @@ func newOTLPHandler(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor,
 	return &OTLPHandler{schemaClient: schemaClient, ingestor: ingestor, retry: retry}, nil
 }
 
+// ── OTLPHandler methods ───────────────────────────────────────────────────────
+
 // register mounts the three OTLP collector services onto grpcSrv.
-func (h *OTLPHandler) register(grpcSrv *grpc.Server) {
-	collectorlogsv1.RegisterLogsServiceServer(grpcSrv, &otlpLogsReceiver{recv: h})
-	collectormetricsv1.RegisterMetricsServiceServer(grpcSrv, &otlpMetricsReceiver{recv: h})
-	collectortracesv1.RegisterTraceServiceServer(grpcSrv, &otlpTracesReceiver{recv: h})
+func (handler *OTLPHandler) register(grpcSrv *grpc.Server) {
+	collectorlogsv1.RegisterLogsServiceServer(grpcSrv, &otlpLogsReceiver{handler: handler})
+	collectormetricsv1.RegisterMetricsServiceServer(grpcSrv, &otlpMetricsReceiver{handler: handler})
+	collectortracesv1.RegisterTraceServiceServer(grpcSrv, &otlpTracesReceiver{handler: handler})
 }
 
-// ── receiver structs ─────────────────────────────────────────────────────────
+func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.ResourceLogs) error {
+	if err := ctx.Err(); err != nil {
+		return ctxStatusError(err)
+	}
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultLogSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+
+	var batch []ingest.IngestRecord
+	for _, resourceLogs := range rls {
+		resJSON, merr := marshalProto(resourceLogs.GetResource())
+		if merr != nil {
+			return merr
+		}
+		for _, scopeLogs := range resourceLogs.GetScopeLogs() {
+			for _, logRecord := range scopeLogs.GetLogRecords() {
+				payload, merr := marshalEnvelope(resJSON, "logRecord", logRecord)
+				if merr != nil {
+					return merr
+				}
+				batch = append(batch, newIngestRecord(key, payload))
+			}
+		}
+	}
+	return handler.ingest(ctx, key, batch)
+}
+
+func (handler *OTLPHandler) exportMetrics(ctx context.Context, rms []*metricsv1.ResourceMetrics) error {
+	if err := ctx.Err(); err != nil {
+		return ctxStatusError(err)
+	}
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultMetricSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+
+	var batch []ingest.IngestRecord
+	for _, resourceMetrics := range rms {
+		resJSON, merr := marshalProto(resourceMetrics.GetResource())
+		if merr != nil {
+			return merr
+		}
+		for _, scopeMetrics := range resourceMetrics.GetScopeMetrics() {
+			for _, metric := range scopeMetrics.GetMetrics() {
+				payload, merr := marshalEnvelope(resJSON, "metric", metric)
+				if merr != nil {
+					return merr
+				}
+				batch = append(batch, newIngestRecord(key, payload))
+			}
+		}
+	}
+	return handler.ingest(ctx, key, batch)
+}
+
+func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.ResourceSpans) error {
+	if err := ctx.Err(); err != nil {
+		return ctxStatusError(err)
+	}
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultTraceSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+
+	var batch []ingest.IngestRecord
+	for _, resourceSpans := range rss {
+		resJSON, merr := marshalProto(resourceSpans.GetResource())
+		if merr != nil {
+			return merr
+		}
+		for _, scopeSpans := range resourceSpans.GetScopeSpans() {
+			for _, span := range scopeSpans.GetSpans() {
+				payload, merr := marshalEnvelope(resJSON, "span", span)
+				if merr != nil {
+					return merr
+				}
+				batch = append(batch, newIngestRecord(key, payload))
+			}
+		}
+	}
+	return handler.ingest(ctx, key, batch)
+}
+
+func (handler *OTLPHandler) ingest(ctx context.Context, key SchemaKey, batch []ingest.IngestRecord) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	result, err := handler.ingestor.Ingest(ctx, batch)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
+		}
+		if errors.Is(err, context.Canceled) {
+			return status.Error(codes.Canceled, "request canceled")
+		}
+		if errors.Is(err, ingest.ErrOverloaded) {
+			return otlpUnavailable(handler.retry)
+		}
+		slog.Error("unexpected pipeline error", "err", err)
+		return status.Error(codes.Internal, "internal error")
+	}
+	if result.Rejected > 0 {
+		slog.Warn("otlp export: pipeline rejected records",
+			"accepted", result.Accepted,
+			"rejected", result.Rejected,
+			"schema", key.LogicalArtifactID+"@"+key.Version,
+		)
+	}
+	return nil
+}
+
+// ── receiver structs ──────────────────────────────────────────────────────────
 
 type otlpLogsReceiver struct {
 	collectorlogsv1.UnimplementedLogsServiceServer
-	recv *OTLPHandler
+	handler *OTLPHandler
 }
 
 type otlpMetricsReceiver struct {
 	collectormetricsv1.UnimplementedMetricsServiceServer
-	recv *OTLPHandler
+	handler *OTLPHandler
 }
 
 type otlpTracesReceiver struct {
 	collectortracesv1.UnimplementedTraceServiceServer
-	recv *OTLPHandler
+	handler *OTLPHandler
 }
 
-// ── Export methods ───────────────────────────────────────────────────────────
+// ── receiver Export methods ───────────────────────────────────────────────────
 
 func (recv *otlpLogsReceiver) Export(
 	ctx context.Context,
@@ -92,7 +211,7 @@ func (recv *otlpLogsReceiver) Export(
 	if len(req.GetResourceLogs()) == 0 {
 		return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 	}
-	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultLogSchema); err != nil {
+	if err := recv.handler.exportLogs(ctx, req.GetResourceLogs()); err != nil {
 		return nil, err
 	}
 	return &collectorlogsv1.ExportLogsServiceResponse{}, nil
@@ -105,7 +224,7 @@ func (recv *otlpMetricsReceiver) Export(
 	if len(req.GetResourceMetrics()) == 0 {
 		return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 	}
-	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultMetricSchema); err != nil {
+	if err := recv.handler.exportMetrics(ctx, req.GetResourceMetrics()); err != nil {
 		return nil, err
 	}
 	return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
@@ -118,72 +237,63 @@ func (recv *otlpTracesReceiver) Export(
 	if len(req.GetResourceSpans()) == 0 {
 		return &collectortracesv1.ExportTraceServiceResponse{}, nil
 	}
-	if err := recv.recv.export(ctx, req, recv.recv.schemaClient.DefaultTraceSchema); err != nil {
+	if err := recv.handler.exportTraces(ctx, req.GetResourceSpans()); err != nil {
 		return nil, err
 	}
 	return &collectortracesv1.ExportTraceServiceResponse{}, nil
 }
 
-// ── core export logic ────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-// export resolves the SchemaKey, marshals the request, and calls Ingestor.Ingest.
-// defaultFn is called at most once when headers are absent or empty.
-func (h *OTLPHandler) export(
-	ctx context.Context,
-	msg proto.Message,
-	defaultFn func(context.Context) (SchemaKey, error),
-) error {
-	if err := ctx.Err(); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
-		}
-		return status.Error(codes.Canceled, "request canceled")
+var pjsonOpts = protojson.MarshalOptions{EmitUnpopulated: false}
+
+// marshalProto returns the protojson encoding of msg as raw JSON bytes.
+// Returns "null" when msg is nil (resource is optional in OTLP).
+func marshalProto(msg proto.Message) (json.RawMessage, error) {
+	if msg == nil || !msg.ProtoReflect().IsValid() {
+		return json.RawMessage("null"), nil
 	}
-
-	key, err := schemaFromMetadata(ctx, defaultFn)
+	out, err := pjsonOpts.Marshal(msg)
 	if err != nil {
-		return otlpUnavailable(h.retry)
+		return nil, status.Errorf(codes.Internal, "marshal OTLP resource: %v", err)
 	}
+	return out, nil
+}
 
-	payload, err := proto.Marshal(msg)
+// marshalEnvelope produces {"resource":<resourceJSON>,"<recordKey>":<recordJSON>}.
+func marshalEnvelope(resourceJSON json.RawMessage, recordKey string, record proto.Message) ([]byte, error) {
+	recordJSON, err := pjsonOpts.Marshal(record)
 	if err != nil {
-		return status.Errorf(codes.Internal, "marshal OTLP request: %v", err)
+		return nil, status.Errorf(codes.Internal, "marshal OTLP record: %v", err)
 	}
+	env := map[string]json.RawMessage{
+		"resource": resourceJSON,
+		recordKey:  recordJSON,
+	}
+	out, err := json.Marshal(env)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "marshal OTLP envelope: %v", err)
+	}
+	return out, nil
+}
 
+func newIngestRecord(key SchemaKey, payload []byte) ingest.IngestRecord {
 	ct := otlpContentType
-	record := ingest.IngestRecord{
+	return ingest.IngestRecord{
 		LogicalArtifactID: key.LogicalArtifactID,
 		SchemaVersion:     key.Version,
 		Payload:           payload,
 		ContentType:       &ct,
 	}
-
-	result, err := h.ingestor.Ingest(ctx, []ingest.IngestRecord{record})
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
-		}
-		if errors.Is(err, context.Canceled) {
-			return status.Error(codes.Canceled, "request canceled")
-		}
-		if errors.Is(err, ingest.ErrOverloaded) {
-			return otlpUnavailable(h.retry)
-		}
-		slog.Error("unexpected pipeline error", "err", err)
-		return status.Error(codes.Internal, "internal error")
-	}
-
-	if result.Rejected > 0 {
-		slog.Warn("otlp export: pipeline rejected records",
-			"accepted", result.Accepted,
-			"rejected", result.Rejected,
-			"schema", key.LogicalArtifactID+"@"+key.Version,
-		)
-	}
-	return nil
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ctxStatusError maps a context error to the matching gRPC status error.
+func ctxStatusError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
+	}
+	return status.Error(codes.Canceled, "request canceled")
+}
 
 // schemaFromMetadata reads logical_artifact_type and schema_version from gRPC
 // incoming metadata. Each field falls back independently to defaultFn when absent

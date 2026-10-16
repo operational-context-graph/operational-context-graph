@@ -6,6 +6,7 @@ package grpcserver_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"sync"
@@ -170,19 +171,40 @@ func sampleResource(name string) *resourcev1.Resource {
 
 func sampleLogsReq() *collectorlogsv1.ExportLogsServiceRequest {
 	return &collectorlogsv1.ExportLogsServiceRequest{
-		ResourceLogs: []*logsv1.ResourceLogs{{Resource: sampleResource("test")}},
+		ResourceLogs: []*logsv1.ResourceLogs{{
+			Resource: sampleResource("test"),
+			ScopeLogs: []*logsv1.ScopeLogs{{
+				LogRecords: []*logsv1.LogRecord{{
+					Body: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "test log"}},
+				}},
+			}},
+		}},
 	}
 }
 
 func sampleMetricsReq() *collectormetricsv1.ExportMetricsServiceRequest {
 	return &collectormetricsv1.ExportMetricsServiceRequest{
-		ResourceMetrics: []*metricsv1.ResourceMetrics{{Resource: sampleResource("test")}},
+		ResourceMetrics: []*metricsv1.ResourceMetrics{{
+			Resource: sampleResource("test"),
+			ScopeMetrics: []*metricsv1.ScopeMetrics{{
+				Metrics: []*metricsv1.Metric{{
+					Name: "test.metric",
+				}},
+			}},
+		}},
 	}
 }
 
 func sampleTracesReq() *collectortracesv1.ExportTraceServiceRequest {
 	return &collectortracesv1.ExportTraceServiceRequest{
-		ResourceSpans: []*tracev1.ResourceSpans{{Resource: sampleResource("test")}},
+		ResourceSpans: []*tracev1.ResourceSpans{{
+			Resource: sampleResource("test"),
+			ScopeSpans: []*tracev1.ScopeSpans{{
+				Spans: []*tracev1.Span{{
+					Name: "test-span",
+				}},
+			}},
+		}},
 	}
 }
 
@@ -299,8 +321,13 @@ func TestOTLPLogs_IngestRecordFields(t *testing.T) {
 	assert.Empty(t, rec.Partition)
 	assert.Nil(t, rec.Watermark)
 	require.NotNil(t, rec.ContentType)
-	assert.Equal(t, "application/x-protobuf", *rec.ContentType)
+	assert.Equal(t, "application/json", *rec.ContentType)
 	assert.NotEmpty(t, rec.Payload)
+	// Payload must be a JSON object with "resource" and "logRecord" keys.
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Payload, &envelope))
+	assert.Contains(t, envelope, "resource")
+	assert.Contains(t, envelope, "logRecord")
 }
 
 // ── error paths ───────────────────────────────────────────────────────────────
