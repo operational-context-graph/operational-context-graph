@@ -56,19 +56,12 @@ func run() error {
 		return fmt.Errorf("apply outbox migrations: %w", err)
 	}
 
-	// outbox.Writer is the pipeline's durable sink. The full ingest Pipeline
-	// (Schema Registry client #274 + Source Mapping Execution Engine) is not
-	// wired yet, so the writer is constructed here and will be injected into the
-	// pipeline — and called by the OTLP/gRPC receivers — once those land.
-	writer := outbox.New(pool)
-	_ = writer
-
 	httpSrv := httpserver.New(cfg)
 
 	schemaRegistry := schemaregistry.Stub{}
 	mappingEngine := sourcemapping.Stub{}
 
-	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, writer)
+	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, outbox.New(pool))
 
 	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline)
 	if err != nil {
