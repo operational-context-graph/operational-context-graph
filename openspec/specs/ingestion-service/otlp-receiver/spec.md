@@ -38,12 +38,9 @@ the same mTLS configuration and payload size limit enforced by the server.
 ### Requirement: SchemaKey resolved from gRPC metadata with per-signal defaults
 
 Each Export handler SHALL read `logical_artifact_type` and `schema_version` from gRPC
-incoming metadata. When a header is absent or present but an empty string, the handler
-SHALL call `SchemaRegistryClient.DefaultLogSchema`, `DefaultMetricSchema`, or
-`DefaultTraceSchema` respectively to obtain the default `SchemaKey`. Header resolution
-and default-schema lookup SHALL each occur once per Export call, not once per OTLP
-record within a call. Schema resolution SHALL occur after flattening leaf records: if
-the export contains no leaf records, `SchemaRegistryClient` SHALL NOT be called.
+incoming metadata. An absent or empty-string header SHALL fall back to the per-signal
+default via `SchemaRegistryClient`. Resolution SHALL occur once per Export call, after
+flattening leaf records; if no leaf records exist, `SchemaRegistryClient` SHALL NOT be called.
 
 #### Scenario: Both headers present and non-empty — used verbatim
 - **WHEN** incoming metadata contains `logical_artifact_type: "ocg.custom.logs"` and `schema_version: "2.0.0"`
@@ -94,13 +91,11 @@ NOT be called when there are no leaf records to process.
 
 ### Requirement: One IngestRecord per leaf OTLP record with resource context
 
-The receiver SHALL produce one `ingest.IngestRecord` per leaf record: one per `LogRecord`,
-one per `Metric`, and one per `Span`. Each record's `Payload` SHALL be a JSON object with
-two fields: `"resource"` (the protojson-encoded `Resource` for that leaf's
-`ResourceLogs`/`ResourceMetrics`/`ResourceSpans`, or `null` when the resource is absent)
-and a signal-type key (`"logRecord"`, `"metric"`, or `"span"`) containing the
-protojson-encoded leaf record. `Partition` SHALL be an empty string and `Watermark` SHALL
-be nil. `ContentType` SHALL be `"application/json"`.
+The receiver SHALL produce one `ingest.IngestRecord` per leaf record (`LogRecord`, `Metric`,
+`Span`). Each record's `Payload` SHALL be a JSON object with a `"resource"` field
+(protojson-encoded, or `null` when absent) and a signal key (`"logRecord"`, `"metric"`,
+or `"span"`). `Partition` SHALL be empty, `Watermark` SHALL be nil, `ContentType` SHALL
+be `"application/json"`.
 
 #### Scenario: IngestRecord fields for a logs export
 - **WHEN** a valid `ExportLogsServiceRequest` is exported with schema headers set and contains one `ResourceLogs` with one `LogRecord`
