@@ -6,6 +6,7 @@
 package logging
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -16,7 +17,11 @@ import (
 // New returns a JSON logger. slog escapes JSON strings and this hook truncates
 // untrusted values before they reach the handler.
 func New(cfg introspection.LoggingConfig) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	return newLogger(cfg, os.Stderr)
+}
+
+func newLogger(cfg introspection.LoggingConfig, writer io.Writer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
 		Level: parseLevel(cfg.Level),
 		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
 			if attr.Value.Kind() == slog.KindString {

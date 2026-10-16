@@ -31,9 +31,11 @@ type Server struct {
 	admission chan struct{}
 	draining  atomic.Bool
 	startOnce sync.Once
+	closeOnce sync.Once
 }
 
-// New creates a server. The caller retains ownership until Run returns.
+// New creates a server. The server closes its readiness checker when Run
+// returns or cannot start its listener.
 func New(cfg introspection.Config, checker postgres.ReadinessChecker) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	server := &Server{
@@ -75,6 +77,7 @@ func (s *Server) Drain() {
 func (s *Server) Run(ctx context.Context) error {
 	listener, err := net.Listen("tcp", s.http.Addr)
 	if err != nil {
+		s.close()
 		return fmt.Errorf("listen: %w", err)
 	}
 	return s.RunListener(ctx, listener)
@@ -82,7 +85,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // RunListener runs using a caller-provided listener for lifecycle tests.
 func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
-	defer s.checker.Close()
+	defer s.close()
 	var cancelRequests context.CancelFunc
 	s.startOnce.Do(func() {
 		baseCtx, cancel := context.WithCancel(context.Background())
@@ -111,12 +114,16 @@ func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
 		if err != nil {
 			_ = s.http.Close()
 		}
-		s.checker.Close()
+		s.close()
 		if err != nil {
 			return fmt.Errorf("graceful shutdown: %w", err)
 		}
 		return nil
 	}
+}
+
+func (s *Server) close() {
+	s.closeOnce.Do(s.checker.Close)
 }
 
 func (s *Server) healthz(c *gin.Context) {
