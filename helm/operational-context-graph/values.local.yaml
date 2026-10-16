@@ -9,7 +9,9 @@ postgres:
   auth:
     database: ocg
     username: ocg
-    password: devpassword
+    # Password is never stored here. Create the secret once before deploying:
+    #   kubectl create secret generic ocg-postgres --from-literal=password=<your-password>
+    existingSecret: ocg-postgres
 
 data-ingestion:
   image:
