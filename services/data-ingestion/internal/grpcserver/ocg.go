@@ -49,8 +49,8 @@ func NewOCGReceiver(
 	return &OCGReceiver{ingestor: ingestor, limits: limits, retry: retry}, nil
 }
 
-// register mounts the IngestionService onto s.
-func (r *OCGReceiver) register(grpcSrv *grpc.Server) {
+// register mounts the IngestionService onto grpcSrv.
+func (r *OCGHandler) register(grpcSrv *grpc.Server) {
 	ingestionv1.RegisterIngestionServiceServer(grpcSrv, r)
 }
 
