@@ -77,7 +77,7 @@ func sampleRows(n int) []ingest.OutboxRecord {
 
 func TestWriter_Write_BatchCommitted(t *testing.T) {
 	db := &fakeDB{tx: &recordingTx{}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(3))
 
@@ -88,7 +88,7 @@ func TestWriter_Write_BatchCommitted(t *testing.T) {
 
 func TestWriter_Write_SingleRowCommitted(t *testing.T) {
 	db := &fakeDB{tx: &recordingTx{}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(1))
 
@@ -99,7 +99,7 @@ func TestWriter_Write_SingleRowCommitted(t *testing.T) {
 func TestWriter_Write_CopyFailureRollsBack(t *testing.T) {
 	boom := errors.New("constraint violation")
 	db := &fakeDB{tx: &recordingTx{copyFromErr: boom}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(2))
 
@@ -112,7 +112,7 @@ func TestWriter_Write_CopyFailureRollsBack(t *testing.T) {
 func TestWriter_Write_BeginFailure(t *testing.T) {
 	boom := errors.New("pool exhausted")
 	db := &fakeDB{beginErr: boom}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(1))
 
@@ -123,7 +123,7 @@ func TestWriter_Write_BeginFailure(t *testing.T) {
 func TestWriter_Write_CommitFailureRollsBack(t *testing.T) {
 	boom := errors.New("commit failed")
 	db := &fakeDB{tx: &recordingTx{commitErr: boom}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(1))
 
@@ -134,7 +134,7 @@ func TestWriter_Write_CommitFailureRollsBack(t *testing.T) {
 
 func TestWriter_Write_ContextCancellationRollsBack(t *testing.T) {
 	db := &fakeDB{tx: &recordingTx{copyFromErr: context.Canceled}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	err := w.Write(context.Background(), sampleRows(1))
 
@@ -145,7 +145,7 @@ func TestWriter_Write_ContextCancellationRollsBack(t *testing.T) {
 
 func TestWriter_Write_EmptySliceIsNoOp(t *testing.T) {
 	db := &fakeDB{tx: &recordingTx{}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	require.NoError(t, w.Write(context.Background(), []ingest.OutboxRecord{}))
 	assert.Equal(t, 0, db.beginCalls)
@@ -153,7 +153,7 @@ func TestWriter_Write_EmptySliceIsNoOp(t *testing.T) {
 
 func TestWriter_Write_NilSliceIsNoOp(t *testing.T) {
 	db := &fakeDB{tx: &recordingTx{}}
-	w := New(db, "outbox")
+	w := New(db)
 
 	require.NoError(t, w.Write(context.Background(), nil))
 	assert.Equal(t, 0, db.beginCalls)
@@ -170,7 +170,7 @@ func TestWriter_Write_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			w := New(dbs[idx], "outbox")
+			w := New(dbs[idx])
 			errs[idx] = w.Write(context.Background(), sampleRows(2))
 		}(g)
 	}

@@ -69,7 +69,6 @@ func TestLoadFromFileDefaults(t *testing.T) {
 	assert.Equal(t, "localhost", cfg.Database.Host)
 	assert.Equal(t, 5432, cfg.Database.Port)
 	assert.Equal(t, "ocg", cfg.Database.Name)
-	assert.Equal(t, "outbox", cfg.Database.OutboxTable)
 }
 
 func TestLoadFromFileEnvOverride(t *testing.T) {

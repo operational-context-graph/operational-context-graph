@@ -41,7 +41,6 @@ database:
   user: ocg
   sslmode: require
   maxconns: 10
-  outboxtable: data_ingestion_outbox
   passwordSecret:
     name: ""
     key: password

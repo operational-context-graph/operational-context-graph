@@ -66,7 +66,6 @@ type DatabaseConfig struct {
 	Password    string `koanf:"password"`
 	SSLMode     string `koanf:"sslmode" validate:"required,oneof=disable allow prefer require verify-ca verify-full"`
 	MaxConns    int    `koanf:"maxconns" validate:"min=0"`
-	OutboxTable string `koanf:"outboxtable" validate:"required"`
 }
 
 // GRPCConfig holds gRPC server settings.
@@ -112,7 +111,6 @@ func defaults() *Config {
 			User:        "ocg",
 			SSLMode:     "disable",
 			MaxConns:    10,
-			OutboxTable: "data_ingestion_outbox",
 		},
 		GRPC: GRPCConfig{
 			Host:            "0.0.0.0",

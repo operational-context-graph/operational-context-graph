@@ -60,7 +60,7 @@ func run() error {
 	// (Schema Registry client #274 + Source Mapping Execution Engine) is not
 	// wired yet, so the writer is constructed here and will be injected into the
 	// pipeline — and called by the OTLP/gRPC receivers — once those land.
-	writer := outbox.New(pool, cfg.Database.OutboxTable)
+	writer := outbox.New(pool)
 	_ = writer
 
 	httpSrv := httpserver.New(cfg)

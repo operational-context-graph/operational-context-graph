@@ -39,8 +39,6 @@ spec:
               value: {{ .Values.database.sslmode | quote }}
             - name: OCG_DI_DATABASE__MAXCONNS
               value: {{ .Values.database.maxconns | quote }}
-            - name: OCG_DI_DATABASE__OUTBOXTABLE
-              value: {{ .Values.database.outboxtable | quote }}
             - name: OCG_DI_DATABASE__PASSWORD
               valueFrom:
                 secretKeyRef:

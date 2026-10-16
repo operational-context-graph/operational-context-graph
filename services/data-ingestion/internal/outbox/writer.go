@@ -15,6 +15,8 @@ import (
 
 const defaultContentType = "application/json"
 
+const Table = "data_ingestion_outbox"
+
 // Beginner is the subset of a pgx pool the Writer needs. *pgxpool.Pool satisfies it.
 type Beginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
@@ -29,9 +31,9 @@ type Writer struct {
 
 var _ ingest.OutboxWriter = (*Writer)(nil)
 
-// New builds a Writer that inserts into the given table.
-func New(db Beginner, table string) *Writer {
-	return &Writer{db: db, table: pgx.Identifier{table}}
+// New builds a Writer that inserts into the outbox table.
+func New(db Beginner) *Writer {
+	return &Writer{db: db, table: pgx.Identifier{Table}}
 }
 
 // Write inserts all rows using the PostgreSQL COPY protocol in a single
