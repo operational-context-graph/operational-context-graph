@@ -25,6 +25,19 @@ func (JSONSchemaLoader) Load(url string) (any, error) {
 	return nil, fmt.Errorf("load JSON Schema reference %q: %w", url, errExternalReference)
 }
 
+// CatalogJSONSchemaLoader resolves only caller-supplied release-catalog entries.
+// It never falls back to filesystem, environment, or network lookup.
+type CatalogJSONSchemaLoader map[string]any
+
+// Load implements jsonschema.URLLoader using a fixed in-memory catalog.
+func (loader CatalogJSONSchemaLoader) Load(url string) (any, error) {
+	document, ok := loader[url]
+	if !ok {
+		return nil, fmt.Errorf("load JSON Schema reference %q: %w", url, errExternalReference)
+	}
+	return document, nil
+}
+
 // JSONLDLoader refuses every URL. Phase two adds a release-catalog loader.
 type JSONLDLoader struct{}
 
@@ -33,10 +46,29 @@ func (JSONLDLoader) LoadDocument(url string) (*ld.RemoteDocument, error) {
 	return nil, fmt.Errorf("load JSON-LD reference %q: %w", url, errExternalReference)
 }
 
+// CatalogJSONLDLoader resolves only caller-supplied release-catalog entries.
+type CatalogJSONLDLoader map[string]any
+
+// LoadDocument implements ld.DocumentLoader using a fixed in-memory catalog.
+func (loader CatalogJSONLDLoader) LoadDocument(url string) (*ld.RemoteDocument, error) {
+	document, ok := loader[url]
+	if !ok {
+		return nil, fmt.Errorf("load JSON-LD reference %q: %w", url, errExternalReference)
+	}
+	return &ld.RemoteDocument{DocumentURL: url, Document: document}, nil
+}
+
 // NewJSONSchemaCompiler returns a compiler that cannot fetch remote references.
 func NewJSONSchemaCompiler() *jsonschema.Compiler {
 	compiler := jsonschema.NewCompiler()
 	compiler.UseLoader(JSONSchemaLoader{})
+	return compiler
+}
+
+// NewCatalogJSONSchemaCompiler returns a compiler restricted to catalog entries.
+func NewCatalogJSONSchemaCompiler(catalog map[string]any) *jsonschema.Compiler {
+	compiler := jsonschema.NewCompiler()
+	compiler.UseLoader(CatalogJSONSchemaLoader(catalog))
 	return compiler
 }
 

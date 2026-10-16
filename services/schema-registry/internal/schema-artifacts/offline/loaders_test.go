@@ -26,3 +26,18 @@ func TestValidateInputSize(t *testing.T) {
 	require.NoError(t, ValidateInputSize(make([]byte, 16*1024*1024)))
 	require.Error(t, ValidateInputSize(make([]byte, 16*1024*1024+1)))
 }
+
+func TestCatalogLoadersResolveOnlyCatalogEntries(t *testing.T) {
+	value := map[string]any{"type": "object"}
+	schemaLoader := CatalogJSONSchemaLoader{"https://example.test/schema": value}
+	loaded, err := schemaLoader.Load("https://example.test/schema")
+	require.NoError(t, err)
+	require.Equal(t, value, loaded)
+	_, err = schemaLoader.Load("https://example.test/other")
+	require.ErrorIs(t, err, errExternalReference)
+
+	ldLoader := CatalogJSONLDLoader{"https://example.test/context": value}
+	document, err := ldLoader.LoadDocument("https://example.test/context")
+	require.NoError(t, err)
+	require.Equal(t, value, document.Document)
+}

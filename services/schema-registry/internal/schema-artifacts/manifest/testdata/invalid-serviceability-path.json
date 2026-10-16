@@ -1,0 +1,44 @@
+{
+  "$schema": "https://example.test/manifest-1.0.0",
+  "artifacts": [
+    {
+      "artifactRevision": "rev-1",
+      "artifactType": "device",
+      "canonicalUri": "https://registry.example.test/v1/resources/schema/device/rev-1",
+      "createdUnderSchemaVersion": "1.0.0",
+      "dependencies": [],
+      "kind": "schema",
+      "payload": {
+        "bundlePath": "../device.json",
+        "digest": "sha-256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+        "mediaType": "application/schema+json",
+        "size": 4
+      },
+      "resources": [],
+      "schemaClass": "entity-type"
+    }
+  ],
+  "formatVersion": "1.0.0",
+  "previousRelease": null,
+  "schemaContextBindings": [],
+  "schemaVersion": "1.0.0",
+  "source": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repository": "https://git.example.test/repo"
+  },
+  "storageCatalog": [
+    {
+      "artifactType": "device",
+      "kind": "schema",
+      "stores": [
+        "data-center-inventory"
+      ]
+    }
+  ],
+  "uriCatalog": [
+    {
+      "artifactRevision": "rev-1",
+      "uri": "https://registry.example.test/v1/resources/schema/device/rev-1"
+    }
+  ]
+}

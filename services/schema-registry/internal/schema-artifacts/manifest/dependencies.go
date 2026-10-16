@@ -2,7 +2,5 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package manifest will validate canonical release manifests.
+// Package manifest validates canonical release manifests.
 package manifest
-
-import _ "github.com/gowebpki/jcs"
