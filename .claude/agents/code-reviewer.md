@@ -28,7 +28,7 @@ Do not rely on the PR description alone — read the code.
     If the system Go is older than the toolchain version declared in `go.mod`, set `GOTOOLCHAIN`
     to match `go.mod` to avoid false positives for CVEs already fixed in that toolchain.
   - Generate SBOM with `syft . --config .syft.yml -o spdx-json=/tmp/sbom.spdx.json` from repo root,
-    then run `grant check /tmp/sbom.spdx.json -c ./.grant.yml`. All 186 packages must pass the
+    then run `grant check /tmp/sbom.spdx.json -c ./.grant.yml`. All packages must pass the
     allow list in `.grant.yml`.
   - CodeQL: run `codeql database create /tmp/ocg-codeql-db --language=go --command="go build ./..." --overwrite`
     from the Go module root of the component under review (or repo root for a single-module repo),
