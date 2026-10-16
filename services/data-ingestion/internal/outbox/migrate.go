@@ -26,23 +26,29 @@ import (
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	// OpenDBFromPool shares the pool; closing this *sql.DB does not close it.
 	db := stdlib.OpenDBFromPool(pool)
-	defer func() { _ = db.Close() }()
 
 	src, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
+		_ = db.Close()
 		return fmt.Errorf("outbox: open migration source: %w", err)
 	}
-	defer func() { _ = src.Close() }()
 
 	driver, err := migratepgx.WithInstance(db, &migratepgx.Config{})
 	if err != nil {
+		_ = src.Close()
+		_ = db.Close()
 		return fmt.Errorf("outbox: build migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithInstance("iofs", src, "pgx5", driver)
 	if err != nil {
+		_ = src.Close()
+		_ = db.Close()
 		return fmt.Errorf("outbox: init migrator: %w", err)
 	}
+	// m.Close() closes both the source and the driver, which releases the
+	// advisory lock connection back to the pool.
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("outbox: apply migrations: %w", err)

@@ -152,7 +152,7 @@ func TestIntegration_WriteInvalidPayloadLeavesNoRows(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, outbox.Migrate(ctx, pool))
 
-	w := outbox.New(pool, "outbox")
+	w := outbox.New(pool)
 	// Non-JSON payload cannot be stored in a jsonb column: the insert must fail
 	// and leave no rows (atomic rollback).
 	rows := []ingest.OutboxRecord{
