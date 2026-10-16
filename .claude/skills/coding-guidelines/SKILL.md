@@ -47,3 +47,27 @@ One of the following database drivers MUST be used for the respective database t
   for all databases supporting the MySQL network protocol (e.g. Apache Doris). The library also provides a MySQL client
   package `github.com/go-mysql-org/go-mysql/client` which supports connection pooling and response streaming. Business
   logic requiring such functionality should make use of this client package.
+
+## Helm Charts
+
+### Tests
+
+Use the Helm [unittest](https://github.com/helm-unittest/helm-unittest) plugin to define unit tests for each Helm chart.
+
+All tests should be created in a dedicated `tests` directory in the chart. Individual test files should follow the
+defined templates, i.e., each template file should be complemented with a test file following the naming schema below.
+
+```text
+<chart-directory>
+├── Chart.yaml
+├── README.md
+├── templates
+│   ├── some-deployment.yaml
+│   ├── some-service.yaml
+│   └── ...
+├── tests
+│   ├── some-deployment_test.yaml
+│   ├── some-service_test.yaml
+│   └── ...
+└── values.yaml
+```
