@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// UpsertRelationship inserts a relationship; ignores duplicate natural key.
+// UpsertRelationship inserts a relationship; silently drops duplicate natural key.
 // Returns (relationship, created, error). created=false when the edge already existed.
 func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (Relationship, bool, error) {
 	for _, aid := range []uuid.UUID{in.SourceAssetID, in.TargetAssetID} {
@@ -42,7 +42,7 @@ RETURNING id, source_asset_id, target_asset_id, artifact_type, source_system, ex
 	err := row.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
 		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// DO NOTHING path — fetch the existing row.
+		// DO NOTHING path — fetch the existing row and return 200.
 		err2 := s.pool.QueryRow(ctx,
 			`SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
              created_at, created_at_source, last_updated_at_source

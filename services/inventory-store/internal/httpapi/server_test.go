@@ -40,7 +40,7 @@ func (s *stubDB) GetAsset(ctx context.Context, id uuid.UUID) (store.Asset, error
 	}
 	return store.Asset{}, nil
 }
-func (s *stubDB) ListAssets(_ context.Context, _, _ string, _ int, _ *store.Cursor) ([]store.Asset, *store.Cursor, error) {
+func (s *stubDB) ListAssets(_ context.Context, _, _, _ string, _ int, _ *store.Cursor) ([]store.Asset, *store.Cursor, error) {
 	return nil, nil, nil
 }
 func (s *stubDB) UpsertAssetBatch(_ context.Context, _ []store.AssetInput) ([]store.BatchResult, error) {

@@ -105,6 +105,7 @@ func handleListAssets(d db) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		artifactType := c.Query("type")
 		source := c.Query("source_system")
+		sourceID := c.Query("source_id")
 		limit, _ := strconv.Atoi(c.Query("limit"))
 		if limit <= 0 {
 			limit = 100
@@ -119,7 +120,7 @@ func handleListAssets(d db) gin.HandlerFunc {
 			cursor = &decoded
 		}
 
-		assets, nextCursor, err := d.ListAssets(c.Request.Context(), artifactType, source, limit, cursor)
+		assets, nextCursor, err := d.ListAssets(c.Request.Context(), artifactType, source, sourceID, limit, cursor)
 		if err != nil {
 			renderError(c, err)
 			return
