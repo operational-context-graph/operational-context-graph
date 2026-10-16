@@ -26,6 +26,9 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.grpcContainerPort }}
+              protocol: TCP
           env:
             - name: OCG_DI_DATABASE__HOST
               value: {{ .Values.database.host | quote }}
@@ -44,9 +47,6 @@ spec:
                 secretKeyRef:
                   name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
                   key: {{ .Values.database.passwordSecret.key | quote }}
-            - name: grpc
-              containerPort: {{ .Values.grpcContainerPort }}
-              protocol: TCP
           {{- if .Values.tls.enabled }}
             - name: OCG_DI_GRPC__TLS__CERT_FILE
               value: {{ .Values.tls.mountPath }}/tls.crt
