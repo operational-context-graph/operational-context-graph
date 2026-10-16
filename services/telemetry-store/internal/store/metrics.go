@@ -12,9 +12,7 @@ import (
 
 // QueryMetrics returns metric rows matching q.
 func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) {
-	if q.Limit <= 0 || q.Limit > 10000 {
-		q.Limit = 1000
-	}
+	q.Limit = clampLimit(q.Limit)
 
 	where := "WHERE timestamp >= ? AND timestamp < ?"
 	args := []any{q.From.UTC().Format("2006-01-02 15:04:05.000000"), q.To.UTC().Format("2006-01-02 15:04:05.000000")}

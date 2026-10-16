@@ -5,9 +5,10 @@
 # Fixed subnet 172.28.0.0/16 gives Doris stable IPs so FE_SERVERS / BE_SERVERS
 # can be set without dynamic IP lookups.
 #
-# First-time setup — apply Doris DDL and users after the stack is healthy:
-#   docker compose -f dev.yml exec doris-fe mysql -h 127.0.0.1 -P 9030 -u root < ../sql/doris-init.sql
+# First-time setup — apply Doris users after the stack is healthy:
 #   docker compose -f dev.yml exec doris-fe mysql -h 127.0.0.1 -P 9030 -u root < ../sql/doris-users.sql
+#
+# Schema migrations run automatically via the telemetry-store-migrate service.
 
 networks:
   ocg:
@@ -70,6 +71,19 @@ services:
       ocg:
         ipv4_address: 172.28.1.2
 
+  telemetry-store-migrate:
+    image: ghcr.io/operational-context-graph/telemetry-store-migrator:local
+    environment:
+      DORIS_DSN: "root:@tcp(doris-fe:9030)/"
+      REPLICATION_NUM: "1"
+      BUCKETS: "1"
+    restart: "no"
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    networks:
+      - ocg
+
   telemetry-store:
     image: ghcr.io/operational-context-graph/telemetry-store:local
     environment:
@@ -84,6 +98,8 @@ services:
     depends_on:
       doris-fe:
         condition: service_healthy
+      telemetry-store-migrate:
+        condition: service_completed_successfully
     networks:
       - ocg
 
