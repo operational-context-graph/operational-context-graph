@@ -11,3 +11,6 @@ dependencies:
   - name: data-ingestion
     version: 0.1.0
     condition: data-ingestion.enabled
+  - name: postgres
+    version: 0.1.0
+    condition: postgres.enabled

@@ -67,7 +67,7 @@ Run the commands from the repository root.
 
 ```bash
 # 1. Build the image and load it into the minikube node.
-docker build -t data-ingestion:dev services/data-ingestion
+docker build -f services/data-ingestion/Dockerfile -t data-ingestion:dev .
 minikube image load data-ingestion:dev
 
 # 2. Install the chart with the local override values.

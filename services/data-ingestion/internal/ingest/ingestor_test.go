@@ -5,29 +5,12 @@
 package ingest
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-func TestNoopIngestorAcceptsAll(t *testing.T) {
-	n := &NoopIngestor{}
-	batch := []IngestRecord{{Payload: []byte("x")}, {Payload: []byte("y")}}
-	result, err := n.Ingest(context.Background(), batch)
-	require.NoError(t, err)
-	assert.Equal(t, len(batch), result.Accepted)
-	assert.Equal(t, 0, result.Rejected)
-}
-
-func TestNoopIngestorEmptyBatch(t *testing.T) {
-	n := &NoopIngestor{}
-	result, err := n.Ingest(context.Background(), nil)
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.Accepted)
-}
 
 func TestErrOverloadedIsDistinct(t *testing.T) {
 	assert.True(t, errors.Is(ErrOverloaded, ErrOverloaded))
@@ -37,4 +20,16 @@ func TestErrOverloadedIsDistinct(t *testing.T) {
 func TestErrOverloadedWrapped(t *testing.T) {
 	wrapped := errors.Join(ErrOverloaded, errors.New("extra"))
 	assert.True(t, errors.Is(wrapped, ErrOverloaded))
+}
+
+func TestErrUnavailableIsDistinct(t *testing.T) {
+	assert.True(t, errors.Is(ErrUnavailable, ErrUnavailable))
+	assert.False(t, errors.Is(ErrUnavailable, errors.New("other")))
+}
+
+func TestErrUnavailableWrapped(t *testing.T) {
+	cause := errors.New("connection refused")
+	wrapped := fmt.Errorf("%w: schema registry down: %w", ErrUnavailable, cause)
+	assert.True(t, errors.Is(wrapped, ErrUnavailable))
+	assert.True(t, errors.Is(wrapped, cause))
 }

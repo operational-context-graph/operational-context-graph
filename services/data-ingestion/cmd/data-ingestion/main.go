@@ -11,16 +11,22 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/schemaregistry"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
 )
 
 func main() {
@@ -40,9 +46,24 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	pool, err := pgxpool.New(ctx, cfg.DatabaseDSN())
+	if err != nil {
+		return fmt.Errorf("connect outbox database: %w", err)
+	}
+	defer pool.Close()
+
+	if err := outbox.Migrate(ctx, pool); err != nil {
+		return fmt.Errorf("apply outbox migrations: %w", err)
+	}
+
 	httpSrv := httpserver.New(cfg)
 
-	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, &ingest.NoopIngestor{})
+	schemaRegistry := schemaregistry.Stub{}
+	mappingEngine := sourcemapping.Stub{}
+
+	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, outbox.New(pool))
+
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline)
 	if err != nil {
 		return err
 	}
@@ -71,4 +92,3 @@ func run() error {
 	}
 	return grpcErr
 }
-

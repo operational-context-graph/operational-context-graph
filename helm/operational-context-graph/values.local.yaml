@@ -2,8 +2,29 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Local/dev overrides: bundle a throwaway PostgreSQL and point the service at it.
+postgres:
+  enabled: true
+  fullnameOverride: ocg-postgres
+  auth:
+    database: ocg
+    username: ocg
+    # Password is never stored here. Create the secret once before deploying:
+    #   kubectl create secret generic ocg-postgres --from-literal=password=<your-password>
+    existingSecret: ocg-postgres
+
 data-ingestion:
   image:
     repository: data-ingestion
     tag: dev
     pullPolicy: Never
+  database:
+    host: ocg-postgres
+    port: 5432
+    name: ocg
+    user: ocg
+    sslmode: disable
+    maxconns: 10
+    passwordSecret:
+      name: ocg-postgres
+      key: password

@@ -30,6 +30,21 @@ tls:
   secretName: ""
   mountPath: /etc/tls
 
+# PostgreSQL outbox connection. The password is never set here; it is read from
+# a Kubernetes Secret via passwordSecret. For local/dev the umbrella chart points
+# these at the bundled postgres subchart; for prod they point at the existing OCG
+# instance.
+database:
+  host: ""
+  port: 5432
+  name: ocg
+  user: ocg
+  sslmode: require
+  maxconns: 10
+  passwordSecret:
+    name: ""
+    key: password
+
 resources: {}
 
 nameOverride: ""

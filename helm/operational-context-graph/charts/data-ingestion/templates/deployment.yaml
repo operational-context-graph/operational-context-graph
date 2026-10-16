@@ -29,8 +29,25 @@ spec:
             - name: grpc
               containerPort: {{ .Values.grpcContainerPort }}
               protocol: TCP
-          {{- if .Values.tls.enabled }}
           env:
+            - name: OCG_DI_DATABASE__HOST
+              value: {{ .Values.database.host | quote }}
+            - name: OCG_DI_DATABASE__PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OCG_DI_DATABASE__NAME
+              value: {{ .Values.database.name | quote }}
+            - name: OCG_DI_DATABASE__USER
+              value: {{ .Values.database.user | quote }}
+            - name: OCG_DI_DATABASE__SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: OCG_DI_DATABASE__MAXCONNS
+              value: {{ .Values.database.maxconns | quote }}
+            - name: OCG_DI_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+          {{- if .Values.tls.enabled }}
             - name: OCG_DI_GRPC__TLS__CERT_FILE
               value: {{ .Values.tls.mountPath }}/tls.crt
             - name: OCG_DI_GRPC__TLS__KEY_FILE
