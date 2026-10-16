@@ -62,7 +62,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 
 	if len(accepted) > 0 {
 		if err := p.outbox.Write(ctx, accepted); err != nil {
-			return IngestResult{}, fmt.Errorf("outbox write: %w", err)
+			return IngestResult{}, fmt.Errorf("%w: outbox write: %w", ErrUnavailable, err)
 		}
 	}
 
@@ -83,8 +83,8 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 				"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
-		return OutboxRecord{}, false, fmt.Errorf("schema registry unavailable (schema %s/%s): %w",
-			rec.Schema.Type, rec.Schema.Version, err)
+		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (schema %s/%s): %w",
+			ErrUnavailable, rec.Schema.Type, rec.Schema.Version, err)
 	}
 
 	if !p.validate(ctx, schema, rec) {
@@ -99,8 +99,8 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 				"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
-		return OutboxRecord{}, false, fmt.Errorf("schema registry unavailable (source mappings %s/%s): %w",
-			rec.Schema.Type, rec.Schema.Version, err)
+		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (source mappings %s/%s): %w",
+			ErrUnavailable, rec.Schema.Type, rec.Schema.Version, err)
 	}
 
 	normalized, err := p.engine.Normalize(ctx, mapping, rec)
@@ -118,8 +118,8 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 				"logical_artifact_type", normalized.Schema.Type, "schema_version", normalized.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
-		return OutboxRecord{}, false, fmt.Errorf("schema registry unavailable (target store %s/%s): %w",
-			normalized.Schema.Type, normalized.Schema.Version, err)
+		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (target store %s/%s): %w",
+			ErrUnavailable, normalized.Schema.Type, normalized.Schema.Version, err)
 	}
 
 	return OutboxRecord{

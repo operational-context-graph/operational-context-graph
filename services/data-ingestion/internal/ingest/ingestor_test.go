@@ -6,6 +6,7 @@ package ingest
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,4 +20,16 @@ func TestErrOverloadedIsDistinct(t *testing.T) {
 func TestErrOverloadedWrapped(t *testing.T) {
 	wrapped := errors.Join(ErrOverloaded, errors.New("extra"))
 	assert.True(t, errors.Is(wrapped, ErrOverloaded))
+}
+
+func TestErrUnavailableIsDistinct(t *testing.T) {
+	assert.True(t, errors.Is(ErrUnavailable, ErrUnavailable))
+	assert.False(t, errors.Is(ErrUnavailable, errors.New("other")))
+}
+
+func TestErrUnavailableWrapped(t *testing.T) {
+	cause := errors.New("connection refused")
+	wrapped := fmt.Errorf("%w: schema registry down: %w", ErrUnavailable, cause)
+	assert.True(t, errors.Is(wrapped, ErrUnavailable))
+	assert.True(t, errors.Is(wrapped, cause))
 }

@@ -218,6 +218,7 @@ func TestPipeline_Ingest_SchemaRegistryUnavailable(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, boom)
+	assert.ErrorIs(t, err, ingest.ErrUnavailable)
 	assert.Equal(t, ingest.IngestResult{}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
@@ -250,6 +251,7 @@ func TestPipeline_Ingest_SourceMappingsUnavailable(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, boom)
+	assert.ErrorIs(t, err, ingest.ErrUnavailable)
 	assert.Equal(t, ingest.IngestResult{}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
@@ -302,6 +304,7 @@ func TestPipeline_Ingest_TargetStoreUnavailable(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, boom)
+	assert.ErrorIs(t, err, ingest.ErrUnavailable)
 	assert.Equal(t, ingest.IngestResult{}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
@@ -319,6 +322,7 @@ func TestPipeline_Ingest_OutboxWriteFailure(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, boom)
+	assert.ErrorIs(t, err, ingest.ErrUnavailable)
 	assert.Equal(t, ingest.IngestResult{}, res)
 }
 

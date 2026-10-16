@@ -7,6 +7,7 @@ package grpcserver_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -175,7 +176,27 @@ func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
 	}
 }
 
-// --- 6.4: unexpected error → INTERNAL; message does not contain original error text ---
+// --- 6.4: ErrUnavailable → UNAVAILABLE ---
+
+func TestErrUnavailableReturnsUnavailable(t *testing.T) {
+	cause := errors.New("connection refused")
+	unavailErr := fmt.Errorf("%w: registry down: %w", ingest.ErrUnavailable, cause)
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, unavailErr)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.NotEmpty(t, st.Details(), "RetryInfo must be attached")
+}
+
+// --- 6.5: unexpected error → INTERNAL; message does not contain original error text ---
 
 func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	const secretMsg = "secret-db-connection-string"

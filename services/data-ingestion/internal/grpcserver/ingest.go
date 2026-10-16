@@ -97,21 +97,30 @@ func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.In
 // mapIngestError converts pipeline errors to gRPC status errors.
 func (s *IngestionServiceServer) mapIngestError(err error) error {
 	if errors.Is(err, ingest.ErrOverloaded) {
-		base := status.New(codes.Unavailable, "pipeline overloaded")
-		withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-			RetryDelay: durationpb.New(s.retry.InitialBackoff),
-		})
-		if attachErr != nil {
-			slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", attachErr)
-			return base.Err()
-		}
-		return withRetry.Err()
+		return s.unavailableWithRetry("pipeline overloaded")
 	}
 
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.Unavailable, "request cancelled")
 	}
 
+	if errors.Is(err, ingest.ErrUnavailable) {
+		return s.unavailableWithRetry("service unavailable")
+	}
+
 	slog.Error("unexpected pipeline error", "err", err)
 	return status.Error(codes.Internal, "internal error")
+}
+
+// unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
+func (s *IngestionServiceServer) unavailableWithRetry(msg string) error {
+	base := status.New(codes.Unavailable, msg)
+	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
+		RetryDelay: durationpb.New(s.retry.InitialBackoff),
+	})
+	if err != nil {
+		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
+		return base.Err()
+	}
+	return withRetry.Err()
 }
