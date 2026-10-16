@@ -258,7 +258,7 @@ func TestContextCancelledDuringIngest(t *testing.T) {
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
-	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Equal(t, codes.Canceled, status.Code(err))
 }
 
 // --- 7.1: concurrent Ingest calls — data race check (run with -race) ---

@@ -77,14 +77,10 @@ func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.Resour
 	if err := ctx.Err(); err != nil {
 		return ctxStatusError(err)
 	}
-	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultLogSchema)
-	if err != nil {
-		return otlpUnavailable(handler.retry)
-	}
 
-	var batch []ingest.IngestRecord
+	var payloads [][]byte
 	for _, resourceLogs := range rls {
-		resJSON, merr := marshalProto(resourceLogs.GetResource())
+		resJSON, merr := marshalResourceJSON(resourceLogs.GetResource())
 		if merr != nil {
 			return merr
 		}
@@ -94,25 +90,29 @@ func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.Resour
 				if merr != nil {
 					return merr
 				}
-				batch = append(batch, newIngestRecord(key, payload))
+				payloads = append(payloads, payload)
 			}
 		}
 	}
-	return handler.ingest(ctx, key, batch)
+	if len(payloads) == 0 {
+		return nil
+	}
+
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultLogSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
 
 func (handler *OTLPHandler) exportMetrics(ctx context.Context, rms []*metricsv1.ResourceMetrics) error {
 	if err := ctx.Err(); err != nil {
 		return ctxStatusError(err)
 	}
-	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultMetricSchema)
-	if err != nil {
-		return otlpUnavailable(handler.retry)
-	}
 
-	var batch []ingest.IngestRecord
+	var payloads [][]byte
 	for _, resourceMetrics := range rms {
-		resJSON, merr := marshalProto(resourceMetrics.GetResource())
+		resJSON, merr := marshalResourceJSON(resourceMetrics.GetResource())
 		if merr != nil {
 			return merr
 		}
@@ -122,25 +122,29 @@ func (handler *OTLPHandler) exportMetrics(ctx context.Context, rms []*metricsv1.
 				if merr != nil {
 					return merr
 				}
-				batch = append(batch, newIngestRecord(key, payload))
+				payloads = append(payloads, payload)
 			}
 		}
 	}
-	return handler.ingest(ctx, key, batch)
+	if len(payloads) == 0 {
+		return nil
+	}
+
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultMetricSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
 
 func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.ResourceSpans) error {
 	if err := ctx.Err(); err != nil {
 		return ctxStatusError(err)
 	}
-	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultTraceSchema)
-	if err != nil {
-		return otlpUnavailable(handler.retry)
-	}
 
-	var batch []ingest.IngestRecord
+	var payloads [][]byte
 	for _, resourceSpans := range rss {
-		resJSON, merr := marshalProto(resourceSpans.GetResource())
+		resJSON, merr := marshalResourceJSON(resourceSpans.GetResource())
 		if merr != nil {
 			return merr
 		}
@@ -150,17 +154,22 @@ func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.Res
 				if merr != nil {
 					return merr
 				}
-				batch = append(batch, newIngestRecord(key, payload))
+				payloads = append(payloads, payload)
 			}
 		}
 	}
-	return handler.ingest(ctx, key, batch)
+	if len(payloads) == 0 {
+		return nil
+	}
+
+	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultTraceSchema)
+	if err != nil {
+		return otlpUnavailable(handler.retry)
+	}
+	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
 
 func (handler *OTLPHandler) ingest(ctx context.Context, key SchemaKey, batch []ingest.IngestRecord) error {
-	if len(batch) == 0 {
-		return nil
-	}
 	result, err := handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -247,9 +256,9 @@ func (recv *otlpTracesReceiver) Export(
 
 var pjsonOpts = protojson.MarshalOptions{EmitUnpopulated: false}
 
-// marshalProto returns the protojson encoding of msg as raw JSON bytes.
+// marshalResourceJSON returns the protojson encoding of msg as raw JSON bytes.
 // Returns "null" when msg is nil (resource is optional in OTLP).
-func marshalProto(msg proto.Message) (json.RawMessage, error) {
+func marshalResourceJSON(msg proto.Message) (json.RawMessage, error) {
 	if msg == nil || !msg.ProtoReflect().IsValid() {
 		return json.RawMessage("null"), nil
 	}
@@ -277,14 +286,18 @@ func marshalEnvelope(resourceJSON json.RawMessage, recordKey string, record prot
 	return out, nil
 }
 
-func newIngestRecord(key SchemaKey, payload []byte) ingest.IngestRecord {
+func payloadsToRecords(key SchemaKey, payloads [][]byte) []ingest.IngestRecord {
 	ct := otlpContentType
-	return ingest.IngestRecord{
-		LogicalArtifactID: key.LogicalArtifactID,
-		SchemaVersion:     key.Version,
-		Payload:           payload,
-		ContentType:       &ct,
+	records := make([]ingest.IngestRecord, len(payloads))
+	for i, payload := range payloads {
+		records[i] = ingest.IngestRecord{
+			LogicalArtifactID: key.LogicalArtifactID,
+			SchemaVersion:     key.Version,
+			Payload:           payload,
+			ContentType:       &ct,
+		}
 	}
+	return records
 }
 
 // ctxStatusError maps a context error to the matching gRPC status error.

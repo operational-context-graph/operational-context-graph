@@ -128,8 +128,11 @@ func (h *OCGHandler) mapIngestError(err error) error {
 		return withRetry.Err()
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return status.Error(codes.Unavailable, "request cancelled")
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, "request canceled")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 	}
 
 	slog.Error("unexpected pipeline error", "err", err)

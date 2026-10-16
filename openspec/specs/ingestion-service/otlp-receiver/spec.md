@@ -3,7 +3,8 @@
 ## Purpose
 The OTLP receiver accepts standard OTLP gRPC exports (Logs, Metrics, Traces) from
 OTel SDKs and collectors, resolves a `SchemaKey` from request metadata or telemetry
-defaults, and delegates each export as a single `IngestRecord` to the ingestion pipeline.
+defaults, and delegates one `IngestRecord` per leaf record (`LogRecord`, `Metric`, `Span`)
+to the ingestion pipeline. Each record carries its resource attributes as a JSON envelope.
 
 ## Requirements
 
@@ -41,7 +42,8 @@ incoming metadata. When a header is absent or present but an empty string, the h
 SHALL call `SchemaRegistryClient.DefaultLogSchema`, `DefaultMetricSchema`, or
 `DefaultTraceSchema` respectively to obtain the default `SchemaKey`. Header resolution
 and default-schema lookup SHALL each occur once per Export call, not once per OTLP
-record within a call.
+record within a call. Schema resolution SHALL occur after flattening leaf records: if
+the export contains no leaf records, `SchemaRegistryClient` SHALL NOT be called.
 
 #### Scenario: Both headers present and non-empty — used verbatim
 - **WHEN** incoming metadata contains `logical_artifact_type: "ocg.custom.logs"` and `schema_version: "2.0.0"`
@@ -69,13 +71,17 @@ record within a call.
 
 ### Requirement: Empty OTLP export returns success without calling pipeline
 
-When `ExportLogsServiceRequest.ResourceLogs`, `ExportMetricsServiceRequest.ResourceMetrics`,
-or `ExportTraceServiceRequest.ResourceSpans` is empty or nil, the receiver SHALL return
-a successful empty response immediately. `Ingestor.Ingest` SHALL NOT be called.
-`SchemaRegistryClient` SHALL NOT be called.
+When the request has no top-level resource slices, or all resource containers contain no
+leaf records (`LogRecord`, `Metric`, `Span`), the receiver SHALL return a successful empty
+response immediately. `Ingestor.Ingest` SHALL NOT be called. `SchemaRegistryClient` SHALL
+NOT be called when there are no leaf records to process.
 
-#### Scenario: Empty ResourceLogs
+#### Scenario: Empty ResourceLogs slice
 - **WHEN** `ExportLogsServiceRequest.ResourceLogs` is empty
+- **THEN** the handler returns `ExportLogsServiceResponse{}` with nil error; neither `Ingestor.Ingest` nor `SchemaRegistryClient` is called
+
+#### Scenario: ResourceLogs present but all ScopeLogs are empty
+- **WHEN** `ExportLogsServiceRequest` contains `ResourceLogs` entries but none contain any `LogRecord`s
 - **THEN** the handler returns `ExportLogsServiceResponse{}` with nil error; neither `Ingestor.Ingest` nor `SchemaRegistryClient` is called
 
 #### Scenario: Empty ResourceMetrics
@@ -86,19 +92,26 @@ a successful empty response immediately. `Ingestor.Ingest` SHALL NOT be called.
 - **WHEN** `ExportTraceServiceRequest.ResourceSpans` is empty
 - **THEN** the handler returns `ExportTraceServiceResponse{}` with nil error
 
-### Requirement: IngestRecord built with no Partition or Watermark
+### Requirement: One IngestRecord per leaf OTLP record with resource context
 
-The receiver SHALL build exactly one `ingest.IngestRecord` per Export call. The record's
-`Payload` SHALL be the proto-marshalled bytes of the OTLP request. `Partition` SHALL be
-an empty string and `Watermark` SHALL be nil. `ContentType` SHALL be
-`"application/x-protobuf"`.
+The receiver SHALL produce one `ingest.IngestRecord` per leaf record: one per `LogRecord`,
+one per `Metric`, and one per `Span`. Each record's `Payload` SHALL be a JSON object with
+two fields: `"resource"` (the protojson-encoded `Resource` for that leaf's
+`ResourceLogs`/`ResourceMetrics`/`ResourceSpans`, or `null` when the resource is absent)
+and a signal-type key (`"logRecord"`, `"metric"`, or `"span"`) containing the
+protojson-encoded leaf record. `Partition` SHALL be an empty string and `Watermark` SHALL
+be nil. `ContentType` SHALL be `"application/json"`.
 
 #### Scenario: IngestRecord fields for a logs export
-- **WHEN** a valid `ExportLogsServiceRequest` is exported with schema headers set
-- **THEN** `Ingestor.Ingest` is called with one record where `Partition == ""`, `Watermark == nil`, `ContentType == "application/x-protobuf"`, and `Payload` is the proto-marshalled request
+- **WHEN** a valid `ExportLogsServiceRequest` is exported with schema headers set and contains one `ResourceLogs` with one `LogRecord`
+- **THEN** `Ingestor.Ingest` is called with one record where `Partition == ""`, `Watermark == nil`, `ContentType == "application/json"`, and `Payload` is a JSON object containing `"resource"` and `"logRecord"` keys
 
-#### Scenario: proto.Marshal failure
-- **WHEN** proto marshalling of the OTLP request returns an error (e.g., internal proto invariant)
+#### Scenario: Two ResourceLogs with one LogRecord each produce two IngestRecords
+- **WHEN** `ExportLogsServiceRequest` contains two `ResourceLogs`, each with one `LogRecord`
+- **THEN** `Ingestor.Ingest` is called with two records; each carries its respective resource's JSON under `"resource"`
+
+#### Scenario: protojson marshal failure
+- **WHEN** protojson marshalling of an OTLP resource or leaf record returns an error
 - **THEN** the handler returns `codes.Internal`; `Ingestor.Ingest` is NOT called
 
 ### Requirement: Ingestor errors mapped to retryable status codes
@@ -145,27 +158,27 @@ The OTLP protocol does not expose per-record rejection to the exporter.
 
 ### Requirement: Constructor rejects nil dependencies
 
-`newOTLPReceiver(schemaClient, ingestor, retry)` is an unexported constructor called
+`newOTLPHandler(schemaClient, ingestor, retry)` is an unexported constructor called
 by `grpcserver.NewServer`. It SHALL return a non-nil error when any of `schemaClient`,
 `ingestor`, or `retry` is nil. It SHALL NOT panic inside a handler on nil dereference.
-The retry configuration is stored on `OTLPReceiver` and used to populate `RetryInfo`
+The retry configuration is stored on `OTLPHandler` and used to populate `RetryInfo`
 in `Unavailable` responses.
 
 #### Scenario: Nil Ingestor rejected at construction
-- **WHEN** `newOTLPReceiver` is called with a nil `ingest.Ingestor`
+- **WHEN** `newOTLPHandler` is called with a nil `ingest.Ingestor`
 - **THEN** the call returns a non-nil error; no gRPC services are registered
 
 #### Scenario: Nil SchemaRegistryClient rejected at construction
-- **WHEN** `newOTLPReceiver` is called with a nil `SchemaRegistryClient`
+- **WHEN** `newOTLPHandler` is called with a nil `SchemaRegistryClient`
 - **THEN** the call returns a non-nil error; no gRPC services are registered
 
 #### Scenario: Nil RetryConfig rejected at construction
-- **WHEN** `newOTLPReceiver` is called with a nil `*config.RetryConfig`
+- **WHEN** `newOTLPHandler` is called with a nil `*config.RetryConfig`
 - **THEN** the call returns a non-nil error; no gRPC services are registered
 
 #### Scenario: All dependencies valid — services registered successfully
-- **WHEN** `newOTLPReceiver` is called with non-nil `schemaClient`, `ingestor`, and `retry`
-- **THEN** the call returns a non-nil `OTLPReceiver` and nil error; three OTLP services can be registered on a `grpc.Server`
+- **WHEN** `newOTLPHandler` is called with non-nil `schemaClient`, `ingestor`, and `retry`
+- **THEN** the call returns a non-nil `OTLPHandler` and nil error; three OTLP services can be registered on a `grpc.Server`
 
 ### Requirement: `SchemaRegistryClient` precondition — concurrent-safe
 
