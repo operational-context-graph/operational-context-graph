@@ -167,6 +167,7 @@ func TestDatabaseDSNContainsCredentialsAndParams(t *testing.T) {
 	assert.Contains(t, dsn, "pool_max_conns=10")
 	// Password with reserved characters must be URL-escaped, not raw.
 	assert.NotContains(t, dsn, "p@ss/word")
+	assert.Contains(t, dsn, "p%40ss%2Fword")
 }
 
 func TestPasswordNotReadFromConfigFile(t *testing.T) {

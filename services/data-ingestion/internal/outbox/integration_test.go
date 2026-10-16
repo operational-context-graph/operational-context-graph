@@ -58,7 +58,7 @@ func TestIntegration_MigrateCreatesTable(t *testing.T) {
 
 	var exists bool
 	err := pool.QueryRow(ctx,
-		`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'outbox')`).Scan(&exists)
+		`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'data_ingestion_outbox')`).Scan(&exists)
 	require.NoError(t, err)
 	assert.True(t, exists)
 }
@@ -97,7 +97,7 @@ func TestIntegration_WritePersistsRowsAtomically(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, outbox.Migrate(ctx, pool))
 
-	w := outbox.New(pool, "outbox")
+	w := outbox.New(pool)
 	rows := []ingest.OutboxRecord{
 		{
 			TargetStore:         "telemetry",
@@ -117,7 +117,7 @@ func TestIntegration_WritePersistsRowsAtomically(t *testing.T) {
 	require.NoError(t, w.Write(ctx, rows))
 
 	var count int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM outbox`).Scan(&count))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM data_ingestion_outbox`).Scan(&count))
 	assert.Equal(t, 2, count)
 
 	var (
@@ -130,7 +130,7 @@ func TestIntegration_WritePersistsRowsAtomically(t *testing.T) {
 	)
 	err := pool.QueryRow(ctx,
 		`SELECT target_store, logical_artifact_type, schema_version, content_type, payload, batch_id
-		   FROM outbox WHERE target_store = 'telemetry'`).
+		   FROM data_ingestion_outbox WHERE target_store = 'telemetry'`).
 		Scan(&targetStore, &artifactType, &version, &contentType, &payload, &batchID)
 	require.NoError(t, err)
 	assert.Equal(t, "telemetry", targetStore)
@@ -143,7 +143,7 @@ func TestIntegration_WritePersistsRowsAtomically(t *testing.T) {
 	// The inventory row's missing content type defaulted.
 	var invContentType string
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT content_type FROM outbox WHERE target_store = 'inventory'`).Scan(&invContentType))
+		`SELECT content_type FROM data_ingestion_outbox WHERE target_store = 'inventory'`).Scan(&invContentType))
 	assert.Equal(t, "application/json", invContentType)
 }
 
@@ -162,6 +162,6 @@ func TestIntegration_WriteInvalidPayloadLeavesNoRows(t *testing.T) {
 	require.Error(t, w.Write(ctx, rows))
 
 	var count int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM outbox`).Scan(&count))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM data_ingestion_outbox`).Scan(&count))
 	assert.Equal(t, 0, count, "a failed batch must leave no rows")
 }
