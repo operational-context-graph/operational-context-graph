@@ -33,91 +33,92 @@ const (
 	metaSchemaVersion = "schema_version"
 )
 
-// OTLPReceiver accepts standard OTLP gRPC exports (Logs, Metrics, Traces),
-// resolves a SchemaKey, and delegates each export to the ingestion pipeline.
-// OTLPReceiver is safe for concurrent use by multiple goroutines.
+// OTLPHandler owns the shared state for the three OTLP receiver types (Logs,
+// Metrics, Traces). Each signal type has its own receiver struct that embeds the
+// Unimplemented*Server and holds a pointer back to OTLPHandler.
+// OTLPHandler is safe for concurrent use by multiple goroutines.
 // SchemaRegistryClient implementations provided at construction MUST also be safe
 // for concurrent use.
-type OTLPReceiver struct {
+type OTLPHandler struct {
 	schemaClient SchemaRegistryClient
 	ingestor     ingest.Ingestor
 	retry        *config.RetryConfig
 }
 
-// newOTLPReceiver constructs an OTLPReceiver. All arguments must not be nil.
-func newOTLPReceiver(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor, retry *config.RetryConfig) (*OTLPReceiver, error) {
+// newOTLPHandler constructs an OTLPHandler. All arguments must not be nil.
+func newOTLPHandler(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor, retry *config.RetryConfig) (*OTLPHandler, error) {
 	if schemaClient == nil {
-		return nil, fmt.Errorf("grpcserver: otlp receiver: schemaClient must not be nil")
+		return nil, fmt.Errorf("grpcserver: otlp handler: schemaClient must not be nil")
 	}
 	if ingestor == nil {
-		return nil, fmt.Errorf("grpcserver: otlp receiver: ingestor must not be nil")
+		return nil, fmt.Errorf("grpcserver: otlp handler: ingestor must not be nil")
 	}
 	if retry == nil {
-		return nil, fmt.Errorf("grpcserver: otlp receiver: retry must not be nil")
+		return nil, fmt.Errorf("grpcserver: otlp handler: retry must not be nil")
 	}
-	return &OTLPReceiver{schemaClient: schemaClient, ingestor: ingestor, retry: retry}, nil
+	return &OTLPHandler{schemaClient: schemaClient, ingestor: ingestor, retry: retry}, nil
 }
 
 // register mounts the three OTLP collector services onto s.
-func (r *OTLPReceiver) register(s *grpc.Server) {
-	collectorlogsv1.RegisterLogsServiceServer(s, &otlpLogsHandler{r: r})
-	collectormetricsv1.RegisterMetricsServiceServer(s, &otlpMetricsHandler{r: r})
-	collectortracesv1.RegisterTraceServiceServer(s, &otlpTracesHandler{r: r})
+func (h *OTLPHandler) register(s *grpc.Server) {
+	collectorlogsv1.RegisterLogsServiceServer(s, &otlpLogsReceiver{recv: h})
+	collectormetricsv1.RegisterMetricsServiceServer(s, &otlpMetricsReceiver{recv: h})
+	collectortracesv1.RegisterTraceServiceServer(s, &otlpTracesReceiver{recv: h})
 }
 
-// ── handler structs ──────────────────────────────────────────────────────────
+// ── receiver structs ─────────────────────────────────────────────────────────
 
-type otlpLogsHandler struct {
+type otlpLogsReceiver struct {
 	collectorlogsv1.UnimplementedLogsServiceServer
-	r *OTLPReceiver
+	recv *OTLPHandler
 }
 
-type otlpMetricsHandler struct {
+type otlpMetricsReceiver struct {
 	collectormetricsv1.UnimplementedMetricsServiceServer
-	r *OTLPReceiver
+	recv *OTLPHandler
 }
 
-type otlpTracesHandler struct {
+type otlpTracesReceiver struct {
 	collectortracesv1.UnimplementedTraceServiceServer
-	r *OTLPReceiver
+	recv *OTLPHandler
 }
 
 // ── Export methods ───────────────────────────────────────────────────────────
 
-func (h *otlpLogsHandler) Export(
+func (r *otlpLogsReceiver) Export(
 	ctx context.Context,
 	req *collectorlogsv1.ExportLogsServiceRequest,
 ) (*collectorlogsv1.ExportLogsServiceResponse, error) {
 	if len(req.GetResourceLogs()) == 0 {
 		return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultLogSchema); err != nil {
+	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultLogSchema); err != nil {
 		return nil, err
 	}
 	return &collectorlogsv1.ExportLogsServiceResponse{}, nil
 }
 
-func (h *otlpMetricsHandler) Export(
+func (r *otlpMetricsReceiver) Export(
 	ctx context.Context,
 	req *collectormetricsv1.ExportMetricsServiceRequest,
 ) (*collectormetricsv1.ExportMetricsServiceResponse, error) {
 	if len(req.GetResourceMetrics()) == 0 {
 		return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultMetricSchema); err != nil {
+	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultMetricSchema); err != nil {
 		return nil, err
 	}
 	return &collectormetricsv1.ExportMetricsServiceResponse{}, nil
 }
 
-func (h *otlpTracesHandler) Export(
+func (r *otlpTracesReceiver) Export(
 	ctx context.Context,
 	req *collectortracesv1.ExportTraceServiceRequest,
 ) (*collectortracesv1.ExportTraceServiceResponse, error) {
 	if len(req.GetResourceSpans()) == 0 {
 		return &collectortracesv1.ExportTraceServiceResponse{}, nil
 	}
-	if err := h.r.export(ctx, req, h.r.schemaClient.DefaultTraceSchema); err != nil {
+	if err := r.recv.export(ctx, req, r.recv.schemaClient.DefaultTraceSchema); err != nil {
 		return nil, err
 	}
 	return &collectortracesv1.ExportTraceServiceResponse{}, nil
@@ -127,7 +128,7 @@ func (h *otlpTracesHandler) Export(
 
 // export resolves the SchemaKey, marshals the request, and calls Ingestor.Ingest.
 // defaultFn is called at most once when headers are absent or empty.
-func (r *OTLPReceiver) export(
+func (h *OTLPHandler) export(
 	ctx context.Context,
 	msg proto.Message,
 	defaultFn func(context.Context) (SchemaKey, error),
@@ -141,7 +142,7 @@ func (r *OTLPReceiver) export(
 
 	key, err := schemaFromMetadata(ctx, defaultFn)
 	if err != nil {
-		return otlpUnavailable(r.retry)
+		return otlpUnavailable(h.retry)
 	}
 
 	payload, err := proto.Marshal(msg)
@@ -157,7 +158,7 @@ func (r *OTLPReceiver) export(
 		ContentType:       &ct,
 	}
 
-	result, err := r.ingestor.Ingest(ctx, []ingest.IngestRecord{record})
+	result, err := h.ingestor.Ingest(ctx, []ingest.IngestRecord{record})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
@@ -166,7 +167,7 @@ func (r *OTLPReceiver) export(
 			return status.Error(codes.Canceled, "request canceled")
 		}
 		if errors.Is(err, ingest.ErrOverloaded) {
-			return otlpUnavailable(r.retry)
+			return otlpUnavailable(h.retry)
 		}
 		slog.Error("unexpected pipeline error", "err", err)
 		return status.Error(codes.Internal, "internal error")

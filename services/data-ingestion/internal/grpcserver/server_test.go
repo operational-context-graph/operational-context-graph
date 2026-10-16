@@ -742,7 +742,7 @@ func TestMaxPayloadBytesOverflow(t *testing.T) {
 
 // --- OTLP receiver wiring ---
 
-func TestServer_WithOTLPReceiver(t *testing.T) {
+func TestServer_WithOTLPHandler(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
 		defaultLimits(), defaultRetry(), noop(), &grpcserver.NoopSchemaRegistryClient{},

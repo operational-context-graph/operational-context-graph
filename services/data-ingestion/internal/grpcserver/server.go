@@ -54,18 +54,18 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if ingestor == nil {
 		return nil, errors.New("grpcserver: ingestor must not be nil")
 	}
-	ocgReceiver, err := NewOCGReceiver(ingestor, limits, retry)
+	ocgHandler, err := NewOCGHandler(ingestor, limits, retry)
 	if err != nil {
 		return nil, err
 	}
-	otlpReceiver, err := newOTLPReceiver(schemaClient, ingestor, retry)
+	otlpHandler, err := newOTLPHandler(schemaClient, ingestor, retry)
 	if err != nil {
 		return nil, err
 	}
 	return &Server{
 		grpcCfg:  grpcCfg,
 		limits:   limits,
-		services: []serviceRegistrar{ocgReceiver, otlpReceiver},
+		services: []serviceRegistrar{ocgHandler, otlpHandler},
 	}, nil
 }
 

@@ -22,21 +22,22 @@ import (
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
-// OCGReceiver implements the gRPC IngestionService.
-type OCGReceiver struct {
-	ingestionv1.UnimplementedIngestionServiceServer
+// OCGHandler owns the shared state for OCG receivers (ingestor, limits, retry).
+// OCGReceiver holds a pointer back to OCGHandler and implements the gRPC interface.
+// OCGHandler is safe for concurrent use by multiple goroutines.
+type OCGHandler struct {
 	ingestor ingest.Ingestor
 	limits   *config.LimitsConfig
 	retry    *config.RetryConfig
 }
 
-// NewOCGReceiver constructs an OCGReceiver. Returns an error when any
+// NewOCGHandler constructs an OCGHandler. Returns an error when any
 // argument is nil to catch wiring mistakes at startup, not at first RPC.
-func NewOCGReceiver(
+func NewOCGHandler(
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
-) (*OCGReceiver, error) {
+) (*OCGHandler, error) {
 	if ingestor == nil {
 		return nil, fmt.Errorf("grpcserver: ingestor must not be nil")
 	}
@@ -46,23 +47,36 @@ func NewOCGReceiver(
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: retry must not be nil")
 	}
-	return &OCGReceiver{ingestor: ingestor, limits: limits, retry: retry}, nil
+	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry}, nil
 }
 
-// register mounts the IngestionService onto grpcSrv.
-func (r *OCGHandler) register(grpcSrv *grpc.Server) {
-	ingestionv1.RegisterIngestionServiceServer(grpcSrv, r)
+// register mounts the OCG receivers onto grpcSrv.
+func (h *OCGHandler) register(grpcSrv *grpc.Server) {
+	ingestionv1.RegisterIngestionServiceServer(grpcSrv, NewOCGReceiver(h))
 }
 
-// Ingest implements OCGReceiver.Ingest.
+// ── receiver struct ──────────────────────────────────────────────────────────
+
+// OCGReceiver implements the gRPC IngestionService.
+type OCGReceiver struct {
+	ingestionv1.UnimplementedIngestionServiceServer
+	handler *OCGHandler
+}
+
+// NewOCGReceiver wraps an OCGHandler as an OCGReceiver that implements IngestionService.
+func NewOCGReceiver(h *OCGHandler) *OCGReceiver {
+	return &OCGReceiver{handler: h}
+}
+
+// Ingest implements IngestionService.Ingest.
 func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest) (*ingestionv1.IngestResponse, error) {
 	if req == nil || len(req.Messages) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "messages must not be empty")
 	}
 
-	if len(req.Messages) > r.limits.MaxMessages {
+	if len(req.Messages) > r.handler.limits.MaxMessages {
 		return nil, status.Errorf(codes.ResourceExhausted,
-			"batch exceeds maximum message count (%d)", r.limits.MaxMessages)
+			"batch exceeds maximum message count (%d)", r.handler.limits.MaxMessages)
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
@@ -86,9 +100,9 @@ func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest
 		}
 	}
 
-	result, err := r.ingestor.Ingest(ctx, batch)
+	result, err := r.handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
-		return nil, r.mapIngestError(err)
+		return nil, r.handler.mapIngestError(err)
 	}
 
 	return &ingestionv1.IngestResponse{
@@ -98,12 +112,14 @@ func (r *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequest
 	}, nil
 }
 
+// ── shared error mapping ─────────────────────────────────────────────────────
+
 // mapIngestError converts pipeline errors to gRPC status errors.
-func (r *OCGReceiver) mapIngestError(err error) error {
+func (h *OCGHandler) mapIngestError(err error) error {
 	if errors.Is(err, ingest.ErrOverloaded) {
 		base := status.New(codes.Unavailable, "pipeline overloaded")
 		withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-			RetryDelay: durationpb.New(r.retry.InitialBackoff),
+			RetryDelay: durationpb.New(h.retry.InitialBackoff),
 		})
 		if attachErr != nil {
 			slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", attachErr)
