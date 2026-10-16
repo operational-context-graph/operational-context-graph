@@ -112,6 +112,9 @@ func TestLoadFromFileValidDatabaseConfig(t *testing.T) {
 
 func TestLoadFromFileMissingDatabaseHostFails(t *testing.T) {
 	t.Setenv("OCG_DI_DATABASE__HOST", "")
+
+	_, err := LoadFromFile("")
+	require.Error(t, err)
 }
 
 // --- GRPCConfig ---
