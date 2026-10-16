@@ -153,4 +153,58 @@ func TestQueryMetrics_TimeRange(t *testing.T) {
 	assert.True(t, found, "inserted metric row must appear in time-range query")
 }
 
+func TestUniqueKeyDedup_Logs(t *testing.T) {
+	// Doris UNIQUE KEY(timestamp, iri) deduplicates at compaction.
+	// This test inserts the same (timestamp, iri) pair twice and confirms the
+	// table engine enforces at-most-one row for that key after a follow-up read.
+	ctx := context.Background()
 
+	ts := time.Now().UTC().Truncate(time.Millisecond)
+	iri := "urn:ocg:log:dedup:" + ts.Format("150405000")
+
+	insertLog(t, ts, iri, "host-dedup", "INFO", "first")
+	insertLog(t, ts, iri, "host-dedup", "INFO", "second")
+
+	// Allow Doris a moment to compact the UNIQUE KEY — in test this is fast.
+	time.Sleep(500 * time.Millisecond)
+
+	db := newStore(t)
+	from := ts.Add(-time.Minute)
+	to := ts.Add(time.Minute)
+	logs, err := db.QueryLogs(ctx, store.LogQuery{From: from, To: to, HostName: "host-dedup", Limit: 100})
+	require.NoError(t, err)
+
+	var count int
+	for _, l := range logs {
+		if l.IRI == iri {
+			count++
+		}
+	}
+	assert.LessOrEqual(t, count, 1, "UNIQUE KEY must deduplicate same (timestamp, iri) to at most one row")
+}
+
+func TestUniqueKeyDedup_Metrics(t *testing.T) {
+	ctx := context.Background()
+
+	ts := time.Now().UTC().Truncate(time.Millisecond)
+	iri := "urn:ocg:metric:dedup:" + ts.Format("150405000")
+
+	insertMetric(t, ts, iri, "host-dedup", "cpu_usage", 1.0)
+	insertMetric(t, ts, iri, "host-dedup", "cpu_usage", 2.0)
+
+	time.Sleep(500 * time.Millisecond)
+
+	db := newStore(t)
+	from := ts.Add(-time.Minute)
+	to := ts.Add(time.Minute)
+	metrics, err := db.QueryMetrics(ctx, store.MetricQuery{From: from, To: to, HostName: "host-dedup", Limit: 100})
+	require.NoError(t, err)
+
+	var count int
+	for _, m := range metrics {
+		if m.IRI == iri {
+			count++
+		}
+	}
+	assert.LessOrEqual(t, count, 1, "UNIQUE KEY must deduplicate same (timestamp, iri) to at most one row")
+}

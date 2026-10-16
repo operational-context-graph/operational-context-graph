@@ -55,6 +55,14 @@ type MetricQuery struct {
 	AfterIRI   *string
 }
 
+// clampLimit enforces a valid limit: zero/negative → 1000, above 10 000 → 1000.
+func clampLimit(n int) int {
+	if n <= 0 || n > 10000 {
+		return 1000
+	}
+	return n
+}
+
 // Cursor encodes the keyset pagination position as (timestamp, iri) per SDD §5.2.
 type Cursor struct {
 	TS  time.Time `json:"t"`

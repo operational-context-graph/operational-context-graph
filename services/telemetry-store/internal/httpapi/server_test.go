@@ -267,3 +267,169 @@ func TestHandleIngestLogs_LabelForwardedToLoader(t *testing.T) {
 	ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "logs-2026-10-13-007", validLogLine)
 	assert.Equal(t, "logs-2026-10-13-007", capturedLabel)
 }
+
+// --- Filter forwarding tests ---
+
+func TestHandleQueryLogs_HostNameFilterForwarded(t *testing.T) {
+	var capturedQ store.LogQuery
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, q store.LogQuery) ([]store.Log, error) {
+			capturedQ = q
+			return nil, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&host_name=my-host")
+	assert.Equal(t, "my-host", capturedQ.HostName)
+}
+
+func TestHandleQueryLogs_SeverityFilterForwarded(t *testing.T) {
+	var capturedQ store.LogQuery
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, q store.LogQuery) ([]store.Log, error) {
+			capturedQ = q
+			return nil, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&severity=ERROR")
+	assert.Equal(t, "ERROR", capturedQ.Severity)
+}
+
+func TestHandleQueryMetrics_MetricNameFilterForwarded(t *testing.T) {
+	var capturedQ store.MetricQuery
+	stub := &stubTelemetryDB{
+		queryMetricsFn: func(_ context.Context, q store.MetricQuery) ([]store.Metric, error) {
+			capturedQ = q
+			return nil, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	test.GetRequest(t, srv.Handler, "/v1/telemetry/metrics?from="+from+"&to="+to+"&metric_name=cpu_usage")
+	assert.Equal(t, "cpu_usage", capturedQ.MetricName)
+}
+
+func TestHandleQueryLogs_LimitForwarded(t *testing.T) {
+	var capturedQ store.LogQuery
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, q store.LogQuery) ([]store.Log, error) {
+			capturedQ = q
+			return nil, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&limit=50")
+	assert.Equal(t, 50, capturedQ.Limit)
+}
+
+func TestHandleQueryLogs_AfterCursorForwarded(t *testing.T) {
+	var capturedQ store.LogQuery
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, q store.LogQuery) ([]store.Log, error) {
+			capturedQ = q
+			return nil, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+
+	// Build a valid cursor string.
+	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cur := store.Cursor{TS: ts, IRI: "urn:ocg:log:test:1"}
+	encoded := cur.Encode()
+
+	now := time.Now().UTC()
+	from := now.Add(-time.Hour).Format(time.RFC3339)
+	to := now.Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&after="+encoded)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NotNil(t, capturedQ.AfterTS)
+	assert.True(t, ts.Equal(*capturedQ.AfterTS))
+	require.NotNil(t, capturedQ.AfterIRI)
+	assert.Equal(t, "urn:ocg:log:test:1", *capturedQ.AfterIRI)
+}
+
+func TestHandleQueryLogs_InvalidCursor_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&after=!!!invalid!!!")
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleQueryMetrics_InvalidCursor_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/metrics?from="+from+"&to="+to+"&after=!!!invalid!!!")
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleQueryLogs_DBError_Returns500(t *testing.T) {
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, _ store.LogQuery) ([]store.Log, error) {
+			return nil, errors.New("database gone away")
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleQueryMetrics_DBError_Returns500(t *testing.T) {
+	stub := &stubTelemetryDB{
+		queryMetricsFn: func(_ context.Context, _ store.MetricQuery) ([]store.Metric, error) {
+			return nil, errors.New("database gone away")
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	now := time.Now().UTC()
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/metrics?from="+from+"&to="+to)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleQueryLogs_NextCursorSetWhenFullPage(t *testing.T) {
+	now := time.Now().UTC()
+	logs := make([]store.Log, 10)
+	for i := range logs {
+		logs[i] = store.Log{Timestamp: now, IRI: "urn:ocg:log:test:" + time.Duration(i).String()}
+	}
+	stub := &stubTelemetryDB{
+		queryLogsFn: func(_ context.Context, _ store.LogQuery) ([]store.Log, error) {
+			return logs, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0")
+	from := now.Add(-time.Minute).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/logs?from="+from+"&to="+to+"&limit=10")
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp v1.LogListResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.NotEmpty(t, resp.NextCursor, "next_cursor must be set when the page is full")
+}
+
