@@ -115,8 +115,8 @@ func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return a, nil
 }
 
-// ListAssets returns a page of current assets filtered by artifact_type or source_system.
-func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem string, limit int, after *Cursor) ([]Asset, *Cursor, error) {
+// ListAssets returns a page of current assets filtered by artifact_type, source_system, or source_id.
+func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *Cursor) ([]Asset, *Cursor, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
@@ -133,6 +133,11 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem strin
 	if sourceSystem != "" {
 		where += fmt.Sprintf(" AND source_system = $%d", i)
 		args = append(args, sourceSystem)
+		i++
+	}
+	if sourceID != "" {
+		where += fmt.Sprintf(" AND source_id = $%d", i)
+		args = append(args, sourceID)
 		i++
 	}
 	if after != nil {

@@ -23,7 +23,7 @@ const routeKey = "route"
 type db interface {
 	UpsertAsset(ctx context.Context, in store.AssetInput) (store.Asset, bool, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (store.Asset, error)
-	ListAssets(ctx context.Context, artifactType, sourceSystem string, limit int, after *store.Cursor) ([]store.Asset, *store.Cursor, error)
+	ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *store.Cursor) ([]store.Asset, *store.Cursor, error)
 	UpsertAssetBatch(ctx context.Context, inputs []store.AssetInput) ([]store.BatchResult, error)
 	UpsertRelationship(ctx context.Context, in store.RelationshipInput) (store.Relationship, bool, error)
 	ListRelationships(ctx context.Context, assetID uuid.UUID, limit int) ([]store.Relationship, error)

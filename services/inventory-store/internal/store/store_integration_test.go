@@ -238,6 +238,7 @@ func TestUpsertRelationship_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, created1)
 
+	// Second call with same natural key must return 200 OK — silently drop, return existing row.
 	r2, created2, err := s.UpsertRelationship(ctx, in)
 	require.NoError(t, err)
 	assert.False(t, created2)
