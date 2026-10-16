@@ -5,8 +5,11 @@
 package httpserver
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,4 +44,33 @@ func TestServerReadyRoute(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRunCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := New(testConfig())
+	errc := make(chan error, 1)
+	go func() { errc <- srv.Run(ctx) }()
+	cancel()
+	require.NoError(t, <-errc)
+}
+
+func TestRunListenerError(t *testing.T) {
+	// Bind the port first so srv.Run fails immediately.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer l.Close()
+
+	_, portStr, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		Server:  config.ServerConfig{Host: "127.0.0.1", Port: port},
+		Logging: config.LoggingConfig{Level: "info"},
+	}
+	srv := New(cfg)
+	err = srv.Run(context.Background())
+	require.Error(t, err)
 }
