@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package handlers
+package httpserver
 
 import (
 	"net/http"
@@ -14,14 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
+func TestHealthzHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-}
-
-func TestHealthz(t *testing.T) {
 	r := gin.New()
-	h := NewHealth()
-	r.GET("/healthz", h.Healthz)
+	h := newHealth()
+	r.GET("/healthz", h.healthz)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -31,10 +28,11 @@ func TestHealthz(t *testing.T) {
 	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String())
 }
 
-func TestReadyz(t *testing.T) {
+func TestReadyzHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewHealth()
-	r.GET("/readyz", h.Readyz)
+	h := newHealth()
+	r.GET("/readyz", h.readyz)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)

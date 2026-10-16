@@ -4,9 +4,8 @@
 
 // Command data-ingestion is the entrypoint for the Data Ingestion service.
 //
-// It wires configuration, builds the HTTP server, and runs it until the
-// process receives an interrupt or termination signal. Business logic lives
-// in the internal packages; this file only bootstraps.
+// It wires configuration, builds the HTTP server and gRPC server, and runs
+// both until the process receives an interrupt or termination signal.
 package main
 
 import (
@@ -19,7 +18,9 @@ import (
 	"syscall"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
 func main() {
@@ -29,21 +30,45 @@ func main() {
 	}
 }
 
-// run loads configuration, starts the server, and blocks until shutdown.
+// run loads configuration, starts the HTTP and gRPC servers, and blocks until shutdown.
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	srv := httpserver.New(cfg)
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("starting data-ingestion", "host", cfg.Server.Host, "port", cfg.Server.Port)
-	if err := srv.Run(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	httpSrv := httpserver.New(cfg)
+
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, &ingest.NoopIngestor{})
+	if err != nil {
 		return err
 	}
-	return nil
+
+	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
+	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
+	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
+
+	grpcErrC := make(chan error, 1)
+	go func() {
+		grpcErrC <- grpcSrv.Run(ctx)
+	}()
+
+	httpErr := httpSrv.Run(ctx)
+	// Cancel the shared context so the gRPC goroutine exits when the HTTP server
+	// stops for any reason. Without this, an HTTP bind error would leave the
+	// process blocked on <-grpcErrC forever.
+	// The reverse is also true: if grpcSrv.Run returns (e.g. bind error), grpcErrC
+	// closes, <-grpcErrC unblocks, and main returns — taking the HTTP server down.
+	stop()
+
+	grpcErr := <-grpcErrC
+
+	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
+		return httpErr
+	}
+	return grpcErr
 }
+
