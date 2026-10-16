@@ -24,6 +24,16 @@ Do not rely on the PR description alone — read the code.
 - [ ] Logging is structured; no credentials or full request/response payloads in log entries
 - [ ] No hardcoded credentials or secrets
 - [ ] No high or critical vulnerabilities introduced (SAST + dependency scan CI checks pass)
+  - Run `govulncheck ./...` from the Go module directory. Exit 0 = clean.
+    If the system Go is older than the toolchain version declared in `go.mod`, set `GOTOOLCHAIN`
+    to match `go.mod` to avoid false positives for CVEs already fixed in that toolchain.
+  - Generate SBOM with `syft . --config .syft.yml -o spdx-json=/tmp/sbom.spdx.json` from repo root,
+    then run `grant check /tmp/sbom.spdx.json -c ./.grant.yml`. All 186 packages must pass the
+    allow list in `.grant.yml`.
+  - CodeQL: run `codeql database create /tmp/ocg-codeql-db --language=go --command="go build ./..." --overwrite`
+    from the Go module root of the component under review (or repo root for a single-module repo),
+    then `codeql database analyze /tmp/ocg-codeql-db ~/.codeql/packages/codeql/go-queries/<ver>/codeql-suites/go-security-and-quality.qls --format=sarifv2.1.0 --output=/tmp/ocg-codeql.sarif`.
+    Parse SARIF for results; zero findings required.
 - [ ] Public API documentation updated for any interface change
 - [ ] No unnecessary new dependencies introduced without justification and license check
 - [ ] Change is scoped to the stated purpose — no unrelated modifications
