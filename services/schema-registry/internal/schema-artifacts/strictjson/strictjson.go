@@ -39,7 +39,7 @@ var (
 // Parse decodes one complete bounded I-JSON document. Objects use map values,
 // arrays use []any, and numbers retain json.Number for exact interpretation.
 func Parse(input []byte) (any, error) {
-	if input == nil || len(input) == 0 {
+	if len(input) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformed)
 	}
 	if len(input) > MaxBytes {

@@ -1,14 +1,1 @@
-{
-  "$schema": "https://example.test/manifest-1.0.0",
-  "artifacts": [],
-  "formatVersion": "1.0.0",
-  "previousRelease": null,
-  "schemaContextBindings": [],
-  "schemaVersion": "",
-  "source": {
-    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "repository": "https://git.example.test/repo"
-  },
-  "storageCatalog": [],
-  "uriCatalog": []
-}
+{"$schema":"https://example.test/manifest-1.0.0","artifacts":[],"formatVersion":"1.0.0","previousRelease":null,"schemaContextBindings":[],"schemaVersion":"","source":{"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"https://git.example.test/repo"},"storageCatalog":[],"uriCatalog":[]}

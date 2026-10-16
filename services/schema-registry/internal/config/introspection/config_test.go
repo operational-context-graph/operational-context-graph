@@ -39,7 +39,9 @@ func TestLoadPrecedenceAndRedaction(t *testing.T) {
 func TestLoadRejectsInvalidBoundaries(t *testing.T) {
 	tests := map[string]string{
 		"empty target":               "database:\n  url: ''\n",
+		"missing runtime login":      "database:\n  url: postgresql://db.example.test/registry?sslmode=verify-full\n",
 		"disabled production TLS":    "database:\n  production: true\n  url: postgresql://registry:password@db.example.test/registry?sslmode=require\n",
+		"disabled nonproduction TLS": "database:\n  production: false\n  url: postgresql://registry:password@db.example.test/registry?sslmode=disable\n",
 		"port zero":                  "server:\n  port: 0\n",
 		"port over range":            "server:\n  port: 65536\n",
 		"zero timeout":               "server:\n  read_timeout: 0s\n",

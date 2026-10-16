@@ -162,7 +162,7 @@ func validate(cfg *Config) error {
 
 func validateDatabase(cfg DatabaseConfig) error {
 	parsed, err := url.Parse(cfg.URL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User == nil || parsed.User.Username() == "" {
 		return fmt.Errorf("validate configuration: database.url must be an absolute PostgreSQL URL")
 	}
 	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
@@ -174,8 +174,8 @@ func validateDatabase(cfg DatabaseConfig) error {
 	if cfg.ReservedConnections >= cfg.PoolMaxConnections {
 		return fmt.Errorf("validate configuration: database reserved connections exhaust the pool")
 	}
-	if cfg.Production && parsed.Query().Get("sslmode") != "verify-full" {
-		return fmt.Errorf("validate configuration: production database connections require sslmode=verify-full")
+	if parsed.Query().Get("sslmode") != "verify-full" {
+		return fmt.Errorf("validate configuration: database connections require sslmode=verify-full")
 	}
 	return nil
 }
