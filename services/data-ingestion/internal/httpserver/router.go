@@ -6,14 +6,11 @@ package httpserver
 
 import (
 	"github.com/gin-gonic/gin"
-
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/handlers"
 )
 
-// registerRoutes wires the HTTP routes onto the engine. db is passed to the
-// readiness probe; it may be nil when no database is configured.
-func registerRoutes(engine *gin.Engine, db handlers.Pinger) {
-	health := handlers.NewHealth(db)
-	engine.GET("/healthz", health.Healthz)
-	engine.GET("/readyz", health.Readyz)
+// registerRoutes wires the HTTP routes onto the engine.
+func registerRoutes(engine *gin.Engine) {
+	h := newHealth()
+	engine.GET("/healthz", h.healthz)
+	engine.GET("/readyz", h.readyz)
 }

@@ -27,25 +27,40 @@ spec:
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
           env:
-            - name: OCG_DI_DATABASE_HOST
+            - name: OCG_DI_DATABASE__HOST
               value: {{ .Values.database.host | quote }}
-            - name: OCG_DI_DATABASE_PORT
+            - name: OCG_DI_DATABASE__PORT
               value: {{ .Values.database.port | quote }}
-            - name: OCG_DI_DATABASE_NAME
+            - name: OCG_DI_DATABASE__NAME
               value: {{ .Values.database.name | quote }}
-            - name: OCG_DI_DATABASE_USER
+            - name: OCG_DI_DATABASE__USER
               value: {{ .Values.database.user | quote }}
-            - name: OCG_DI_DATABASE_SSLMODE
+            - name: OCG_DI_DATABASE__SSLMODE
               value: {{ .Values.database.sslmode | quote }}
-            - name: OCG_DI_DATABASE_MAXCONNS
+            - name: OCG_DI_DATABASE__MAXCONNS
               value: {{ .Values.database.maxconns | quote }}
-            - name: OCG_DI_DATABASE_OUTBOXTABLE
+            - name: OCG_DI_DATABASE__OUTBOXTABLE
               value: {{ .Values.database.outboxtable | quote }}
-            - name: OCG_DI_DATABASE_PASSWORD
+            - name: OCG_DI_DATABASE__PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
                   key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: grpc
+              containerPort: {{ .Values.grpcContainerPort }}
+              protocol: TCP
+          {{- if .Values.tls.enabled }}
+            - name: OCG_DI_GRPC__TLS__CERT_FILE
+              value: {{ .Values.tls.mountPath }}/tls.crt
+            - name: OCG_DI_GRPC__TLS__KEY_FILE
+              value: {{ .Values.tls.mountPath }}/tls.key
+            - name: OCG_DI_GRPC__TLS__CA_FILE
+              value: {{ .Values.tls.mountPath }}/ca.crt
+          volumeMounts:
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -56,3 +71,9 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+      {{- end }}

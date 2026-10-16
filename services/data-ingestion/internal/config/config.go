@@ -16,17 +16,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
 
 // envPrefix namespaces environment variables for this service.
-// For example OCG_DI_SERVER_PORT maps to the server.port key.
+// Double-underscore (__) separates hierarchy levels; single underscore is part of a field name.
+// For example OCG_DI_GRPC__TLS_CERT_FILE maps to the grpc.tls_cert_file key.
 const envPrefix = "OCG_DI_"
 
 // envFileKey is the environment variable that points to an optional config file.
@@ -37,6 +39,9 @@ type Config struct {
 	Server   ServerConfig   `koanf:"server"`
 	Logging  LoggingConfig  `koanf:"logging"`
 	Database DatabaseConfig `koanf:"database"`
+	GRPC     GRPCConfig     `koanf:"grpc"`
+	Limits   LimitsConfig   `koanf:"limits"`
+	Retry    RetryConfig    `koanf:"retry"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -51,7 +56,7 @@ type LoggingConfig struct {
 }
 
 // DatabaseConfig holds PostgreSQL connection settings for the outbox. The
-// password is supplied only via OCG_DI_DATABASE_PASSWORD (from a Secret); it is
+// password is supplied only via OCG_DI_DATABASE__PASSWORD (from a Secret); it is
 // never a committed config-file field.
 type DatabaseConfig struct {
 	Host        string `koanf:"host" validate:"required"`
@@ -62,6 +67,37 @@ type DatabaseConfig struct {
 	SSLMode     string `koanf:"sslmode" validate:"required,oneof=disable allow prefer require verify-ca verify-full"`
 	MaxConns    int    `koanf:"maxconns" validate:"min=0"`
 	OutboxTable string `koanf:"outboxtable" validate:"required"`
+}
+
+// GRPCConfig holds gRPC server settings.
+type GRPCConfig struct {
+	Host            string        `koanf:"host"             validate:"required"`
+	Port            int           `koanf:"port"             validate:"required,min=1,max=65535"`
+	TLS             *TLSConfig    `koanf:"tls"              validate:"omitempty"`
+	ShutdownTimeout time.Duration `koanf:"shutdown_timeout" validate:"required,gt=0"`
+}
+
+// TLSConfig holds mTLS certificate paths. All three fields are required together;
+// omit the tls block entirely to disable TLS.
+type TLSConfig struct {
+	CertFile string `koanf:"cert_file" validate:"required"`
+	KeyFile  string `koanf:"key_file"  validate:"required"`
+	CAFile   string `koanf:"ca_file"   validate:"required"`
+}
+
+// LimitsConfig holds request-level limit settings for the gRPC handler.
+type LimitsConfig struct {
+	MaxMessages     int   `koanf:"max_messages"    validate:"required,gt=0"`
+	MaxPayloadBytes int64 `koanf:"max_payload_bytes" validate:"required,gt=0"`
+}
+
+// RetryConfig holds retry hint settings returned in UNAVAILABLE responses.
+// The server always returns InitialBackoff as the hint; Multiplier and
+// MaxBackoff are validated and stored for future per-client backoff support.
+type RetryConfig struct {
+	InitialBackoff time.Duration `koanf:"initial_backoff" validate:"required,gt=0"`
+	MaxBackoff     time.Duration `koanf:"max_backoff"     validate:"required,gtefield=InitialBackoff"`
+	Multiplier     float64       `koanf:"multiplier"      validate:"required,gte=1.0"`
 }
 
 // defaults returns the built-in configuration applied before any override.
@@ -76,7 +112,21 @@ func defaults() *Config {
 			User:        "ocg",
 			SSLMode:     "disable",
 			MaxConns:    10,
-			OutboxTable: "outbox",
+			OutboxTable: "data_ingestion_outbox",
+		},
+		GRPC: GRPCConfig{
+			Host:            "0.0.0.0",
+			Port:            9090,
+			ShutdownTimeout: 30 * time.Second,
+		},
+		Limits: LimitsConfig{
+			MaxMessages:     1000,
+			MaxPayloadBytes: 4 * 1024 * 1024, // 4 MiB
+		},
+		Retry: RetryConfig{
+			InitialBackoff: 1 * time.Second,
+			MaxBackoff:     60 * time.Second,
+			Multiplier:     1.0,
 		},
 	}
 }
@@ -118,11 +168,19 @@ func LoadFromFile(path string) (*Config, error) {
 		}
 	}
 
-	// Map OCG_DI_SERVER_PORT -> server.port, OCG_DI_LOGGING_LEVEL -> logging.level.
-	transform := func(s string) string {
-		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, envPrefix)), "_", ".")
+	// Map env vars to koanf keys.
+	// Double underscore (__) separates hierarchy levels; single underscore is preserved as part of a field name.
+	// Examples:
+	//   OCG_DI_GRPC__ADDR             -> grpc.addr
+	//   OCG_DI_GRPC__TLS_CERT_FILE    -> grpc.tls_cert_file
+	//   OCG_DI_LIMITS__MAX_MESSAGES   -> limits.max_messages
+	//   OCG_DI_RETRY__INITIAL_BACKOFF -> retry.initial_backoff
+	transform := func(k, v string) (string, any) {
+		k = strings.TrimPrefix(k, envPrefix)
+		k = strings.ToLower(k)
+		return strings.ReplaceAll(k, "__", "."), v
 	}
-	if err := k.Load(env.Provider(envPrefix, ".", transform), nil); err != nil {
+	if err := k.Load(env.Provider(".", env.Opt{Prefix: envPrefix, TransformFunc: transform}), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
 	}
 
@@ -131,14 +189,26 @@ func LoadFromFile(path string) (*Config, error) {
 		DecoderConfig: &mapstructure.DecoderConfig{
 			Result:           cfg,
 			WeaklyTypedInput: true,
+			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				mapstructure.StringToTimeDurationHookFunc(),
+				mapstructure.StringToSliceHookFunc(","),
+			),
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	if err := validator.New().Struct(cfg); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// validateConfig validates the configuration using struct tags.
+func validateConfig(cfg *Config) error {
+	if err := validator.New().Struct(cfg); err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+	return nil
 }

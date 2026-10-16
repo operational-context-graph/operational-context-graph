@@ -7,7 +7,7 @@ package schemaregistry
 
 import (
 	"context"
-	"strings"
+	"log/slog"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -18,30 +18,36 @@ import (
 // development and integration testing before a real registry is available.
 type Stub struct{}
 
-func (s *Stub) Schema(_ context.Context, _ ingest.SchemaKey) (ingest.Schema, error) {
+func (s *Stub) Schema(_ context.Context, key ingest.SchemaKey) (ingest.Schema, error) {
+	slog.Info("schemaregistry stub: Schema called", "type", key.Type, "version", key.Version)
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource("any.json", strings.NewReader(`{}`)); err != nil {
+	if err := c.AddResource("schema:any-object", map[string]any{"type": "object"}); err != nil {
 		return nil, err
 	}
-	return c.Compile("any.json")
+	return c.Compile("schema:any-object")
 }
 
-func (s *Stub) SourceMappings(_ context.Context, _ ingest.SchemaKey) (ingest.SourceMapping, error) {
+func (s *Stub) SourceMappings(_ context.Context, key ingest.SchemaKey) (ingest.SourceMapping, error) {
+	slog.Info("schemaregistry stub: SourceMappings called", "type", key.Type, "version", key.Version)
 	return ingest.SourceMapping{}, nil
 }
 
-func (s *Stub) TargetStore(_ context.Context, _ ingest.SchemaKey) (ingest.StoreID, error) {
+func (s *Stub) TargetStore(_ context.Context, key ingest.SchemaKey) (ingest.StoreID, error) {
+	slog.Info("schemaregistry stub: TargetStore called", "type", key.Type, "version", key.Version)
 	return "stub", nil
 }
 
 func (s *Stub) DefaultLogSchema(_ context.Context) (ingest.SchemaKey, error) {
+	slog.Info("schemaregistry stub: DefaultLogSchema called")
 	return ingest.SchemaKey{Type: "logs", Version: "0.1.0"}, nil
 }
 
 func (s *Stub) DefaultTraceSchema(_ context.Context) (ingest.SchemaKey, error) {
+	slog.Info("schemaregistry stub: DefaultTraceSchema called")
 	return ingest.SchemaKey{Type: "traces", Version: "0.1.0"}, nil
 }
 
 func (s *Stub) DefaultMetricSchema(_ context.Context) (ingest.SchemaKey, error) {
+	slog.Info("schemaregistry stub: DefaultMetricSchema called")
 	return ingest.SchemaKey{Type: "metrics", Version: "0.1.0"}, nil
 }

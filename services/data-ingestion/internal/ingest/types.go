@@ -49,12 +49,11 @@ type IngestRecord struct {
 	Schema      SchemaKey
 	Payload     []byte
 	ContentType string
-	Partition   []byte // optional, opaque; empty for OTLP
-	Watermark   []byte // optional, opaque; empty for OTLP
+	Partition   string         // optional, opaque; empty for OTLP
+	Watermark   map[string]any // optional, opaque; empty for OTLP
 }
 
-// IngestResult reports per-batch counts. For every non-error return,
-// Accepted + Rejected == len(batch).
+// IngestResult summarises the outcome of a batch ingest call.
 type IngestResult struct {
 	Accepted int
 	Rejected int

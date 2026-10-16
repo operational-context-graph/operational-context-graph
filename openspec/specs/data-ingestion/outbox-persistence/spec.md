@@ -100,7 +100,7 @@ The service SHALL own the outbox-table schema as versioned, embedded migrations 
 
 ### Requirement: Database connection configuration
 
-The service SHALL load its PostgreSQL connection settings through the existing layered config (`OCG_DI_DATABASE_*`), with the password supplied only via environment/secret, never a plaintext config value. Required settings absent SHALL fail validation at startup.
+The service SHALL load its PostgreSQL connection settings through the existing layered config (`OCG_DI_DATABASE__*`), with the password supplied only via environment/secret, never a plaintext config value. Required settings absent SHALL fail validation at startup.
 
 #### Scenario: Valid configuration opens a pool
 
@@ -117,7 +117,7 @@ The service SHALL load its PostgreSQL connection settings through the existing l
 #### Scenario: Password is not read from a plaintext config field
 
 - **WHEN** the configuration is loaded
-- **THEN** the password is taken from `OCG_DI_DATABASE_PASSWORD` (sourced from a Kubernetes Secret), not from a committed config file field
+- **THEN** the password is taken from `OCG_DI_DATABASE__PASSWORD` (sourced from a Kubernetes Secret), not from a committed config file field
 
 ### Requirement: Readiness reflects database connectivity
 

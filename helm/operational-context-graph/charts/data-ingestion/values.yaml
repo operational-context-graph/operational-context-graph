@@ -11,12 +11,24 @@ image:
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
-# Container port the service listens on (matches OCG_DI_SERVER_PORT default).
+# Container ports (match OCG_DI_SERVER_PORT and OCG_DI_GRPC__PORT defaults).
 containerPort: 8080
+grpcContainerPort: 9090
 
 service:
   type: ClusterIP
   port: 8080
+  grpcPort: 9090
+
+# tls configures mTLS for the gRPC server.
+# Set enabled: true and provide a secretName referencing a Secret with:
+#   tls.crt  — server certificate PEM
+#   tls.key  — server private key PEM
+#   ca.crt   — CA certificate PEM used to verify client certificates
+tls:
+  enabled: false
+  secretName: ""
+  mountPath: /etc/tls
 
 # PostgreSQL outbox connection. The password is never set here; it is read from
 # a Kubernetes Secret via passwordSecret. For local/dev the umbrella chart points

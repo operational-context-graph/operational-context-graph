@@ -2,4 +2,4 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-DROP TABLE IF EXISTS outbox;
+DROP TABLE IF EXISTS data_ingestion_outbox;

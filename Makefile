@@ -8,9 +8,15 @@ SERVICE_DI := services/data-ingestion
 COVERAGE_DIR := $(CURDIR)/coverage
 
 .PHONY: build run test lint vet tidy mocks \
-	proto-lint proto-format proto-generate
+	proto-lint proto-format proto-generate go-work-init
 
-build: proto-generate ## Build all services
+go-work-init: ## Initialize Go workspace (idempotent)
+	@if [ ! -f go.work ]; then \
+		go work init gen/go services/data-ingestion; \
+	fi
+	go work sync
+
+build: proto-generate go-work-init ## Build all services
 	$(MAKE) -C $(SERVICE_DI) build
 
 run: ## Run the data-ingestion service (dev)

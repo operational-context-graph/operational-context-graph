@@ -19,3 +19,7 @@ packages:
       OutboxWriter: {}
       SchemaRegistryClient: {}
       SourceMappingExecutionEngine: {}
+      Ingestor:
+        config:
+          dir: internal/grpcserver
+          pkgname: grpcserver_test

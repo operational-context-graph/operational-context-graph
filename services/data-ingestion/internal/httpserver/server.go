@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/handlers"
 )
 
 // Server owns the Gin engine and the underlying HTTP server lifecycle.
@@ -27,13 +26,13 @@ type Server struct {
 
 // New constructs a Server from the given configuration. It uses gin.New with
 // explicit middleware (not gin.Default) so tests and logging stay predictable.
-func New(cfg *config.Config, db handlers.Pinger) *Server {
+func New(cfg *config.Config) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
-	registerRoutes(engine, db)
+	registerRoutes(engine)
 
 	return &Server{
 		cfg:    cfg,

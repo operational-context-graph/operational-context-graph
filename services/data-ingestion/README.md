@@ -67,7 +67,7 @@ Run the commands from the repository root.
 
 ```bash
 # 1. Build the image and load it into the minikube node.
-docker build -t data-ingestion:dev services/data-ingestion
+docker build -f services/data-ingestion/Dockerfile -t data-ingestion:dev .
 minikube image load data-ingestion:dev
 
 # 2. Install the chart with the local override values.
@@ -84,6 +84,22 @@ Open <http://localhost:8080/healthz> in a browser.
 The override file [`values.local.yaml`](../../helm/operational-context-graph/values.local.yaml) points the chart at the locally built `data-ingestion:dev` image and sets `pullPolicy: Never`, so Kubernetes uses the loaded image instead of pulling from the registry.
 
 Remove the release with `helm uninstall ocg`.
+
+## Docker publishing
+
+See Github [documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+```bash
+# 1. Log in to GitHub Container Registry (GHCR)
+docker login ghcr.io -u <USER>
+
+# 2. Build the image
+docker build -t ghcr.io/operational-context-graph/data-ingestion:latest services/data-ingestion
+
+# 3. Push the image to GHCR
+docker push ghcr.io/operational-context-graph/data-ingestion:latest
+```
+
 
 ## Endpoints
 
