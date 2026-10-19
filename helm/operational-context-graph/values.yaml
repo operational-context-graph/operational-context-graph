@@ -4,11 +4,9 @@
 
 global: {}
 
-# Bundled development PostgreSQL. Disabled by default: production reuses the
-# existing OCG PostgreSQL instance (see the database block below). Enable it for
-# local/dev via values.local.yaml.
+# Bundled PostgreSQL.
 postgres:
-  enabled: false
+  enabled: true
 
 data-ingestion:
   enabled: true
@@ -23,12 +21,12 @@ data-ingestion:
   # Points at the existing OCG PostgreSQL instance. Set host and the Secret that
   # holds the password for your environment. The password is never stored here.
   database:
-    host: ocg-postgresql
+    host: ocg-postgres
     port: 5432
-    name: ocg
-    user: ocg
-    sslmode: require
+    name: postgres
+    user: postgres
+    sslmode: disable
     maxconns: 10
     passwordSecret:
-      name: ocg-database
-      key: password
+      name: postgres-secret
+      key: POSTGRES_PASSWORD
