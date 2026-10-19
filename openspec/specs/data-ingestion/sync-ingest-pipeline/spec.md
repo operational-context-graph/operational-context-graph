@@ -128,8 +128,6 @@ The pipeline SHALL resolve the target store for each normalized record by callin
 
 `Ingest` SHALL return a non-nil error (request-level failure) when any registry lookup (`Schema`, `SourceMappings`, or `TargetStore`) returns a non-`ErrNotFound` error, or when the outbox write fails. On a request-level failure the receiving layer MUST NOT acknowledge the connector and maps the error to `UNAVAILABLE` (registry or outbox) or `INTERNAL` (unexpected). Record-level rejections (non-conforming payload, `ErrNotFound`, normalization failure) SHALL NOT be request-level failures.
 
-> **Note (scope)**: Protocol-level failures — `INVALID_ARGUMENT`, `RESOURCE_EXHAUSTED`, and `UNAVAILABLE` on overload — are enforced by the receiving layer before it builds the batch and are out of scope for this pipeline.
-
 #### Scenario: Schema Registry unavailable is a request-level failure
 
 - **WHEN** any of `SchemaRegistryClient.Schema`, `.SourceMappings`, or `.TargetStore` returns a non-`ErrNotFound` error
@@ -152,8 +150,6 @@ The pipeline SHALL resolve the target store for each normalized record by callin
 ### Requirement: Outbox write before acknowledgement
 
 The pipeline SHALL write all successfully normalized records to the outbox via a single `OutboxWriter.Write(ctx, rows)` call before returning. The write is atomic: on nil all rows are durable; on error none are visible. A non-nil error from `OutboxWriter.Write` SHALL cause `Ingest` to return a non-nil error; the receiving layer MUST NOT acknowledge the connector in that case.
-
-> **Note (interface boundary)**: The pipeline SHALL NOT pass the Postgres driver's transaction type across the `OutboxWriter` interface — the `OutboxWriter` implementation owns its transaction.
 
 #### Scenario: All normalized records written in one atomic call before return
 
