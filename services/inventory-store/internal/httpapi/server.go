@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -87,16 +88,23 @@ func requestIDMiddleware() gin.HandlerFunc {
 	}
 }
 
+func sanitizeForLog(value string) string {
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	return value
+}
+
 func loggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
+		path := sanitizeForLog(c.FullPath())
 		slog.Info("request",
 			"route", route,
 			"method", c.Request.Method,
-			"path", c.FullPath(),
+			"path", path,
 			"status", c.Writer.Status(),
 			"latency_ms", time.Since(start).Milliseconds(),
 			"request_id", requestID,
