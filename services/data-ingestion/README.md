@@ -97,7 +97,7 @@ See Github [documentation](https://docs.github.com/en/packages/working-with-a-gi
 docker login ghcr.io -u <USER>
 
 # 2. Build the image
-docker build -t ghcr.io/operational-context-graph/data-ingestion:latest services/data-ingestion
+docker build --platform linux/amd64 -t ghcr.io/operational-context-graph/data-ingestion:latest -f services/data-ingestion/Dockerfile .
 
 # 3. Push the image to GHCR
 docker push ghcr.io/operational-context-graph/data-ingestion:latest
