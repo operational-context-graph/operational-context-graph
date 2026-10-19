@@ -31,7 +31,7 @@ func Open(ctx context.Context, databaseURL string, maxOpen, minConns int, connMa
 	}
 	d, err := time.ParseDuration(connMaxLifetime)
 	if err != nil {
-		d = 5 * time.Minute
+		return nil, fmt.Errorf("invalid DB_CONN_MAX_LIFETIME %q: %w", connMaxLifetime, err)
 	}
 
 	cfg.MaxConns = int32(maxOpen)

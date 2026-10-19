@@ -15,14 +15,27 @@ import (
 // UpsertRelationship inserts a relationship; silently drops duplicate natural key.
 // Returns (relationship, created, error). created=false when the edge already existed.
 func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (Relationship, bool, error) {
-	for _, aid := range []uuid.UUID{in.SourceAssetID, in.TargetAssetID} {
-		var exists bool
-		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assets WHERE id=$1 AND valid_to IS NULL)`, aid).Scan(&exists)
-		if err != nil {
-			return Relationship{}, false, fmt.Errorf("check asset %s: %w", aid, err)
+	ids := []uuid.UUID{in.SourceAssetID, in.TargetAssetID}
+	rows, err := s.pool.Query(ctx, `SELECT id FROM assets WHERE id = ANY($1) AND valid_to IS NULL`, ids)
+	if err != nil {
+		return Relationship{}, false, fmt.Errorf("check assets: %w", err)
+	}
+	found := make(map[uuid.UUID]struct{}, 2)
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return Relationship{}, false, fmt.Errorf("scan asset id: %w", err)
 		}
-		if !exists {
-			return Relationship{}, false, fmt.Errorf("%w: %s", ErrAssetNotFound, aid)
+		found[id] = struct{}{}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return Relationship{}, false, fmt.Errorf("check assets: %w", err)
+	}
+	for _, id := range ids {
+		if _, ok := found[id]; !ok {
+			return Relationship{}, false, fmt.Errorf("%w: %s", ErrAssetNotFound, id)
 		}
 	}
 
@@ -39,7 +52,7 @@ RETURNING id, source_asset_id, target_asset_id, artifact_type, source_system, ex
 		nullJSON(in.Extensions), in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var r Relationship
-	err := row.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+	err = row.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
 		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// DO NOTHING path — fetch the existing row and return 200.

@@ -51,14 +51,20 @@ func run(ctx context.Context) error {
 	db := store.NewFromPool(pool)
 
 	srv := httpapi.NewServer(db, ":"+cfg.HTTPPort)
+	srvErrC := make(chan error, 1)
 	go func() {
 		slog.Info("starting inventory-store", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("server error", "error", err)
-		}
+		srvErrC <- srv.ListenAndServe()
 	}()
 
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case err := <-srvErrC:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("server error: %w", err)
+		}
+	}
+
 	slog.Info("shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

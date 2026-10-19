@@ -26,16 +26,20 @@ func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, er
 	defer tx.Rollback(ctx)
 
 	// Check for existing current row and compare last_updated_at_source.
+	// FOR UPDATE serialises concurrent upserts on the same natural key.
 	const checkCurrent = `
-SELECT id, last_updated_at_source
+SELECT id, artifact_type, source_system, source_id, extensions,
+       created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 FROM assets
-WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
+FOR UPDATE`
 
-	var cur struct {
-		id                  uuid.UUID
-		lastUpdatedAtSource *time.Time
-	}
-	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(&cur.id, &cur.lastUpdatedAtSource)
+	var cur Asset
+	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(
+		&cur.ID, &cur.ArtifactType, &cur.SourceSystem, &cur.SourceID,
+		&cur.Extensions, &cur.CreatedAt,
+		&cur.CreatedAtSource, &cur.LastUpdatedAtSource, &cur.ValidFrom, &cur.ValidTo,
+	)
 	rowExists := true
 	if errors.Is(err, pgx.ErrNoRows) {
 		rowExists = false
@@ -44,17 +48,13 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 	}
 
 	// Temporal dedup: skip new version if last_updated_at_source unchanged.
-	if rowExists && in.LastUpdatedAtSource != nil && cur.lastUpdatedAtSource != nil {
-		if cur.lastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
-			// Re-delivery — return existing current row without creating a new version.
+	if rowExists && in.LastUpdatedAtSource != nil && cur.LastUpdatedAtSource != nil {
+		if cur.LastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
+			// Re-delivery — commit (no writes) and return the already-scanned row.
 			if err := tx.Commit(ctx); err != nil {
 				return Asset{}, false, fmt.Errorf("commit redelivery tx: %w", err)
 			}
-			asset, fetchErr := s.GetAsset(ctx, cur.id)
-			if fetchErr != nil {
-				return Asset{}, false, fetchErr
-			}
-			return asset, false, nil
+			return cur, false, nil
 		}
 	}
 
@@ -191,7 +191,8 @@ func (s *Store) UpsertAssetBatch(ctx context.Context, inputs []AssetInput) ([]Ba
 	const checkCurrent = `
 SELECT id, last_updated_at_source
 FROM assets
-WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
+WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
+FOR UPDATE`
 
 	const expire = `
 UPDATE assets SET valid_to = NOW()

@@ -338,9 +338,9 @@ func TestUpsertAssetBatch_Mixed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	// First item is a re-delivery — same ID, outcome "updated" (dedup path).
+	// First item is a re-delivery — same ID, outcome "unchanged" (dedup guard fires).
 	assert.Equal(t, existingID, results[0].ID)
-	assert.Equal(t, "updated", results[0].Outcome)
+	assert.Equal(t, "unchanged", results[0].Outcome)
 
 	// Second item is brand-new.
 	assert.NotEqual(t, existingID, results[1].ID)

@@ -51,19 +51,31 @@ func run() error {
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
+	httpErrC := make(chan error, 1)
 	grpcErrC := make(chan error, 1)
-	go func() {
-		grpcErrC <- grpcSrv.Run(ctx)
-	}()
+	go func() { httpErrC <- httpSrv.Run(ctx) }()
+	go func() { grpcErrC <- grpcSrv.Run(ctx) }()
 
-	httpErr := httpSrv.Run(ctx)
-	// Cancel the shared context so the gRPC goroutine exits when the HTTP server
-	// stops for any reason. Without this, an HTTP bind error would leave the
-	// process blocked on <-grpcErrC forever.
-	// The reverse is also true: if grpcSrv.Run returns (e.g. bind error), grpcErrC
-	// closes, <-grpcErrC unblocks, and main returns — taking the HTTP server down.
+	// Block until either server fails or a signal fires. Then cancel the shared
+	// context so the other server shuts down, and collect both results.
+	select {
+	case <-ctx.Done():
+	case err := <-httpErrC:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			stop()
+			<-grpcErrC
+			return err
+		}
+	case err := <-grpcErrC:
+		if err != nil {
+			stop()
+			<-httpErrC
+			return err
+		}
+	}
 	stop()
 
+	httpErr := <-httpErrC
 	grpcErr := <-grpcErrC
 
 	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
