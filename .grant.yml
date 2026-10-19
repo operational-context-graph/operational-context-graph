@@ -74,3 +74,7 @@ ignore-packages:
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
+
+  # github.com/opencontainers/go-digest is Apache-2.0 (https://github.com/opencontainers/go-digest/blob/master/LICENSE);
+  # CC-BY-SA-4.0 applies only to documentation, not the Go code.
+  - github.com/opencontainers/go-digest
