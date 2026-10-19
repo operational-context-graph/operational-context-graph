@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
@@ -20,6 +21,12 @@ type problem struct {
 	Status int                 `json:"status"`
 	Detail string              `json:"detail,omitempty"`
 	Errors []apperr.FieldError `json:"errors,omitempty"`
+}
+
+func sanitizeForLog(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
 }
 
 func renderError(c *gin.Context, err error) {
@@ -67,7 +74,7 @@ func renderError(c *gin.Context, err error) {
 	default:
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
-		slog.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
+		slog.Error("unhandled error", "err", sanitizeForLog(err.Error()), "route", route, "request_id", requestID)
 		p = problem{
 			Type:   "https://problems.ocg.example/internal",
 			Title:  "Internal Server Error",
