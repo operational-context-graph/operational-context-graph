@@ -4,6 +4,7 @@
 
 SHELL := /usr/bin/env bash
 
+BUILD_DIR ?= $(CURDIR)/bin
 COVERAGE_DIR ?= $(CURDIR)/coverage
 GOVULNCHECK_VERSION ?= v1.9.0
 GOOSE_VERSION ?= v3.26.0
@@ -14,7 +15,7 @@ GOOSE_VERSION ?= v3.26.0
 build: build-schema-introspection-api ## Build all Schema Registry commands
 
 build-schema-introspection-api: ## Build the Schema Introspection API
-	go build ./cmd/schema-introspection-api
+	go build -o $(BUILD_DIR)/schema-introspection-api ./cmd/schema-introspection-api
 
 run: run-schema-introspection-api ## Run the Schema Introspection API
 
@@ -59,3 +60,8 @@ migrate-up: ## Apply Goose migrations using DATABASE_URL
 migrate-down: ## Roll back the latest Goose migration using DATABASE_URL
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
 	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(DATABASE_URL)" down
+
+clean:
+	rm -rf $(BUILD_DIR)
+	rm -rf $(COVERAGE_DIR)
+	rm -rf $(CURDIR)/sbom.spdx.json
