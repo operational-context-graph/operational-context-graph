@@ -70,11 +70,14 @@ Run the commands from the repository root.
 docker build -f services/data-ingestion/Dockerfile -t data-ingestion:dev .
 minikube image load data-ingestion:dev
 
-# 2. Install the chart with the local override values.
+# 2. Create the PostgreSQL password secret (once per cluster).
+kubectl create secret generic ocg-postgres --from-literal=POSTGRES_PASSWORD=<your-password>
+
+# 3. Install the chart with the local override values.
 helm install ocg helm/operational-context-graph \
   -f helm/operational-context-graph/values.local.yaml
 
-# 3. Wait for the pod, then forward a local port to the service.
+# 4. Wait for the pod, then forward a local port to the service.
 kubectl rollout status deployment/ocg-data-ingestion
 kubectl port-forward svc/ocg-data-ingestion 8080:8080
 ```

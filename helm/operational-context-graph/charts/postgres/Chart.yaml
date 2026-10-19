@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 apiVersion: v2
 name: postgres
-description: Development-only PostgreSQL for the OCG outbox. Disabled in production, where the service reuses the existing OCG PostgreSQL instance.
+description: Subchart for a development PostgreSQL StatefulSet
 type: application
 version: 0.1.0
-appVersion: "16"
+appVersion: "18"

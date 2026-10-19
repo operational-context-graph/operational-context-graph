@@ -10,6 +10,7 @@ metadata:
     {{- include "postgres.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
+  clusterIP: None
   ports:
     - port: {{ .Values.service.port }}
       targetPort: postgres

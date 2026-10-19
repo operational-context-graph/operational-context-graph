@@ -6,12 +6,9 @@
 postgres:
   enabled: true
   fullnameOverride: ocg-postgres
-  auth:
-    database: ocg
-    username: ocg
-    # Password is never stored here. Create the secret once before deploying:
-    #   kubectl create secret generic ocg-postgres --from-literal=password=<your-password>
-    existingSecret: ocg-postgres
+  secretName: ocg-postgres
+  # Password is never stored here. Create the secret once before deploying:
+  #   kubectl create secret generic ocg-postgres --from-literal=POSTGRES_PASSWORD=<your-password>
 
 data-ingestion:
   image:
@@ -21,10 +18,10 @@ data-ingestion:
   database:
     host: ocg-postgres
     port: 5432
-    name: ocg
-    user: ocg
+    name: postgres
+    user: postgres
     sslmode: disable
     maxconns: 10
     passwordSecret:
       name: ocg-postgres
-      key: password
+      key: POSTGRES_PASSWORD

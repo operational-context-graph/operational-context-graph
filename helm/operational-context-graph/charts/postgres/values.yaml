@@ -2,35 +2,29 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Development-only PostgreSQL. Enable from the umbrella chart with
-# `postgres.enabled: true` (see values.local.yaml). In production this subchart
-# stays disabled and the service points at the existing OCG PostgreSQL instance.
-enabled: false
-
-# Stable resource name so other subcharts can reference the service by host.
-fullnameOverride: ocg-postgres
+# Default values for the postgres subchart.
+# Use upstream postgres:18 for dev/demo.
+enabled: true
 
 image:
   repository: postgres
-  tag: "16-alpine"
+  tag: "18"
   pullPolicy: IfNotPresent
 
+# Name of the Kubernetes Secret holding POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+# If auth.password is set, this chart creates the secret. Otherwise it must exist before install.
+secretName: postgres-secret
+
 auth:
-  database: ocg
-  username: ocg
-  # Dev password. Overridden in values.local.yaml. Never set a real secret here.
   password: ""
-  # When set, the StatefulSet reads the password from this existing Secret
-  # instead of the one this chart creates.
-  existingSecret: ""
-  secretKey: password
+
+storage:
+  size: 10Gi
+  # Set to your cluster's StorageClass, or leave empty to use the default.
+  storageClassName: ""
 
 service:
   port: 5432
 
-persistence:
-  enabled: true
-  size: 1Gi
-  storageClassName: ""
-
-resources: {}
+nameOverride: ""
+fullnameOverride: ""
