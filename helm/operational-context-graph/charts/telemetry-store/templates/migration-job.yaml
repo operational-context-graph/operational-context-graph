@@ -26,9 +26,13 @@ spec:
         - name: migrate
           image: "{{ .Values.migrator.image.repository }}:{{ .Values.migrator.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.migrator.image.pullPolicy }}
-          envFrom:
-            - secretRef:
-                name: {{ .Values.dorisMigratorSecretName }}
           env:
-            - name: DORIS_REPLICATION_NUM
+            - name: DORIS_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dorisMigratorSecretName }}
+                  key: DORIS_MIGRATE_DSN
+            - name: REPLICATION_NUM
               value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
+            - name: BUCKETS
+              value: {{ .Values.env.DORIS_BUCKETS | quote }}
