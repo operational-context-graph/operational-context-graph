@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the postgres subchart.
+# Use upstream postgres:18 for dev/demo.
+# For production, override image to apeiro/postgres:18-hardened (pinned to digest).
+enabled: true
+
+image:
+  repository: postgres
+  tag: "18"
+  pullPolicy: IfNotPresent
+
+# Name of the pre-existing Kubernetes Secret holding:
+#   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+# The Secret must be created before installing this chart.
+secretName: postgres-secret
+
+storage:
+  size: 10Gi
+  # Set to your cluster's StorageClass, or leave empty to use the default.
+  storageClassName: ""
+
+service:
+  port: 5432
+
+nameOverride: ""
+fullnameOverride: ""
