@@ -52,6 +52,17 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			renderError(c, err)
 			return
 		}
+		if req.SourceAssetID == uuid.Nil || req.TargetAssetID == uuid.Nil {
+			var errs []apperr.FieldError
+			if req.SourceAssetID == uuid.Nil {
+				errs = append(errs, apperr.FieldError{Field: "source_asset_id", Message: "is required"})
+			}
+			if req.TargetAssetID == uuid.Nil {
+				errs = append(errs, apperr.FieldError{Field: "target_asset_id", Message: "is required"})
+			}
+			renderError(c, &apperr.ValidationError{Fields: errs})
+			return
+		}
 		in := store.RelationshipInput{
 			SourceAssetID: req.SourceAssetID,
 			TargetAssetID: req.TargetAssetID,
@@ -175,6 +186,10 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 			renderError(c, bindErr(err))
 			return
 		}
+		if len(req.Relationships) == 0 {
+			renderError(c, fmt.Errorf("%w: relationships must not be empty", apperr.ErrInvalidInput))
+			return
+		}
 		inputs := make([]store.RelationshipInput, len(req.Relationships))
 		for i, r := range req.Relationships {
 			if err := validateRequired(
@@ -182,6 +197,10 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				requiredField{"source_system", r.SourceSystem},
 			); err != nil {
 				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
+				return
+			}
+			if r.SourceAssetID == uuid.Nil || r.TargetAssetID == uuid.Nil {
+				renderError(c, fmt.Errorf("%w: item %d: source_asset_id and target_asset_id are required", apperr.ErrInvalidInput, i))
 				return
 			}
 			in := store.RelationshipInput{

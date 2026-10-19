@@ -218,7 +218,7 @@ RETURNING id`
 
 		if rowExists && in.LastUpdatedAtSource != nil && curLUAS != nil {
 			if curLUAS.Equal(*in.LastUpdatedAtSource) {
-				results = append(results, BatchResult{ID: curID, Outcome: "updated"})
+				results = append(results, BatchResult{ID: curID, Outcome: "unchanged"})
 				continue
 			}
 		}

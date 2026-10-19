@@ -66,7 +66,8 @@ func renderError(c *gin.Context, err error) {
 		}
 	default:
 		route, _ := c.Get(routeKey)
-		slog.Error("unhandled error", "err", err, "route", route, "request_id", c.GetHeader("X-Request-Id"))
+		requestID, _ := c.Get(requestIDKey)
+		slog.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
 		p = problem{
 			Type:   "https://problems.ocg.example/internal",
 			Title:  "Internal Server Error",

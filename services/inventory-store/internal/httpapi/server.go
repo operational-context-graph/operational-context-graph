@@ -18,6 +18,7 @@ import (
 )
 
 const routeKey = "route"
+const requestIDKey = "request_id"
 
 // db is the interface the HTTP handlers require from the store layer.
 type db interface {
@@ -81,6 +82,7 @@ func requestIDMiddleware() gin.HandlerFunc {
 			id = uuid.New().String()
 		}
 		c.Header("X-Request-Id", id)
+		c.Set(requestIDKey, id)
 		c.Next()
 	}
 }
@@ -90,13 +92,14 @@ func loggingMiddleware() gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 		route, _ := c.Get(routeKey)
+		requestID, _ := c.Get(requestIDKey)
 		slog.Info("request",
 			"route", route,
 			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
+			"path", c.FullPath(),
 			"status", c.Writer.Status(),
 			"latency_ms", time.Since(start).Milliseconds(),
-			"request_id", c.GetHeader("X-Request-Id"),
+			"request_id", requestID,
 		)
 	}
 }
@@ -131,10 +134,11 @@ func jsonBodyMiddleware(maxBytes int64) gin.HandlerFunc {
 func panicRecoveryMiddleware() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		route, _ := c.Get(routeKey)
+		requestID, _ := c.Get(requestIDKey)
 		slog.Error("panic recovered",
 			"panic", recovered,
 			"route", route,
-			"request_id", c.GetHeader("X-Request-Id"),
+			"request_id", requestID,
 		)
 		renderError(c, fmt.Errorf("internal server error"))
 		c.Abort()

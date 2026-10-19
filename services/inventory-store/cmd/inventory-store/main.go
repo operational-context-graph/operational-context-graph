@@ -42,7 +42,7 @@ func run(ctx context.Context) error {
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
-	pool, err := database.Open(ctx, cfg.DatabaseURL, cfg.DBMaxOpen, cfg.DBMaxIdle, cfg.DBConnMaxLifetime)
+	pool, err := database.Open(ctx, cfg.DatabaseURL, cfg.DBMaxOpen, cfg.DBMinConns, cfg.DBConnMaxLifetime)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}

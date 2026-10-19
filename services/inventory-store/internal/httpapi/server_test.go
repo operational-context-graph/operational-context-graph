@@ -282,3 +282,28 @@ func TestHandleUpsertRelationship_MissingRequiredFields_Returns400(t *testing.T)
 	assert.Contains(t, got, "artifact_type")
 	assert.Contains(t, got, "source_system")
 }
+
+func TestHandleUpsertRelationship_NilUUIDs_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathRelationships, map[string]any{
+		"artifact_type": "depends-on",
+		"source_system": "cmdb",
+	})
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleUpsertAssetBatch_EmptySlice_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathAssetsBatch, map[string]any{"assets": []any{}})
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleUpsertRelationshipBatch_EmptySlice_Returns400(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.PostJSON(t, srv.Handler, httpapi.PathRelationshipsBatch, map[string]any{"relationships": []any{}})
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}

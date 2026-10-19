@@ -143,6 +143,10 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 			renderError(c, bindErr(err))
 			return
 		}
+		if len(req.Assets) == 0 {
+			renderError(c, fmt.Errorf("%w: assets must not be empty", apperr.ErrInvalidInput))
+			return
+		}
 		inputs := make([]store.AssetInput, len(req.Assets))
 		for i, a := range req.Assets {
 			if err := validateRequired(

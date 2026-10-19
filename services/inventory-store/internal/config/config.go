@@ -16,7 +16,7 @@ type Config struct {
 	HTTPPort          string `koanf:"HTTP_PORT"            validate:"required"`
 	DatabaseURL       string `koanf:"DATABASE_URL"         validate:"required"`
 	DBMaxOpen         int    `koanf:"DB_MAX_OPEN_CONNS"`
-	DBMaxIdle         int    `koanf:"DB_MAX_IDLE_CONNS"`
+	DBMinConns        int    `koanf:"DB_MIN_CONNS"`
 	DBConnMaxLifetime string `koanf:"DB_CONN_MAX_LIFETIME"`
 	LogLevel          string `koanf:"LOG_LEVEL"`
 }
@@ -34,8 +34,8 @@ func Load() (*Config, error) {
 	if cfg.DBMaxOpen == 0 {
 		cfg.DBMaxOpen = 25
 	}
-	if cfg.DBMaxIdle == 0 {
-		cfg.DBMaxIdle = 5
+	if cfg.DBMinConns == 0 {
+		cfg.DBMinConns = 5
 	}
 	if cfg.DBConnMaxLifetime == "" {
 		cfg.DBConnMaxLifetime = "5m"
