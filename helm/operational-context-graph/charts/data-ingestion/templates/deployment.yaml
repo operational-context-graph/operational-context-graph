@@ -31,7 +31,7 @@ spec:
               protocol: TCP
           env:
             - name: OCG_DI_DATABASE__HOST
-              value: {{ .Values.database.host | quote }}
+              value: {{ required "database.host is required" .Values.database.host | quote }}
             - name: OCG_DI_DATABASE__PORT
               value: {{ .Values.database.port | quote }}
             - name: OCG_DI_DATABASE__NAME
