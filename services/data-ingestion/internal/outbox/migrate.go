@@ -42,6 +42,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 
 	m, err := migrate.NewWithInstance("iofs", src, "pgx5", driver)
 	if err != nil {
+		_ = driver.Close()
 		_ = src.Close()
 		_ = db.Close()
 		return fmt.Errorf("outbox: init migrator: %w", err)
@@ -50,6 +51,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	// advisory lock connection back to the pool.
 	defer func() { _, _ = m.Close() }()
 
+	// m.Up has no context parameter; ctx is not forwarded here.
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("outbox: apply migrations: %w", err)
 	}
