@@ -28,10 +28,10 @@ var embeddedFS embed.FS
 // before running any migration).
 func NewProvider(db *sql.DB) (*goose.Provider, error) {
 	p, err := goose.NewProvider(
-		goose.DialectMySQL,
+		goose.DialectCustom,
 		db,
 		&envInterpolateFS{embeddedFS},
-		goose.WithTableName("ocg.goose_db_version"),
+		goose.WithStore(&dorisStore{}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("goose provider: %w", err)
