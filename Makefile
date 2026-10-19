@@ -13,20 +13,18 @@ COVERAGE_DIR := $(CURDIR)/coverage
 
 go-work-init: ## Initialize Go workspace (idempotent)
 	@if [ ! -f go.work ]; then \
-		go work init gen/go services/data-ingestion; \
+		go work init gen/go $(SERVICE_DI) $(SERVICE_TS); \
 	fi
 	go work sync
 
 build: proto-generate go-work-init ## Build all services
-	$(MAKE) -C $(SERVICE_DI) build
-	cd $(SERVICE_TS) && go build ./...
+	go build ./$(SERVICE_DI)/... ./$(SERVICE_TS)/...
 
 run: ## Run the data-ingestion service (dev)
 	$(MAKE) -C $(SERVICE_DI) run
 
 vet: ## Vet all services
-	$(MAKE) -C $(SERVICE_DI) vet
-	cd $(SERVICE_TS) && go vet ./...
+	go vet ./$(SERVICE_DI)/... ./$(SERVICE_TS)/...
 
 test: ## Test all services
 	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
