@@ -22,7 +22,6 @@ PARTITION BY RANGE(`timestamp`) ()
 DISTRIBUTED BY HASH(`iri`) BUCKETS ${BUCKETS:-10}
 PROPERTIES (
   "compression"                       = "zstd",
-  "compaction_policy"                 = "time_series",
   "light_schema_change"               = "true",
   "replication_num"                   = "${REPLICATION_NUM:-3}",
   "dynamic_partition.enable"          = "true",
