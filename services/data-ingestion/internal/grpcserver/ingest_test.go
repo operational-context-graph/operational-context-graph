@@ -59,21 +59,25 @@ func envelope(payload []byte) *ingestionv1.MessageEnvelope {
 // --- 5.1: nil request → INVALID_ARGUMENT, Ingest not called ---
 
 func TestNilRequestReturnsInvalidArgument(t *testing.T) {
-	srv := newServer(t, NewIngestor(t), defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), nil)
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	m.AssertNotCalled(t, "Ingest")
 }
 
 // --- 5.2: empty messages → INVALID_ARGUMENT, Ingest not called ---
 
 func TestEmptyMessagesReturnsInvalidArgument(t *testing.T) {
-	srv := newServer(t, NewIngestor(t), defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: nil})
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	m.AssertNotCalled(t, "Ingest")
 }
 
 // --- 5.3: exactly MaxMessages accepted; MaxMessages+1 → RESOURCE_EXHAUSTED ---
