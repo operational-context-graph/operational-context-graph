@@ -18,12 +18,14 @@ import (
 // grpcHostEnv / grpcPortEnv satisfy the required GRPC Host+Port fields.
 const grpcHostEnv = "OCG_DI_GRPC__HOST"
 const grpcPortEnv = "OCG_DI_GRPC__PORT"
+const dbPasswordEnv = "OCG_DI_DATABASE__PASSWORD"
 
 func TestLoadUsesEnvConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("server:\n  port: 7070\n"), 0o600))
 	t.Setenv("OCG_DI_CONFIG_FILE", path)
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -34,6 +36,7 @@ func TestLoadFromFileReadsOverridesFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("logging:\n  level: warn\n"), 0o600))
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile(path)
 	require.NoError(t, err)
@@ -47,6 +50,7 @@ func TestLoadFromFileMissingFileFails(t *testing.T) {
 
 func TestDatabaseDSNWithoutMaxConns(t *testing.T) {
 	t.Setenv("OCG_DI_DATABASE__MAXCONNS", "0")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
@@ -60,6 +64,7 @@ func TestDatabaseDSNWithoutMaxConns(t *testing.T) {
 func TestLoadFromFileDefaults(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 
@@ -76,6 +81,7 @@ func TestLoadFromFileEnvOverride(t *testing.T) {
 	t.Setenv("OCG_DI_LOGGING__LEVEL", "debug")
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9091")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
@@ -90,6 +96,7 @@ func TestLoadFromFileInvalidLogLevel(t *testing.T) {
 	t.Setenv("OCG_DI_LOGGING__LEVEL", "verbose")
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
@@ -112,6 +119,7 @@ func TestLoadFromFileValidDatabaseConfig(t *testing.T) {
 
 func TestLoadFromFileMissingDatabaseHostFails(t *testing.T) {
 	t.Setenv("OCG_DI_DATABASE__HOST", "")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
@@ -120,11 +128,13 @@ func TestLoadFromFileMissingDatabaseHostFails(t *testing.T) {
 // --- GRPCConfig ---
 
 func TestGRPCDefaultsValid(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
 	_, err := LoadFromFile("")
 	require.NoError(t, err)
 }
 
 func TestGRPCPortDefault(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 9090, cfg.GRPC.Port)
@@ -132,12 +142,14 @@ func TestGRPCPortDefault(t *testing.T) {
 
 func TestGRPCPortOutOfRange(t *testing.T) {
 	t.Setenv(grpcPortEnv, "99999")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	_, err := LoadFromFile("")
 	require.Error(t, err)
 }
 
 func TestLoadFromFileMissingDatabaseNameFails(t *testing.T) {
 	t.Setenv("OCG_DI_DATABASE__NAME", "")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
@@ -145,6 +157,7 @@ func TestLoadFromFileMissingDatabaseNameFails(t *testing.T) {
 
 func TestLoadFromFileInvalidDatabasePortFails(t *testing.T) {
 	t.Setenv("OCG_DI_DATABASE__PORT", "0")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	_, err := LoadFromFile("")
 	require.Error(t, err)
@@ -170,17 +183,17 @@ func TestDatabaseDSNContainsCredentialsAndParams(t *testing.T) {
 	assert.Contains(t, dsn, "p%40ss%2Fword")
 }
 
-func TestPasswordNotReadFromConfigFile(t *testing.T) {
-	// A config file sets DB fields but MUST NOT be the source of the password.
-	// Only OCG_DI_DATABASE__PASSWORD supplies it.
-	cfg, err := LoadFromFile("")
-	require.NoError(t, err)
-	assert.Empty(t, cfg.Database.Password)
+func TestMissingPasswordFailsValidation(t *testing.T) {
+	// OCG_DI_DATABASE__PASSWORD not set — config must be rejected at startup.
+	_, err := LoadFromFile("")
+	require.Error(t, err)
+	assert.Contains(t, strings.ToLower(err.Error()), "password")
 }
 
 func TestGRPCAddrPresent(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	_, err := LoadFromFile("")
 	require.NoError(t, err)
 }
@@ -190,6 +203,7 @@ func TestGRPCAddrPresent(t *testing.T) {
 func TestTLSCertOnly(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	t.Setenv("OCG_DI_GRPC__TLS__CERT_FILE", "/tmp/cert.pem")
 
 	_, err := LoadFromFile("")
@@ -200,6 +214,7 @@ func TestTLSCertOnly(t *testing.T) {
 func TestTLSAllThreePresent(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	t.Setenv("OCG_DI_GRPC__TLS__CERT_FILE", "/tmp/cert.pem")
 	t.Setenv("OCG_DI_GRPC__TLS__KEY_FILE", "/tmp/key.pem")
 	t.Setenv("OCG_DI_GRPC__TLS__CA_FILE", "/tmp/ca.pem")
@@ -213,6 +228,7 @@ func TestTLSAllThreePresent(t *testing.T) {
 func TestTLSNoneSet(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
@@ -224,6 +240,7 @@ func TestTLSNoneSet(t *testing.T) {
 func TestShutdownTimeoutDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 30*time.Second, cfg.GRPC.ShutdownTimeout)
@@ -232,6 +249,7 @@ func TestShutdownTimeoutDefault(t *testing.T) {
 func TestShutdownTimeoutNegative(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	// Negative shutdown timeout via YAML file since duration env parsing is limited
 	dir := t.TempDir()
@@ -247,6 +265,7 @@ func TestShutdownTimeoutNegative(t *testing.T) {
 func TestMaxMessagesDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 1000, cfg.Limits.MaxMessages)
@@ -255,6 +274,7 @@ func TestMaxMessagesDefault(t *testing.T) {
 func TestMaxMessagesNegative(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -268,6 +288,7 @@ func TestMaxMessagesExplicit(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv("OCG_DI_LIMITS__MAX_MESSAGES", "500")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
@@ -277,6 +298,7 @@ func TestMaxMessagesExplicit(t *testing.T) {
 func TestMaxPayloadBytesDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, int64(4*1024*1024), cfg.Limits.MaxPayloadBytes)
@@ -285,6 +307,7 @@ func TestMaxPayloadBytesDefault(t *testing.T) {
 func TestMaxPayloadBytesNegative(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -298,6 +321,7 @@ func TestMaxPayloadBytesExplicit(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv("OCG_DI_LIMITS__MAX_PAYLOAD_BYTES", "2097152")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
@@ -309,6 +333,7 @@ func TestMaxPayloadBytesExplicit(t *testing.T) {
 func TestInitialBackoffDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 1*time.Second, cfg.Retry.InitialBackoff)
@@ -317,6 +342,7 @@ func TestInitialBackoffDefault(t *testing.T) {
 func TestInitialBackoffNegative(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -329,6 +355,7 @@ func TestInitialBackoffNegative(t *testing.T) {
 func TestInitialBackoffExplicit(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -342,6 +369,7 @@ func TestInitialBackoffExplicit(t *testing.T) {
 func TestMaxBackoffDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 60*time.Second, cfg.Retry.MaxBackoff)
@@ -350,6 +378,7 @@ func TestMaxBackoffDefault(t *testing.T) {
 func TestMaxBackoffLessThanInitial(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -363,6 +392,7 @@ func TestMaxBackoffLessThanInitial(t *testing.T) {
 func TestMaxBackoffEqualToInitial(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -376,6 +406,7 @@ func TestMaxBackoffEqualToInitial(t *testing.T) {
 func TestMultiplierDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, cfg.Retry.Multiplier)
@@ -384,6 +415,7 @@ func TestMultiplierDefault(t *testing.T) {
 func TestMultiplierBelowOne(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	t.Setenv("OCG_DI_RETRY__MULTIPLIER", "0.5")
 
 	_, err := LoadFromFile("")
@@ -394,6 +426,7 @@ func TestMultiplierBelowOne(t *testing.T) {
 func TestMultiplierExactlyOne(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
+	t.Setenv(dbPasswordEnv, "testpassword")
 	t.Setenv("OCG_DI_RETRY__MULTIPLIER", "1.0")
 
 	cfg, err := LoadFromFile("")
@@ -410,6 +443,7 @@ func TestEnvOverridesFile(t *testing.T) {
 
 	t.Setenv(grpcHostEnv, "127.0.0.1")
 	t.Setenv(grpcPortEnv, "9091")
+	t.Setenv(dbPasswordEnv, "testpassword")
 
 	cfg, err := LoadFromFile(cfgFile)
 	require.NoError(t, err)
@@ -420,6 +454,7 @@ func TestEnvOverridesFile(t *testing.T) {
 // --- Load (wraps LoadFromFile via OCG_DI_CONFIG_FILE) ---
 
 func TestLoad(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 9090, cfg.GRPC.Port)
@@ -433,6 +468,7 @@ func TestLoadFromFileInvalidPath(t *testing.T) {
 // --- validateRetry: negative MaxBackoff ---
 
 func TestMaxBackoffNegative(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  max_backoff: -1s\n"), 0600))

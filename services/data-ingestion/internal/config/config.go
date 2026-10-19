@@ -63,7 +63,7 @@ type DatabaseConfig struct {
 	Port        int    `koanf:"port" validate:"required,min=1,max=65535"`
 	Name        string `koanf:"name" validate:"required"`
 	User        string `koanf:"user" validate:"required"`
-	Password    string `koanf:"password"`
+	Password    string `koanf:"password" validate:"required"`
 	SSLMode     string `koanf:"sslmode" validate:"required,oneof=disable allow prefer require verify-ca verify-full"`
 	MaxConns    int    `koanf:"maxconns" validate:"min=0"`
 }
