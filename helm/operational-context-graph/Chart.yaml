@@ -11,3 +11,18 @@ dependencies:
   - name: data-ingestion
     version: 0.1.0
     condition: data-ingestion.enabled
+  - name: postgres
+    version: 0.1.0
+    condition: postgres.enabled
+  - name: doris-fe
+    version: 0.1.0
+    condition: doris-fe.enabled
+  - name: doris-be
+    version: 0.1.0
+    condition: doris-be.enabled
+  - name: inventory-store
+    version: 0.1.0
+    condition: inventory-store.enabled
+  - name: telemetry-store
+    version: 0.1.0
+    condition: telemetry-store.enabled
