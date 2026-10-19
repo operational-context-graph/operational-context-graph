@@ -80,11 +80,11 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			slog.WarnContext(ctx, "ingest: unregistered schema, record rejected",
-				"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version)
+				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
 		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (schema %s/%s): %w",
-			ErrUnavailable, rec.Schema.Type, rec.Schema.Version, err)
+			ErrUnavailable, rec.Schema.LogicalArtifactType, rec.Schema.Version, err)
 	}
 
 	if !p.validate(ctx, schema, rec) {
@@ -96,17 +96,17 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			slog.WarnContext(ctx, "ingest: no source mapping, record rejected",
-				"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version)
+				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
 		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (source mappings %s/%s): %w",
-			ErrUnavailable, rec.Schema.Type, rec.Schema.Version, err)
+			ErrUnavailable, rec.Schema.LogicalArtifactType, rec.Schema.Version, err)
 	}
 
 	normalized, err := p.engine.Normalize(ctx, mapping, rec)
 	if err != nil {
 		slog.WarnContext(ctx, "ingest: normalization failed, record rejected",
-			"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version, "error", err)
+			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return OutboxRecord{}, false, nil
 	}
 
@@ -115,16 +115,16 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			slog.WarnContext(ctx, "ingest: no target store, record rejected",
-				"logical_artifact_type", normalized.Schema.Type, "schema_version", normalized.Schema.Version)
+				"logical_artifact_type", normalized.Schema.LogicalArtifactType, "schema_version", normalized.Schema.Version)
 			return OutboxRecord{}, false, nil
 		}
 		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (target store %s/%s): %w",
-			ErrUnavailable, normalized.Schema.Type, normalized.Schema.Version, err)
+			ErrUnavailable, normalized.Schema.LogicalArtifactType, normalized.Schema.Version, err)
 	}
 
 	return OutboxRecord{
 		TargetStore:         store,
-		LogicalArtifactType: normalized.Schema.Type,
+		LogicalArtifactType: normalized.Schema.LogicalArtifactType,
 		SchemaVersion:       normalized.Schema.Version,
 		Payload:             normalized.Payload,
 		ContentType:         normalized.ContentType,
@@ -136,7 +136,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 func (p *Pipeline) validate(ctx context.Context, schema Schema, rec IngestRecord) bool {
 	if len(rec.Payload) == 0 {
 		slog.WarnContext(ctx, "ingest: empty payload, record rejected",
-			"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version)
+			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 		return false
 	}
 
@@ -144,13 +144,13 @@ func (p *Pipeline) validate(ctx context.Context, schema Schema, rec IngestRecord
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(rec.Payload))
 	if err != nil {
 		slog.WarnContext(ctx, "ingest: payload is not valid JSON, record rejected",
-			"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version, "error", err)
+			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return false
 	}
 
 	if err := schema.Validate(doc); err != nil {
 		slog.WarnContext(ctx, "ingest: payload failed schema validation, record rejected",
-			"logical_artifact_type", rec.Schema.Type, "schema_version", rec.Schema.Version, "error", err)
+			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return false
 	}
 

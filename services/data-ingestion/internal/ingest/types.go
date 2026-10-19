@@ -28,12 +28,12 @@ var ErrNotFound = errors.New("not found")
 type Schema = *jsonschema.Schema
 
 // SchemaKey identifies one immutable schema release: the (logical_artifact_type,
-// schema_version) pair. Type is the stable logical artifact type; Version is the
-// global semantic schema version. Passing it as one value keeps call sites
-// type-safe and prevents swapping the two strings.
+// schema_version) pair. LogicalArtifactType is the stable logical artifact type;
+// Version is the global semantic schema version. Passing it as one value keeps
+// call sites type-safe and prevents swapping the two strings.
 type SchemaKey struct {
-	Type    string
-	Version string
+	LogicalArtifactType string
+	Version             string
 }
 
 // StoreID is the destination store a record is routed to. The same vocabulary is

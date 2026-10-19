@@ -63,8 +63,8 @@ func (s *IngestionServiceServer) Ingest(ctx context.Context, req *ingestionv1.In
 	for i, env := range req.Messages {
 		batch[i] = ingest.IngestRecord{
 			Schema: ingest.SchemaKey{
-				Type:    env.GetLogicalArtifactId(),
-				Version: env.GetSchemaVersion(),
+				LogicalArtifactType: env.GetLogicalArtifactId(),
+				Version:             env.GetSchemaVersion(),
 			},
 			Payload:     env.GetPayload(),
 			ContentType: env.GetContentType(),

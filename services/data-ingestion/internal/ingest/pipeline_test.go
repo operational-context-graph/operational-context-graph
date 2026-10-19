@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	srcKey   = ingest.SchemaKey{Type: "ocg.src.log", Version: "1.0.0"}
-	canonKey = ingest.SchemaKey{Type: "ocg.telemetry.log", Version: "2.4.0"}
+	srcKey   = ingest.SchemaKey{LogicalArtifactType: "ocg.src.log", Version: "1.0.0"}
+	canonKey = ingest.SchemaKey{LogicalArtifactType: "ocg.telemetry.log", Version: "2.4.0"}
 )
 
 const schemaSrc = `{
@@ -190,7 +190,7 @@ func TestPipeline_Ingest_UnregisteredSchemaType(t *testing.T) {
 	eng := NewSourceMappingExecutionEngine(t)
 	out := NewOutboxWriter(t)
 
-	badKey := ingest.SchemaKey{Type: "ocg.unknown", Version: "9.9.9"}
+	badKey := ingest.SchemaKey{LogicalArtifactType: "ocg.unknown", Version: "9.9.9"}
 	reg.EXPECT().Schema(mock.Anything, badKey).Return(nil, ingest.ErrNotFound)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.MatchedBy(func(rows []ingest.OutboxRecord) bool {
@@ -334,7 +334,7 @@ func TestPipeline_Ingest_RegistryUnavailableAbortsBeforeOutbox(t *testing.T) {
 	boom := errors.New("registry unavailable")
 	// The first record would be accepted; a later record's Schema lookup fails
 	// transiently, so the whole batch must abort before any outbox write.
-	lateKey := ingest.SchemaKey{Type: "ocg.src.metric", Version: "1.0.0"}
+	lateKey := ingest.SchemaKey{LogicalArtifactType: "ocg.src.metric", Version: "1.0.0"}
 	stubAcceptPath(reg, eng, mustSchema(t))
 	reg.EXPECT().Schema(mock.Anything, lateKey).Return(nil, boom)
 
