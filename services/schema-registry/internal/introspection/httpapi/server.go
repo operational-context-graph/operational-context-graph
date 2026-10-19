@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,6 +26,7 @@ type Server struct {
 	cfg       introspection.Config
 	checker   postgres.ReadinessChecker
 	engine    *gin.Engine
+	api       *gin.RouterGroup
 	http      *http.Server
 	admission chan struct{}
 	draining  atomic.Bool
@@ -50,16 +50,20 @@ func New(cfg introspection.Config, checker postgres.ReadinessChecker) *Server {
 	engine.HEAD("/readyz", server.readyz)
 
 	api := engine.Group("/v1")
-	api.Use(server.admit)
+	api.Use(server.admit, server.validateRequest)
 	// Phase four registers API resources on this group. Keep a scoped endpoint so
 	// shutdown tests can verify admission before the route table is complete.
 	api.GET("/", func(c *gin.Context) { c.Status(http.StatusNotFound) })
 
 	server.engine = engine
+	server.api = api
 	server.http = &http.Server{
 		Addr: net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)), Handler: engine,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout, ReadTimeout: cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout, IdleTimeout: cfg.Server.IdleTimeout,
+		// Include the bounded request target because net/http applies this limit
+		// to the request line and headers before Gin receives the request.
+		MaxHeaderBytes: maxRequestTargetBytes + maxHeaderBytes,
 	}
 
 	return server
@@ -155,11 +159,16 @@ func (s *Server) admit(c *gin.Context) {
 		defer func() { <-s.admission }()
 		c.Next()
 	default:
-		if s.cfg.Admission.RetryInterval > 0 {
-			c.Header("Retry-After", strconv.Itoa(int(s.cfg.Admission.RetryInterval.Round(time.Second)/time.Second)))
-		}
-		c.Header("Cache-Control", "no-cache")
-		c.Status(http.StatusTooManyRequests)
+		WriteError(c.Writer, ReadLimitExceeded, "", nil, s.cfg.Admission.RetryInterval)
 		c.Abort()
 	}
+}
+
+func (s *Server) validateRequest(c *gin.Context) {
+	if err := ValidateRequestMetadata(c.Request); err != nil {
+		WriteError(c.Writer, InvalidRequest, "", nil, 0)
+		c.Abort()
+		return
+	}
+	c.Next()
 }

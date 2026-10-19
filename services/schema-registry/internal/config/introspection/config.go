@@ -26,6 +26,8 @@ const (
 	envFileKey = envPrefix + "CONFIG_FILE"
 
 	maxPreviousKeys = 3
+	// maxCursorKeyLifetime limits the replay window after a key compromise.
+	maxCursorKeyLifetime = 24 * time.Hour
 )
 
 // Serviceability limits are fixed by the version 1 contract.
@@ -139,7 +141,7 @@ func defaults() *Config {
 			QueryTimeout: 5 * time.Second, StatementTimeout: 5 * time.Second,
 			LockTimeout: time.Second, IdleInTransactionTimeout: 5 * time.Second,
 		},
-		Admission: AdmissionConfig{MaxInFlight: 7, RetryInterval: time.Second},
+		Admission: AdmissionConfig{RetryInterval: time.Second},
 		Logging:   LoggingConfig{Level: "info", MaxFieldLength: 512},
 	}
 }
@@ -181,7 +183,8 @@ func validateDatabase(cfg DatabaseConfig) error {
 }
 
 func validateCursor(cfg CursorConfig) error {
-	if err := validateCursorKey(cfg.ActiveKey, "active"); err != nil {
+	now := time.Now()
+	if err := validateCursorKey(cfg.ActiveKey, "active", now); err != nil {
 		return err
 	}
 	if len(cfg.PreviousKeys) > maxPreviousKeys {
@@ -189,8 +192,11 @@ func validateCursor(cfg CursorConfig) error {
 	}
 	seen := map[string]struct{}{cfg.ActiveKey.ID: {}}
 	for _, key := range cfg.PreviousKeys {
-		if err := validateCursorKey(key, "previous"); err != nil {
+		if err := validateCursorKey(key, "previous", now); err != nil {
 			return err
+		}
+		if key.Deadline.After(cfg.ActiveKey.Deadline) {
+			return fmt.Errorf("validate configuration: previous cursor key deadline exceeds active key deadline")
 		}
 		if _, exists := seen[key.ID]; exists {
 			return fmt.Errorf("validate configuration: duplicate cursor key identifier")
@@ -200,9 +206,12 @@ func validateCursor(cfg CursorConfig) error {
 	return nil
 }
 
-func validateCursorKey(key CursorKey, kind string) error {
-	if key.ID == "" || key.Deadline.IsZero() || !key.Deadline.After(time.Now()) {
+func validateCursorKey(key CursorKey, kind string, now time.Time) error {
+	if key.ID == "" || key.Deadline.IsZero() || !key.Deadline.After(now) {
 		return fmt.Errorf("validate configuration: %s cursor key must have an identifier and future deadline", kind)
+	}
+	if key.Deadline.After(now.Add(maxCursorKeyLifetime)) {
+		return fmt.Errorf("validate configuration: %s cursor key deadline exceeds %s", kind, maxCursorKeyLifetime)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(key.Secret)
 	if err != nil || len(decoded) < 32 {

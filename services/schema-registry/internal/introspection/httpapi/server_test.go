@@ -5,16 +5,20 @@
 package httpapi
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -25,12 +29,20 @@ type fakeChecker struct {
 	mu     sync.Mutex
 	err    error
 	closed bool
+	calls  int
 }
 
 func (f *fakeChecker) Ready(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls++
 	return f.err
+}
+
+func (f *fakeChecker) readyCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 func (f *fakeChecker) Close() {
@@ -65,6 +77,36 @@ func TestProbesSupportGetAndHead(t *testing.T) {
 	}
 }
 
+func TestServerBoundsHeaderBlockBeforeGin(t *testing.T) {
+	server := New(testConfig(), &fakeChecker{})
+	assert.Equal(t, maxRequestTargetBytes+maxHeaderBytes, server.http.MaxHeaderBytes)
+	handlerCalls := make(chan struct{}, 1)
+	server.http.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		handlerCalls <- struct{}{}
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- server.RunListener(ctx, listener) }()
+
+	connection, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer func() { _ = connection.Close() }()
+	_, err = fmt.Fprintf(connection, "GET /healthz HTTP/1.1\r\nHost: example.test\r\nX-Excess: %s\r\n\r\n", strings.Repeat("a", server.http.MaxHeaderBytes+8*1024))
+	require.NoError(t, err)
+	response, err := http.ReadResponse(bufio.NewReader(connection), nil)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+	assert.Equal(t, http.StatusRequestHeaderFieldsTooLarge, response.StatusCode)
+	assert.Empty(t, handlerCalls)
+
+	cancel()
+	require.NoError(t, <-done)
+}
+
 func TestReadinessFailsWhenDrainingOrUnavailable(t *testing.T) {
 	checker := &fakeChecker{err: errors.New("unavailable")}
 	server := New(testConfig(), checker)
@@ -82,13 +124,105 @@ func TestReadinessFailsWhenDrainingOrUnavailable(t *testing.T) {
 func TestAdmissionRejectsWhenCapacityIsExhausted(t *testing.T) {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 1
-	server := New(cfg, &fakeChecker{})
+	checker := &fakeChecker{}
+	server := New(cfg, checker)
+	poolAcquisitions := 0
+	server.api.GET("/pool", func(c *gin.Context) {
+		poolAcquisitions++
+		c.Status(http.StatusNoContent)
+	})
 	server.admission <- struct{}{}
 	defer func() { <-server.admission }()
 	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/", nil))
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/pool", nil))
 	assert.Equal(t, http.StatusTooManyRequests, response.Code)
 	assert.Equal(t, "no-cache", response.Header().Get("Cache-Control"))
+	assert.Equal(t, "1", response.Header().Get("Retry-After"))
+	assert.Contains(t, response.Body.String(), `"code":"read-limit-exceeded"`)
+	assert.Empty(t, response.Header().Get("Schema-Version"))
+	assert.Empty(t, response.Header().Get("Selected-Schema-Version"))
+	assert.Zero(t, poolAcquisitions)
+	assert.Zero(t, checker.readyCalls())
+}
+
+func TestCapacityOneCompletesAndReleasesAdmission(t *testing.T) {
+	server := New(testConfig(), &fakeChecker{})
+	calls := 0
+	server.api.GET("/work", func(c *gin.Context) {
+		calls++
+		c.Status(http.StatusNoContent)
+	})
+	for range 2 {
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/work", nil))
+		assert.Equal(t, http.StatusNoContent, response.Code)
+	}
+	assert.Equal(t, 2, calls)
+	assert.Empty(t, server.admission)
+}
+
+func TestAPIMiddlewareRejectsInvalidRequestBeforeHandler(t *testing.T) {
+	server := New(testConfig(), &fakeChecker{})
+	handlerCalls := 0
+	server.api.GET("/validated", func(c *gin.Context) {
+		handlerCalls++
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/v1/validated", nil)
+	request.Header.Add("Content-Encoding", "gzip")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Contains(t, response.Body.String(), `"code":"invalid-request"`)
+	assert.Zero(t, handlerCalls)
+	assert.Empty(t, server.admission)
+}
+
+func TestCancellationReleasesAdmissionSlot(t *testing.T) {
+	server := New(testConfig(), &fakeChecker{})
+	started := make(chan struct{})
+	server.api.GET("/wait", func(c *gin.Context) {
+		close(started)
+		<-c.Request.Context().Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/v1/wait", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		server.Handler().ServeHTTP(httptest.NewRecorder(), request)
+		close(done)
+	}()
+	<-started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled request did not release its admission slot")
+	}
+	assert.Empty(t, server.admission)
+}
+
+func TestReadinessRetainsCapacityWhenAPISlotsAreSaturated(t *testing.T) {
+	checker := &fakeChecker{}
+	server := New(testConfig(), checker)
+	server.admission <- struct{}{}
+	defer func() { <-server.admission }()
+
+	var group sync.WaitGroup
+	for range 32 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if response.Code != http.StatusOK {
+				t.Errorf("readiness status = %d, want %d", response.Code, http.StatusOK)
+			}
+		}()
+	}
+	group.Wait()
+	assert.Equal(t, 32, checker.readyCalls())
 }
 
 func TestRunClosesPoolOnCancellation(t *testing.T) {
