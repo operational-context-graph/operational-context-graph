@@ -43,3 +43,16 @@ func TestWriteErrorMapsUnknownCodeWithoutCauseDisclosure(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "database password")
 	assert.NotContains(t, response.Body.String(), "stack trace")
 }
+
+func TestWriteErrorWithMetadataPreservesResolvedVersions(t *testing.T) {
+	t.Parallel()
+	response := httptest.NewRecorder()
+	WriteErrorWithMetadata(response, ReleaseNotFound, "", nil, 0, ErrorMetadata{SchemaVersion: "2.0.0"})
+	assert.Equal(t, "2.0.0", response.Header().Get("Schema-Version"))
+	assert.Empty(t, response.Header().Get("Selected-Schema-Version"))
+
+	response = httptest.NewRecorder()
+	WriteErrorWithMetadata(response, NotAcceptable, "", nil, 0, ErrorMetadata{SchemaVersion: "2.0.0", SelectedSchemaVersion: "1.0.0"})
+	assert.Equal(t, "2.0.0", response.Header().Get("Schema-Version"))
+	assert.Equal(t, "1.0.0", response.Header().Get("Selected-Schema-Version"))
+}

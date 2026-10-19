@@ -18,28 +18,51 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
 
 // Server owns the Gin engine, HTTP lifecycle, admission, and readiness state.
 type Server struct {
-	cfg       introspection.Config
-	checker   postgres.ReadinessChecker
-	engine    *gin.Engine
-	api       *gin.RouterGroup
-	http      *http.Server
-	admission chan struct{}
-	draining  atomic.Bool
-	startOnce sync.Once
-	closeOnce sync.Once
+	cfg      introspection.Config
+	checker  postgres.ReadinessChecker
+	releases *release.Service
+	cursors  *pagination.Codec
+	// discoveryLinks is server-owned. Tests may replace it before requests.
+	discoveryLinks func(string) links
+	engine         *gin.Engine
+	api            *gin.RouterGroup
+	http           *http.Server
+	admission      chan struct{}
+	draining       atomic.Bool
+	startOnce      sync.Once
+	closeOnce      sync.Once
 }
 
 // New creates a server. The server closes its readiness checker when Run
 // returns or cannot start its listener.
 func New(cfg introspection.Config, checker postgres.ReadinessChecker) *Server {
+	return NewWithReleaseService(cfg, checker, nil)
+}
+
+// NewWithReleaseService creates a server with the release-discovery routes.
+func NewWithReleaseService(cfg introspection.Config, checker postgres.ReadinessChecker, releases *release.Service) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	server := &Server{
-		cfg: cfg, checker: checker, admission: make(chan struct{}, cfg.Admission.MaxInFlight),
+		cfg: cfg, checker: checker, releases: releases, admission: make(chan struct{}, cfg.Admission.MaxInFlight),
+	}
+	server.discoveryLinks = defaultDiscoveryLinks
+	if releases != nil {
+		previous := make([]pagination.Key, 0, len(cfg.Cursor.PreviousKeys))
+		for _, key := range cfg.Cursor.PreviousKeys {
+			previous = append(previous, pagination.Key{ID: key.ID, Secret: []byte(key.Secret), Deadline: key.Deadline})
+		}
+		codec, err := pagination.New(pagination.Key{ID: cfg.Cursor.ActiveKey.ID, Secret: []byte(cfg.Cursor.ActiveKey.Secret), Deadline: cfg.Cursor.ActiveKey.Deadline}, previous)
+		if err != nil {
+			panic("validated cursor configuration produced invalid codec")
+		}
+		server.cursors = codec
 	}
 
 	engine := gin.New()
@@ -51,12 +74,12 @@ func New(cfg introspection.Config, checker postgres.ReadinessChecker) *Server {
 
 	api := engine.Group("/v1")
 	api.Use(server.admit, server.validateRequest)
-	// Phase four registers API resources on this group. Keep a scoped endpoint so
-	// shutdown tests can verify admission before the route table is complete.
+	server.api = api
+	server.registerReleaseRoutes()
+	// Keep a scoped endpoint so lifecycle tests can verify admission.
 	api.GET("/", func(c *gin.Context) { c.Status(http.StatusNotFound) })
 
 	server.engine = engine
-	server.api = api
 	server.http = &http.Server{
 		Addr: net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)), Handler: engine,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout, ReadTimeout: cfg.Server.ReadTimeout,

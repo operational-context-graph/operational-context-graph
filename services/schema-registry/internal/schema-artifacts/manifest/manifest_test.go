@@ -189,6 +189,132 @@ func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 	assert.Equal(t, "breaking", diff.Compatibility)
 }
 
+func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
+	base := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-1"}}}
+	tests := []struct {
+		name, want string
+		after      Manifest
+	}{
+		{"add", "additive", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}, URICatalog: base.URICatalog}},
+		{"remove", "breaking", Manifest{Artifacts: nil, URICatalog: nil}},
+		{"schema-update-unknown", "breaking", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
+		{"uri-update", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
+		{"binding-remove", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog}},
+		{"storage-add", "additive", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []string{"telemetry-store"}}}}},
+	}
+	base.SchemaContextBindings = []Binding{{SchemaRevision: "rev-1", ContextRevisions: []string{"ctx-1"}}}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.name != "binding-remove" {
+				test.after.SchemaContextBindings = base.SchemaContextBindings
+			}
+			diff, err := Diff(base, test.after, Context{Artifacts: map[Key]artifact.Artifact{}})
+			require.NoError(t, err)
+			assert.Equal(t, test.want, diff.Compatibility)
+		})
+	}
+}
+
+func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
+	t.Parallel()
+	baseArtifacts := []Artifact{
+		{Kind: artifact.KindSchema, Type: "device", Revision: "schema-1"},
+		{Kind: artifact.KindContext, Type: "device-context", Revision: "context-1"},
+		{Kind: artifact.KindSourceMapping, Type: "device-map", Revision: "mapping-1"},
+	}
+	tests := []struct {
+		name, kind, artifactType, beforeRevision, afterRevision string
+	}{
+		{"context", string(artifact.KindContext), "device-context", "context-1", "context-2"},
+		{"source mapping", string(artifact.KindSourceMapping), "device-map", "mapping-1", "mapping-2"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := Manifest{Artifacts: append([]Artifact(nil), baseArtifacts...)}
+			after := Manifest{Artifacts: append([]Artifact(nil), baseArtifacts...)}
+			for index := range after.Artifacts {
+				if string(after.Artifacts[index].Kind) == test.kind {
+					after.Artifacts[index].Revision = test.afterRevision
+				}
+			}
+			diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+			require.NoError(t, err)
+			require.Len(t, diff.Artifacts, 1)
+			assert.Equal(t, "update", diff.Artifacts[0].Operation)
+			assert.Equal(t, test.artifactType, diff.Artifacts[0].ArtifactType)
+			assert.Equal(t, test.beforeRevision, diff.Artifacts[0].BeforeRevision)
+			assert.Equal(t, test.afterRevision, diff.Artifacts[0].AfterRevision)
+			assert.Equal(t, "breaking", diff.Artifacts[0].Impact)
+			assert.Equal(t, "breaking", diff.Compatibility)
+		})
+	}
+}
+
+func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
+	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}}
+	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"}, {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
+	diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+	require.NoError(t, err)
+	// The result compares endpoints only. It does not include an intermediate
+	// addition that was removed before the target manifest.
+	require.Len(t, diff.Artifacts, 2)
+	assert.Equal(t, "add", diff.Artifacts[0].Operation)
+	assert.Equal(t, "asset", diff.Artifacts[0].ArtifactType)
+	assert.Equal(t, "remove", diff.Artifacts[1].Operation)
+	assert.Equal(t, "location", diff.Artifacts[1].ArtifactType)
+	assert.Equal(t, "breaking", diff.Compatibility)
+}
+
+func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
+	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
+	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}}
+	context := Context{Artifacts: map[Key]artifact.Artifact{
+		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"old"}`)},
+		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-2", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"new"}`)},
+	}}
+	diff, err := Diff(before, after, context)
+	require.NoError(t, err)
+	require.Len(t, diff.Artifacts, 1)
+	assert.Equal(t, "operational", diff.Artifacts[0].Impact)
+	assert.Equal(t, "operational", diff.Compatibility)
+}
+
+func TestDiffOrdersEveryChangeCollection(t *testing.T) {
+	before := Manifest{
+		Artifacts: []Artifact{
+			{Kind: artifact.KindSchema, Type: "zebra", Revision: "rev-z-1"},
+			{Kind: artifact.KindSchema, Type: "alpha", Revision: "rev-a-1"},
+		},
+		SchemaContextBindings: []Binding{
+			{SchemaRevision: "schema-z", ContextRevisions: []string{"context-z", "context-a"}},
+			{SchemaRevision: "schema-a", ContextRevisions: []string{"context-b"}},
+		},
+		URICatalog:     []URIEntry{{URI: "https://example.test/z", ArtifactRevision: "rev-z-1"}, {URI: "https://example.test/a", ArtifactRevision: "rev-a-1"}},
+		StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []string{"telemetry-store", "data-center-inventory"}}},
+	}
+	after := Manifest{
+		Artifacts: []Artifact{
+			{Kind: artifact.KindSchema, Type: "alpha", Revision: "rev-a-2"},
+			{Kind: artifact.KindSchema, Type: "middle", Revision: "rev-m-1"},
+		},
+		SchemaContextBindings: []Binding{{SchemaRevision: "schema-c", ContextRevisions: []string{"context-c"}}},
+		URICatalog:            []URIEntry{{URI: "https://example.test/a", ArtifactRevision: "rev-a-2"}, {URI: "https://example.test/m", ArtifactRevision: "rev-m-1"}},
+		StorageCatalog:        []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "alpha", Stores: []string{"data-center-inventory"}}, {Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []string{"telemetry-store"}}},
+	}
+
+	diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+	require.NoError(t, err)
+	require.Len(t, diff.Artifacts, 3)
+	assert.Equal(t, []string{"alpha", "middle", "zebra"}, []string{diff.Artifacts[0].ArtifactType, diff.Artifacts[1].ArtifactType, diff.Artifacts[2].ArtifactType})
+	require.Len(t, diff.SchemaContextBindings, 4)
+	assert.Equal(t, []string{"schema-a", "schema-c", "schema-z", "schema-z"}, []string{diff.SchemaContextBindings[0].SchemaRevision, diff.SchemaContextBindings[1].SchemaRevision, diff.SchemaContextBindings[2].SchemaRevision, diff.SchemaContextBindings[3].SchemaRevision})
+	assert.Equal(t, []string{"context-b", "context-c", "context-a", "context-z"}, []string{diff.SchemaContextBindings[0].ContextRevision, diff.SchemaContextBindings[1].ContextRevision, diff.SchemaContextBindings[2].ContextRevision, diff.SchemaContextBindings[3].ContextRevision})
+	require.Len(t, diff.URICatalog, 3)
+	assert.Equal(t, []string{"https://example.test/a", "https://example.test/m", "https://example.test/z"}, []string{diff.URICatalog[0].URI, diff.URICatalog[1].URI, diff.URICatalog[2].URI})
+	require.Len(t, diff.StorageCatalog, 2)
+	assert.Equal(t, []string{"alpha", "zebra"}, []string{diff.StorageCatalog[0].ArtifactType, diff.StorageCatalog[1].ArtifactType})
+}
+
 func TestValidateIsRaceSafe(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	parsed, err := Parse(data)

@@ -29,6 +29,9 @@ type Pool struct {
 	pool *pgxpool.Pool
 }
 
+// Store creates the request-scoped read boundary over this runtime pool.
+func (p *Pool) Store(timeouts Timeouts) (*Store, error) { return NewStore(p.pool, timeouts) }
+
 // Open constructs and verifies a pool before the HTTP listener starts.
 func Open(ctx context.Context, cfg introspection.DatabaseConfig) (*Pool, error) {
 	poolConfig, err := configurePool(cfg.URL, cfg.PoolMinConnections, cfg.PoolMaxConnections)

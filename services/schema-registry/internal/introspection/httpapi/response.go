@@ -84,12 +84,14 @@ var ErrUnsafeResponseMetadata = errors.New("unsafe response metadata")
 // Representation is a completely assembled response. WriteRepresentation
 // never starts a successful response until encoding and validation finish.
 type Representation struct {
-	Status       int
-	MediaType    string
-	Body         []byte
-	Schema       string
-	Selected     string
-	Digest       string
+	Status    int
+	MediaType string
+	Body      []byte
+	Schema    string
+	Selected  string
+	Digest    string
+	// DigestHeader selects the integrity header name. Empty uses Artifact-Digest.
+	DigestHeader string
 	Method       string
 	AcceptCoding string
 	Context      context.Context
@@ -142,6 +144,12 @@ func WriteRepresentation(writer http.ResponseWriter, value Representation) error
 	coding, ok := NegotiateCoding(value.AcceptCoding)
 	if !ok {
 		writer.Header().Set("Cache-Control", "no-cache")
+		if value.Schema != "" {
+			writer.Header().Set("Schema-Version", value.Schema)
+		}
+		if value.Selected != "" {
+			writer.Header().Set("Selected-Schema-Version", value.Selected)
+		}
 		writer.WriteHeader(http.StatusNotAcceptable)
 		return nil
 	}
@@ -155,17 +163,21 @@ func WriteRepresentation(writer http.ResponseWriter, value Representation) error
 	}
 	tag := ETagForRepresentation(body, coding, value.Digest)
 	writer.Header().Set("Cache-Control", "no-cache")
-	writer.Header().Set("Vary", "Accept-Encoding")
-	writer.Header().Set("ETag", tag)
-	writer.Header().Set("Content-Type", value.MediaType)
 	if value.Schema != "" {
 		writer.Header().Set("Schema-Version", value.Schema)
 	}
 	if value.Selected != "" {
 		writer.Header().Set("Selected-Schema-Version", value.Selected)
 	}
+	writer.Header().Set("Vary", "Accept-Encoding")
+	writer.Header().Set("ETag", tag)
+	writer.Header().Set("Content-Type", value.MediaType)
 	if value.Digest != "" {
-		writer.Header().Set("Artifact-Digest", value.Digest)
+		header := value.DigestHeader
+		if header == "" {
+			header = "Artifact-Digest"
+		}
+		writer.Header().Set(header, value.Digest)
 	}
 	if coding == Gzip {
 		writer.Header().Set("Content-Encoding", "gzip")

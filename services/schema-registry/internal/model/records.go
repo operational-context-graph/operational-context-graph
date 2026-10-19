@@ -16,11 +16,15 @@ type Release struct {
 	SourceCommit           string
 	Changes                []byte
 	ProjectionCommitment   []byte
+	// ActivationSequence orders externally supplied activated releases.
+	ActivationSequence int64
 }
 
 // CurrentState is the current visible release pointer from one read snapshot.
 type CurrentState struct {
-	SchemaVersion string
+	SchemaVersion      string
+	ActivationSequence int64
+	SnapshotSequence   int64
 }
 
 // Artifact is an immutable revision-bound record.

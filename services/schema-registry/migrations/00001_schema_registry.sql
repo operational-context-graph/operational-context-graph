@@ -33,6 +33,24 @@ CREATE UNIQUE INDEX releases_activated_sequence_index
     ON schema_registry.releases (activated_sequence DESC)
     WHERE activated_sequence IS NOT NULL;
 
+-- The importer supplies immutable lineage evidence with each activated
+-- release. Read-only consumers use the chain identifier and position to prove
+-- same-chain ancestry without walking an unbounded predecessor history.
+CREATE TABLE schema_registry.release_lineage (
+    schema_version text COLLATE "C" PRIMARY KEY
+        REFERENCES schema_registry.releases(schema_version) ON DELETE RESTRICT,
+    chain_id uuid NOT NULL,
+    chain_position bigint NOT NULL,
+    predecessor_schema_version text COLLATE "C",
+    predecessor_manifest_digest text COLLATE "C",
+    CHECK (chain_position > 0),
+    CHECK ((predecessor_schema_version IS NULL) = (predecessor_manifest_digest IS NULL)),
+    CHECK (predecessor_manifest_digest IS NULL OR predecessor_manifest_digest ~ '^sha-256:[0-9a-f]{64}$'),
+    FOREIGN KEY (predecessor_schema_version) REFERENCES schema_registry.releases(schema_version)
+        DEFERRABLE INITIALLY DEFERRED,
+    UNIQUE (chain_id, chain_position)
+);
+
 CREATE TABLE schema_registry.registry_state (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     current_schema_version text COLLATE "C",

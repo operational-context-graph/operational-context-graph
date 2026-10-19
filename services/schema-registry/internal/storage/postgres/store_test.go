@@ -93,3 +93,17 @@ func TestValidateReleaseChain(t *testing.T) {
 	actual[0].release.PreviousManifestDigest = nil
 	assert.ErrorIs(t, validateReleaseChain(actual), ErrInconsistentState)
 }
+
+func TestManifestChangesUsesAuthoritativeManifestBytes(t *testing.T) {
+	t.Parallel()
+	changes, err := manifestChanges([]byte(`{"schemaVersion":"1.0.0","changes":{"compatibility":"initial","artifacts":[]}}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"compatibility":"initial","artifacts":[]}`, string(changes))
+
+	changes, err = manifestChanges([]byte(`{"schemaVersion":"1.0.0"}`))
+	require.NoError(t, err)
+	assert.Nil(t, changes)
+
+	_, err = manifestChanges([]byte(`not-json`))
+	assert.ErrorIs(t, err, ErrInconsistentState)
+}

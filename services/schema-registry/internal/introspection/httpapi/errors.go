@@ -66,18 +66,47 @@ type apiError struct {
 	Details []ErrorDetail `json:"details,omitempty"`
 }
 
+// ErrorMetadata contains already-resolved request snapshot headers. Callers
+// MUST leave both values empty for errors emitted before database admission.
+type ErrorMetadata struct {
+	SchemaVersion         string
+	SelectedSchemaVersion string
+}
+
 // WriteError emits a protocol-safe application error. Unknown codes retain a
 // compatible envelope and map to an internal error without exposing causes.
 func WriteError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration) {
+	WriteErrorWithMetadata(writer, code, target, details, retryAfter, ErrorMetadata{})
+}
+
+// WriteErrorWithMetadata emits an error without losing a safely resolved read
+// snapshot. It does not accept arbitrary headers or untrusted values.
+func WriteErrorWithMetadata(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata) {
+	writeError(writer, code, target, details, retryAfter, metadata, true)
+}
+
+func writeHeadError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata) {
+	writeError(writer, code, target, details, retryAfter, metadata, false)
+}
+
+func writeError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata, includeBody bool) {
 	definition, ok := errorCatalog[code]
 	if !ok {
 		code, definition = InternalError, errorCatalog[InternalError]
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("Cache-Control", "no-cache")
+	if metadata.SchemaVersion != "" {
+		writer.Header().Set("Schema-Version", metadata.SchemaVersion)
+	}
+	if metadata.SelectedSchemaVersion != "" {
+		writer.Header().Set("Selected-Schema-Version", metadata.SelectedSchemaVersion)
+	}
 	if retryAfter > 0 && (definition.status == http.StatusTooManyRequests || definition.status == http.StatusServiceUnavailable) {
 		writer.Header().Set("Retry-After", strconv.Itoa(max(1, int(retryAfter.Round(time.Second)/time.Second))))
 	}
 	writer.WriteHeader(definition.status)
-	_ = json.NewEncoder(writer).Encode(errorEnvelope{Error: apiError{Code: code, Message: definition.message, Target: target, Details: details}})
+	if includeBody {
+		_ = json.NewEncoder(writer).Encode(errorEnvelope{Error: apiError{Code: code, Message: definition.message, Target: target, Details: details}})
+	}
 }

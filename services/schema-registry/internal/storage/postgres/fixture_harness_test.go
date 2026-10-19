@@ -299,6 +299,17 @@ func prepopulateReadModelState(ctx context.Context, database *sql.DB, current st
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
+INSERT INTO schema_registry.release_lineage (
+  schema_version, chain_id, chain_position,
+  predecessor_schema_version, predecessor_manifest_digest
+)
+SELECT schema_version, '00000000-0000-0000-0000-000000000001'::uuid,
+       activated_sequence, previous_schema_version, previous_manifest_digest
+FROM schema_registry.releases
+WHERE activated_sequence IS NOT NULL`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 INSERT INTO schema_registry.activated_revision_reachability (artifact_revision, first_activated_sequence)
 SELECT selection.artifact_revision, release.activated_sequence
 FROM schema_registry.release_artifacts AS selection
