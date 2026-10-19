@@ -48,6 +48,14 @@ One of the following database drivers MUST be used for the respective database t
   package `github.com/go-mysql-org/go-mysql/client` which supports connection pooling and response streaming. Business
   logic requiring such functionality should make use of this client package.
 
+### Tests
+
+Use [Testcontainers for Go](https://golang.testcontainers.org/) to create and clean up container-based dependencies for
+automated integration/smoke tests. This includes for example tests requiring a database (see the
+[Getting started with Testcontainers for Go](https://testcontainers.com/guides/getting-started-with-testcontainers-for-go/)
+guide for an example). Use the [testify suite](https://pkg.go.dev/github.com/stretchr/testify/suite) package to implement
+common test setup and teardown actions for the Testcontainers.
+
 ## Helm Charts
 
 ### Tests

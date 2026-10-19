@@ -10,35 +10,27 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 )
 
-// TestMigrationsAndBoundaries requires a disposable PostgreSQL database. It is
-// skipped for normal unit tests and must receive a privileged DATABASE_URL.
-func TestMigrationsAndBoundaries(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is required for PostgreSQL integration tests")
-	}
-	ctx := context.Background()
-	conn, err := sql.Open("pgx", databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+func TestMigrationsSuite(t *testing.T) {
+	runPostgreSQLSuite(t, new(migrationsSuite))
+}
 
-	require.NoError(t, goose.SetDialect("postgres"))
-	migrationsDir := filepath.Join("..", "..", "..", "migrations")
-	resetTestDatabase(t, ctx, conn)
-	require.NoError(t, goose.UpContext(ctx, conn, migrationsDir))
-	t.Cleanup(func() { require.NoError(t, goose.DownContext(ctx, conn, migrationsDir)) })
+type migrationsSuite struct {
+	PostgreSQLSuite
+}
+
+func (suite *migrationsSuite) TestMigrationsAndBoundaries() {
+	t := suite.T()
+	ctx := suite.Context
+	conn := suite.Database
+	databaseURL := suite.DatabaseURL
 	runtimePassword := randomPassword(t)
-	_, err = conn.ExecContext(ctx, "CREATE ROLE schema_registry_runtime_test LOGIN PASSWORD "+quoteLiteral(runtimePassword))
+	_, err := conn.ExecContext(ctx, "CREATE ROLE schema_registry_runtime_test LOGIN PASSWORD "+quoteLiteral(runtimePassword))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `GRANT schema_registry_api TO schema_registry_runtime_test`)
 	require.NoError(t, err)
@@ -220,15 +212,6 @@ func insertArtifact(t *testing.T, ctx context.Context, conn *sql.DB, revision, a
 func insertResource(t *testing.T, ctx context.Context, conn *sql.DB, revision, name string) {
 	t.Helper()
 	_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifact_resources (artifact_revision, name, role, media_type, digest, size, bytes) VALUES ($1, $2, 'program', 'application/octet-stream', $3, 0, '')`, revision, name, digest('a'))
-	require.NoError(t, err)
-}
-
-func resetTestDatabase(t *testing.T, ctx context.Context, database *sql.DB) {
-	t.Helper()
-	var databaseName string
-	require.NoError(t, database.QueryRowContext(ctx, `SELECT current_database()`).Scan(&databaseName))
-	require.True(t, strings.HasPrefix(databaseName, "schema_registry_test"), "DATABASE_URL must target a dedicated schema_registry_test database")
-	_, err := database.ExecContext(ctx, `DROP SCHEMA IF EXISTS schema_registry CASCADE; DROP TABLE IF EXISTS goose_db_version`)
 	require.NoError(t, err)
 }
 

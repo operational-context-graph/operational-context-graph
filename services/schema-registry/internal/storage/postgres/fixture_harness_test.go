@@ -11,13 +11,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gowebpki/jcs"
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -47,29 +44,23 @@ func TestFixtureCatalogPassesSharedValidation(t *testing.T) {
 	}
 }
 
-func TestLoadValidatedFixture(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is required for PostgreSQL fixture integration tests")
-	}
-	ctx := context.Background()
-	database, err := sql.Open("pgx", databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	require.NoError(t, goose.SetDialect("postgres"))
-	migrationsDir := filepath.Join("..", "..", "..", "migrations")
-	resetTestDatabase(t, ctx, database)
-	require.NoError(t, goose.UpContext(ctx, database, migrationsDir))
-	t.Cleanup(func() { require.NoError(t, goose.DownContext(ctx, database, migrationsDir)) })
+func TestFixtureLoadSuite(t *testing.T) {
+	runPostgreSQLSuite(t, new(fixtureLoadSuite))
+}
 
-	for _, fixture := range fixtureCatalog(t) {
-		t.Run(fixture.name, func(t *testing.T) {
-			parsed, loadErr := loadValidatedFixture(t, ctx, database, fixture)
-			require.NoError(t, loadErr)
+type fixtureLoadSuite struct {
+	PostgreSQLSuite
+}
+
+func (suite *fixtureLoadSuite) TestLoadValidatedFixture() {
+	for _, fixture := range fixtureCatalog(suite.T()) {
+		suite.Run(fixture.name, func() {
+			parsed, loadErr := loadValidatedFixture(suite.T(), suite.Context, suite.Database, fixture)
+			suite.Require().NoError(loadErr)
 			var count int
-			require.NoError(t, database.QueryRowContext(ctx, `SELECT count(*) FROM schema_registry.release_artifacts WHERE schema_version = $1`, parsed.SchemaVersion).Scan(&count))
-			require.Len(t, fixture.artifacts, count)
-			verifyLoadedFixture(t, ctx, database, fixture)
+			suite.Require().NoError(suite.Database.QueryRowContext(suite.Context, `SELECT count(*) FROM schema_registry.release_artifacts WHERE schema_version = $1`, parsed.SchemaVersion).Scan(&count))
+			suite.Require().Len(fixture.artifacts, count)
+			verifyLoadedFixture(suite.T(), suite.Context, suite.Database, fixture)
 		})
 	}
 }

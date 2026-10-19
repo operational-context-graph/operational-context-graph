@@ -6,33 +6,28 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadStoreVisibilityAndSnapshots(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is required for PostgreSQL storage integration tests")
-	}
-	ctx := context.Background()
-	database, err := sql.Open("pgx", databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	require.NoError(t, goose.SetDialect("postgres"))
-	migrationsDir := filepath.Join("..", "..", "..", "migrations")
-	resetTestDatabase(t, ctx, database)
-	require.NoError(t, goose.UpContext(ctx, database, migrationsDir))
-	t.Cleanup(func() { require.NoError(t, goose.DownContext(ctx, database, migrationsDir)) })
+func TestReadStoreSuite(t *testing.T) {
+	runPostgreSQLSuite(t, new(readStoreSuite))
+}
+
+type readStoreSuite struct {
+	PostgreSQLSuite
+}
+
+func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
+	t := suite.T()
+	ctx := suite.Context
+	database := suite.Database
+	databaseURL := suite.DatabaseURL
 
 	fixtures := fixtureCatalog(t)
 	for _, fixture := range fixtures[:4] {
@@ -137,20 +132,11 @@ func TestReadStoreVisibilityAndSnapshots(t *testing.T) {
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 0 }, time.Second, 10*time.Millisecond)
 }
 
-func TestConcurrentActivationHasOneWinner(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is required for PostgreSQL storage integration tests")
-	}
-	ctx := context.Background()
-	database, err := sql.Open("pgx", databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	require.NoError(t, goose.SetDialect("postgres"))
-	migrationsDir := filepath.Join("..", "..", "..", "migrations")
-	resetTestDatabase(t, ctx, database)
-	require.NoError(t, goose.UpContext(ctx, database, migrationsDir))
-	t.Cleanup(func() { require.NoError(t, goose.DownContext(ctx, database, migrationsDir)) })
+func (suite *readStoreSuite) TestConcurrentActivationHasOneWinner() {
+	t := suite.T()
+	ctx := suite.Context
+	database := suite.Database
+	databaseURL := suite.DatabaseURL
 	fixtures := fixtureCatalog(t)
 	for _, fixture := range fixtures[:2] {
 		_, err := loadValidatedFixture(t, ctx, database, fixture)
