@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -86,12 +85,6 @@ func requestIDMiddleware() gin.HandlerFunc {
 		c.Set(requestIDKey, id)
 		c.Next()
 	}
-}
-
-func sanitizeForLog(value string) string {
-	value = strings.ReplaceAll(value, "\n", "")
-	value = strings.ReplaceAll(value, "\r", "")
-	return value
 }
 
 func loggingMiddleware() gin.HandlerFunc {

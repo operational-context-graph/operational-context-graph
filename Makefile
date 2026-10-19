@@ -5,6 +5,7 @@
 SHELL := /usr/bin/env bash
 
 SERVICE_DI := services/data-ingestion
+SERVICE_IS := services/inventory-store
 COVERAGE_DIR := $(CURDIR)/coverage
 
 .PHONY: build run test lint vet tidy mocks \
@@ -12,20 +13,18 @@ COVERAGE_DIR := $(CURDIR)/coverage
 
 go-work-init: ## Initialize Go workspace (idempotent)
 	@if [ ! -f go.work ]; then \
-		go work init gen/go services/data-ingestion; \
+		go work init gen/go $(SERVICE_DI) $(SERVICE_IS); \
 	fi
 	go work sync
 
 build: proto-generate go-work-init ## Build all services
-	$(MAKE) -C $(SERVICE_DI) build
-	go build github.com/operational-context-graph/inventory-store/...
+	go build ./$(SERVICE_DI)/... ./$(SERVICE_IS)/...
 
 run: ## Run the data-ingestion service (dev)
 	$(MAKE) -C $(SERVICE_DI) run
 
 vet: ## Vet all services
-	go vet github.com/operational-context-graph/operational-context-graph/services/data-ingestion/...
-	go vet github.com/operational-context-graph/inventory-store/...
+	go vet ./$(SERVICE_DI)/... ./$(SERVICE_IS)/...
 
 test: ## Test all services
 	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
