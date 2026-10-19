@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the pgadmin subchart.
+# Disabled by default — enable in local/demo overlays only.
+enabled: false
+
+image:
+  repository: dpage/pgadmin4
+  tag: "8"
+  pullPolicy: IfNotPresent
+
+# Name of a pre-existing Secret with keys:
+#   PGADMIN_DEFAULT_EMAIL, PGADMIN_DEFAULT_PASSWORD
+secretName: pgadmin-secret
+
+service:
+  port: 80
+
+nameOverride: ""
+fullnameOverride: ""

@@ -14,3 +14,13 @@ data-ingestion:
   service:
     type: ClusterIP
     port: 8080
+
+pgadmin:
+  enabled: false
+  image:
+    repository: dpage/pgadmin4
+    tag: "8"
+    pullPolicy: IfNotPresent
+  secretName: pgadmin-secret
+  service:
+    port: 80
