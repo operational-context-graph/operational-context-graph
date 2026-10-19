@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/operational-context-graph/telemetry-store/internal/apperr"
@@ -85,7 +86,10 @@ func renderError(c *gin.Context, err error) {
 		}
 	default:
 		route, _ := c.Get(routeKey)
-		slog.Error("unhandled error", "err", err, "route", route, "request_id", c.GetHeader("X-Request-Id"))
+		requestID := c.GetHeader("X-Request-Id")
+		requestID = strings.ReplaceAll(requestID, "\n", "")
+		requestID = strings.ReplaceAll(requestID, "\r", "")
+		slog.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
 		p = problem{
 			Type:   "https://problems.ocg.example/internal",
 			Title:  "Internal Server Error",
