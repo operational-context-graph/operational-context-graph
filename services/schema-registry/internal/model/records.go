@@ -5,9 +5,7 @@
 // Package model defines immutable records shared between storage and services.
 package model
 
-import "time"
-
-// Release is an immutable imported release. Activation makes it API-visible.
+// Release is an immutable imported release with pre-populated visibility state.
 type Release struct {
 	SchemaVersion          string
 	ManifestDigest         string
@@ -17,11 +15,10 @@ type Release struct {
 	SourceRepository       string
 	SourceCommit           string
 	Changes                []byte
-	ActivationSequence     *int64
 	ProjectionCommitment   []byte
 }
 
-// CurrentState is the current activated release pointer from one read snapshot.
+// CurrentState is the current visible release pointer from one read snapshot.
 type CurrentState struct {
 	SchemaVersion string
 }
@@ -129,11 +126,4 @@ type ProjectionCommitment struct {
 	SchemaVersion string
 	Family        ProjectionFamily
 	Commitment    []byte
-}
-
-// Activation describes the test-only future-writer activation input.
-type Activation struct {
-	CandidateVersion string
-	ExpectedPrevious *string
-	At               time.Time
 }

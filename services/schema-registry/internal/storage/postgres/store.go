@@ -178,8 +178,8 @@ func (s *Snapshot) Release(ctx context.Context, schemaVersion string) (model.Rel
 	}
 	const query = `
 SELECT schema_version, manifest_digest, manifest_bytes, previous_schema_version,
-       previous_manifest_digest, source_repository, source_commit, changes,
-       activated_sequence, projection_commitment
+        previous_manifest_digest, source_repository, source_commit, changes,
+        projection_commitment
 FROM schema_registry.releases
 WHERE schema_version = $1 AND activated_sequence IS NOT NULL`
 	return scanRelease(s.tx.QueryRow(ctx, query, schemaVersion))
@@ -201,21 +201,28 @@ LIMIT $2`
 		return nil, fmt.Errorf("list activated releases: %w", err)
 	}
 	defer rows.Close()
-	var releases []model.Release
+	var releaseRows []releaseRow
 	for rows.Next() {
-		release, err := scanRelease(rows)
+		release, err := scanReleaseRow(rows)
 		if err != nil {
 			return nil, err
 		}
-		if manifestDigest(release.ManifestBytes) != release.ManifestDigest {
+		if manifestDigest(release.release.ManifestBytes) != release.release.ManifestDigest {
 			return nil, ErrInconsistentState
 		}
-		releases = append(releases, release)
+		releaseRows = append(releaseRows, release)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate activated releases: %w", err)
 	}
-	return releases, validateReleaseChain(releases)
+	if err := validateReleaseChain(releaseRows); err != nil {
+		return nil, err
+	}
+	releases := make([]model.Release, len(releaseRows))
+	for index, release := range releaseRows {
+		releases[index] = release.release
+	}
+	return releases, nil
 }
 
 // Artifact returns an activated-reachable immutable artifact revision.
@@ -843,7 +850,7 @@ func scanRelease(row pgx.Row) (model.Release, error) {
 	err := row.Scan(
 		&release.SchemaVersion, &release.ManifestDigest, &release.ManifestBytes, &release.PreviousSchemaVersion,
 		&release.PreviousManifestDigest, &release.SourceRepository, &release.SourceCommit, &release.Changes,
-		&release.ActivationSequence, &release.ProjectionCommitment,
+		&release.ProjectionCommitment,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Release{}, ErrNotFound
@@ -852,6 +859,28 @@ func scanRelease(row pgx.Row) (model.Release, error) {
 		return model.Release{}, fmt.Errorf("scan release: %w", err)
 	}
 	return release, nil
+}
+
+type releaseRow struct {
+	release  model.Release
+	sequence int64
+}
+
+func scanReleaseRow(row pgx.Row) (releaseRow, error) {
+	var result releaseRow
+	err := row.Scan(
+		&result.release.SchemaVersion, &result.release.ManifestDigest, &result.release.ManifestBytes,
+		&result.release.PreviousSchemaVersion, &result.release.PreviousManifestDigest,
+		&result.release.SourceRepository, &result.release.SourceCommit, &result.release.Changes,
+		&result.sequence, &result.release.ProjectionCommitment,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return releaseRow{}, ErrNotFound
+	}
+	if err != nil {
+		return releaseRow{}, fmt.Errorf("scan release row: %w", err)
+	}
+	return result, nil
 }
 
 func scanArtifact(row pgx.Row) (model.Artifact, error) {
@@ -893,18 +922,18 @@ func scanArtifacts(ctx context.Context, tx pgx.Tx, query string, arguments ...an
 	return artifacts, nil
 }
 
-func validateReleaseChain(releases []model.Release) error {
+func validateReleaseChain(releases []releaseRow) error {
 	for index, release := range releases {
-		if release.ActivationSequence == nil || *release.ActivationSequence <= 0 {
+		if release.sequence <= 0 {
 			return ErrInconsistentState
 		}
 		if index == len(releases)-1 {
 			continue
 		}
 		predecessor := releases[index+1]
-		if predecessor.ActivationSequence == nil || *predecessor.ActivationSequence != *release.ActivationSequence-1 ||
-			release.PreviousSchemaVersion == nil || release.PreviousManifestDigest == nil ||
-			*release.PreviousSchemaVersion != predecessor.SchemaVersion || *release.PreviousManifestDigest != predecessor.ManifestDigest {
+		if predecessor.sequence != release.sequence-1 ||
+			release.release.PreviousSchemaVersion == nil || release.release.PreviousManifestDigest == nil ||
+			*release.release.PreviousSchemaVersion != predecessor.release.SchemaVersion || *release.release.PreviousManifestDigest != predecessor.release.ManifestDigest {
 			return ErrInconsistentState
 		}
 	}

@@ -59,7 +59,7 @@ INSERT INTO schema_registry.releases (
 		{
 			name:  "logical type exceeds 255 bytes",
 			query: `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ($1, 'schema', $2, '1.0.0', 'entity-type', $3, 'application/schema+json', $4, 0, '')`,
-			args:  []any{"r1", string(make([]byte, 256)), "https://registry.test/v1/resources/schema/a/r1", digest('b')},
+			args:  []any{"r1", strings.Repeat("a", 256), "https://registry.test/v1/resources/schema/a/r1", digest('b')},
 		},
 		{
 			name:  "dot segment revision",
@@ -96,50 +96,41 @@ INSERT INTO schema_registry.releases (
 		require.Error(t, err)
 	})
 
-	t.Run("canonical URI and activation sequence are unique", func(t *testing.T) {
+	t.Run("canonical URI and stored sequence are unique", func(t *testing.T) {
 		insertArtifact(t, ctx, conn, "canonical-one", "canonical-one", "https://registry.test/v1/resources/schema/canonical-one/canonical")
 		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('canonical-two', 'schema', 'canonical-two', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/canonical-one/canonical', 'application/schema+json', $1, 0, '')`, digest('e'))
 		require.Error(t, err)
 		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.releases SET activated_sequence = 1 WHERE schema_version = '1.0.0'`)
 		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.releases SET source_commit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' WHERE schema_version = '1.0.0'`)
+		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, activated_sequence, projection_commitment) VALUES ('1.0.1', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, $2)`, "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commitment())
 		require.Error(t, err)
 	})
 
-	t.Run("current pointer requires activation", func(t *testing.T) {
+	t.Run("pre-populated current state accepts a stored release", func(t *testing.T) {
 		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, projection_commitment) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $2)`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", commitment())
 		require.NoError(t, err)
 		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '9.0.0' WHERE singleton = true`)
-		require.Error(t, err)
+		require.NoError(t, err)
 	})
 
-	t.Run("activated data is immutable", func(t *testing.T) {
-		insertArtifact(t, ctx, conn, "unreachable-revision", "unreachable", "https://registry.test/v1/resources/schema/unreachable/unreachable-revision")
-		insertResource(t, ctx, conn, "selection-revision", "pre-activation-resource")
-		_, err := conn.ExecContext(ctx, `SELECT pg_catalog.set_config('schema_registry.activation_sequence', '1', false)`)
-		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.activated_revision_reachability (artifact_revision, first_activated_sequence) VALUES ('selection-revision', 1)`)
-		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.activated_revision_reachability (artifact_revision, first_activated_sequence) VALUES ('unreachable-revision', 1)`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.release_artifacts SET artifact_type = 'changed' WHERE schema_version = '1.0.0' AND artifact_type = 'selection'`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.release_artifacts SET schema_version = '9.0.0' WHERE schema_version = '1.0.0' AND artifact_type = 'selection'`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.artifacts SET payload_media_type = 'text/plain' WHERE artifact_revision = 'selection-revision'`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.artifact_resources (artifact_revision, name, role, media_type, digest, size, bytes) VALUES ('selection-revision', 'late-resource', 'program', 'application/octet-stream', $1, 0, '')`, digest('a'))
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.artifact_resources SET artifact_revision = 'unreachable-revision' WHERE artifact_revision = 'selection-revision' AND name = 'pre-activation-resource'`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.artifact_dependencies (artifact_revision, dependency_kind, dependency_artifact_type, dependency_revision) VALUES ('selection-revision', 'schema', 'selection', 'selection-revision')`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.release_projection_commitments (schema_version, family, commitment) VALUES ('1.0.0', 'resource', $1)`, commitment())
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.storage_catalog_entries (schema_version, artifact_type, store) VALUES ('1.0.0', 'selection', 'telemetry-store')`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '1.0.0' WHERE singleton = true`)
-		require.NoError(t, err)
+	t.Run("migration has no state-transition routines or triggers", func(t *testing.T) {
+		var routineCount int
+		require.NoError(t, conn.QueryRowContext(ctx, `
+SELECT count(*)
+FROM pg_catalog.pg_proc AS procedure
+JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+WHERE namespace.nspname = 'schema_registry'`).Scan(&routineCount))
+		require.Zero(t, routineCount)
+
+		var triggerCount int
+		require.NoError(t, conn.QueryRowContext(ctx, `
+SELECT count(*)
+FROM pg_catalog.pg_trigger AS trigger
+JOIN pg_catalog.pg_class AS relation ON relation.oid = trigger.tgrelid
+JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname = 'schema_registry'
+  AND NOT trigger.tgisinternal`).Scan(&triggerCount))
+		require.Zero(t, triggerCount)
 	})
 
 	t.Run("zero length payload is valid", func(t *testing.T) {
@@ -186,7 +177,6 @@ INSERT INTO schema_registry.releases (
 			"UPDATE schema_registry.registry_state SET current_schema_version = NULL",
 			"DELETE FROM schema_registry.registry_state",
 			"TRUNCATE schema_registry.registry_state",
-			"SELECT schema_registry.prevent_activated_release_mutation()",
 		} {
 			_, operationErr := runtimeConn.ExecContext(ctx, operation)
 			require.Error(t, operationErr, operation)

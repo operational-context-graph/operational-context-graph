@@ -54,14 +54,12 @@ type fixtureLoadSuite struct {
 
 func (suite *fixtureLoadSuite) TestLoadValidatedFixture() {
 	for _, fixture := range fixtureCatalog(suite.T()) {
-		suite.Run(fixture.name, func() {
-			parsed, loadErr := loadValidatedFixture(suite.T(), suite.Context, suite.Database, fixture)
-			suite.Require().NoError(loadErr)
-			var count int
-			suite.Require().NoError(suite.Database.QueryRowContext(suite.Context, `SELECT count(*) FROM schema_registry.release_artifacts WHERE schema_version = $1`, parsed.SchemaVersion).Scan(&count))
-			suite.Require().Len(fixture.artifacts, count)
-			verifyLoadedFixture(suite.T(), suite.Context, suite.Database, fixture)
-		})
+		parsed, loadErr := loadValidatedFixture(suite.T(), suite.Context, suite.Database, fixture)
+		suite.Require().NoError(loadErr, fixture.name)
+		var count int
+		suite.Require().NoError(suite.Database.QueryRowContext(suite.Context, `SELECT count(*) FROM schema_registry.release_artifacts WHERE schema_version = $1`, parsed.SchemaVersion).Scan(&count), fixture.name)
+		suite.Require().Len(fixture.artifacts, count, fixture.name)
+		verifyLoadedFixture(suite.T(), suite.Context, suite.Database, fixture)
 	}
 }
 
@@ -284,6 +282,35 @@ ON CONFLICT (artifact_revision, name) DO NOTHING`, item.Revision, resource.Name,
 		return manifest.Manifest{}, err
 	}
 	return parsed, nil
+}
+
+// prepopulateReadModelState loads externally supplied visibility inputs for a
+// read-only test fixture. It does not model or exercise a release transition.
+func prepopulateReadModelState(ctx context.Context, database *sql.DB, current string, sequences map[string]int64) error {
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for version, sequence := range sequences {
+		if _, err := tx.ExecContext(ctx, `UPDATE schema_registry.releases SET activated_sequence = $2 WHERE schema_version = $1`, version, sequence); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO schema_registry.activated_revision_reachability (artifact_revision, first_activated_sequence)
+SELECT selection.artifact_revision, release.activated_sequence
+FROM schema_registry.release_artifacts AS selection
+JOIN schema_registry.releases AS release ON release.schema_version = selection.schema_version
+WHERE release.activated_sequence IS NOT NULL
+ON CONFLICT (artifact_revision) DO NOTHING`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = $1 WHERE singleton = true`, current); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value manifest.Manifest) error {

@@ -72,22 +72,24 @@ func TestValidateReleaseChain(t *testing.T) {
 	releases := []struct {
 		version  string
 		digest   string
-		sequence *int64
+		sequence int64
 		previous *string
 	}{
-		{"1.1.0", "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &sequenceTwo, &previousVersion},
-		{"1.0.0", previousDigest, &sequenceOne, nil},
+		{"1.1.0", "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", sequenceTwo, &previousVersion},
+		{"1.0.0", previousDigest, sequenceOne, nil},
 	}
-	actual := make([]model.Release, 0, len(releases))
+	actual := make([]releaseRow, 0, len(releases))
 	for _, release := range releases {
-		actual = append(actual, model.Release{
-			SchemaVersion: release.version, ManifestDigest: release.digest, ActivationSequence: release.sequence,
-			PreviousSchemaVersion: release.previous,
+		actual = append(actual, releaseRow{
+			sequence: release.sequence,
+			release: model.Release{
+				SchemaVersion: release.version, ManifestDigest: release.digest, PreviousSchemaVersion: release.previous,
+			},
 		})
 	}
-	actual[0].PreviousManifestDigest = &previousDigest
+	actual[0].release.PreviousManifestDigest = &previousDigest
 	require.NoError(t, validateReleaseChain(actual))
 
-	actual[0].PreviousManifestDigest = nil
+	actual[0].release.PreviousManifestDigest = nil
 	assert.ErrorIs(t, validateReleaseChain(actual), ErrInconsistentState)
 }

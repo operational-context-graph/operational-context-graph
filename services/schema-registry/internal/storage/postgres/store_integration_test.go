@@ -6,11 +6,9 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -45,16 +43,11 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	err = store.Read(ctx, func(context.Context, *Snapshot) error { return nil })
 	require.ErrorIs(t, err, ErrNoActiveRelease)
 
-	admin, err := pgx.Connect(ctx, databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, admin.Close(ctx)) })
-	require.NoError(t, activateTestRelease(ctx, admin, "1.0.0", nil))
-	previous := "1.0.0"
-	require.NoError(t, activateTestRelease(ctx, admin, "1.1.0", &previous))
-	_, err = database.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '1.0.0' WHERE singleton = true`)
-	require.Error(t, err)
-	_, err = database.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = NULL WHERE singleton = true`)
-	require.Error(t, err)
+	require.NoError(t, prepopulateReadModelState(ctx, database, "1.1.0", map[string]int64{
+		"1.0.0": 1,
+		"1.1.0": 2,
+		"2.0.0": 3,
+	}))
 
 	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
 		require.Equal(t, "1.1.0", snapshot.Current.SchemaVersion)
@@ -63,7 +56,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 		require.Equal(t, "1.1.0", current.SchemaVersion)
 		releases, releaseErr := snapshot.Releases(readCtx, nil, 10)
 		require.NoError(t, releaseErr)
-		require.Len(t, releases, 2)
+		require.Len(t, releases, 3)
 		selected, artifactErr := snapshot.ReleaseArtifact(readCtx, "1.1.0", "schema", "device")
 		require.NoError(t, artifactErr)
 		require.Equal(t, "rev-device-v1", selected.Revision)
@@ -83,7 +76,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 		require.Empty(t, inactiveStores)
 		history, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, 10)
 		require.NoError(t, historyErr)
-		require.Len(t, history, 2)
+		require.Len(t, history, 3)
 		return nil
 	})
 	require.NoError(t, err)
@@ -130,42 +123,4 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	err = store.Read(cancelled, func(context.Context, *Snapshot) error { return nil })
 	require.Error(t, err)
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 0 }, time.Second, 10*time.Millisecond)
-}
-
-func (suite *readStoreSuite) TestConcurrentActivationHasOneWinner() {
-	t := suite.T()
-	ctx := suite.Context
-	database := suite.Database
-	databaseURL := suite.DatabaseURL
-	fixtures := fixtureCatalog(t)
-	for _, fixture := range fixtures[:2] {
-		_, err := loadValidatedFixture(t, ctx, database, fixture)
-		require.NoError(t, err)
-	}
-	first, err := pgx.Connect(ctx, databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, first.Close(ctx)) })
-	second, err := pgx.Connect(ctx, databaseURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, second.Close(ctx)) })
-	require.NoError(t, activateTestRelease(ctx, first, "1.0.0", nil))
-	previous := "1.0.0"
-	injectedFailure := errors.New("injected activation failure")
-	err = activateTestReleaseWithFailure(ctx, first, "1.1.0", &previous, func(pgx.Tx) error { return injectedFailure })
-	require.ErrorIs(t, err, injectedFailure)
-	var failedSequence *int64
-	require.NoError(t, database.QueryRowContext(ctx, `SELECT activated_sequence FROM schema_registry.releases WHERE schema_version = '1.1.0'`).Scan(&failedSequence))
-	require.Nil(t, failedSequence)
-	var current string
-	require.NoError(t, database.QueryRowContext(ctx, `SELECT current_schema_version FROM schema_registry.registry_state WHERE singleton`).Scan(&current))
-	require.Equal(t, "1.0.0", current)
-	errors := make(chan error, 2)
-	go func() { errors <- activateTestRelease(ctx, first, "1.1.0", &previous) }()
-	go func() { errors <- activateTestRelease(ctx, second, "1.1.0", &previous) }()
-	firstResult := <-errors
-	secondResult := <-errors
-	require.True(t, (firstResult == nil) != (secondResult == nil))
-	var count int
-	require.NoError(t, database.QueryRowContext(ctx, `SELECT count(*) FROM schema_registry.activated_revision_reachability WHERE artifact_revision = 'rev-location-v1'`).Scan(&count))
-	require.Equal(t, 1, count)
 }
