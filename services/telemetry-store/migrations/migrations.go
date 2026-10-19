@@ -85,7 +85,7 @@ func (m *memFile) Read(p []byte) (int, error)  { return m.r.Read(p) }
 func (m *memFile) Close() error                { return nil }
 func (m *memFile) Stat() (fs.FileInfo, error)  { return m, nil }
 func (m *memFile) Name() string                { return m.name }
-func (m *memFile) Size() int64                 { return int64(m.r.Len()) + int64(m.r.Size()) - int64(m.r.Len()) }
+func (m *memFile) Size() int64                 { return m.r.Size() }
 func (m *memFile) Mode() fs.FileMode           { return 0o444 }
 func (m *memFile) ModTime() time.Time          { return m.modTime }
 func (m *memFile) IsDir() bool                 { return false }

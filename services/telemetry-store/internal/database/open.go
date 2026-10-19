@@ -36,7 +36,8 @@ func OpenWithConfig(ctx context.Context, dsn string, maxOpen, maxIdle int, connM
 	}
 	d, err := time.ParseDuration(connMaxLifetime)
 	if err != nil {
-		d = 5 * time.Minute
+		db.Close()
+		return nil, fmt.Errorf("invalid connMaxLifetime %q: %w", connMaxLifetime, err)
 	}
 	db.SetMaxOpenConns(maxOpen)
 	db.SetMaxIdleConns(maxIdle)

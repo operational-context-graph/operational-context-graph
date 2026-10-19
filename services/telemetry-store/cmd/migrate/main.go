@@ -36,7 +36,10 @@ func main() {
 }
 
 func run() error {
-	dsn := requireEnv("DORIS_DSN")
+	dsn, err := requireEnv("DORIS_DSN")
+	if err != nil {
+		return err
+	}
 	replNum := envOr("REPLICATION_NUM", "3")
 	buckets := envOr("BUCKETS", "10")
 
@@ -88,13 +91,12 @@ func run() error {
 	return nil
 }
 
-func requireEnv(key string) string {
-	v := os.Getenv(key)
-	if strings.TrimSpace(v) == "" {
-		slog.Error("required environment variable not set", "variable", key)
-		os.Exit(1)
+func requireEnv(key string) (string, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return "", fmt.Errorf("required environment variable %s is not set", key)
 	}
-	return v
+	return v, nil
 }
 
 func envOr(key, defaultVal string) string {

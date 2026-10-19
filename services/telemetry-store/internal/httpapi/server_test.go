@@ -118,7 +118,7 @@ func TestHandleQueryTrace_MissingParams(t *testing.T) {
 
 func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/healthz")
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
@@ -144,7 +144,7 @@ func TestReadinessEndpoint_SchemaNotReady_Returns503(t *testing.T) {
 
 func TestRequestIDMiddleware_SetsHeader(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
-	rr := test.GetRequest(t, srv.Handler, "/health")
+	rr := test.GetRequest(t, srv.Handler, "/healthz")
 	assert.NotEmpty(t, rr.Header().Get("X-Request-Id"))
 }
 
@@ -157,7 +157,7 @@ func TestUnmatchedRoute_Returns404WithProblemJSON(t *testing.T) {
 
 func TestRequestIDMiddleware_EchoesExistingHeader(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	req.Header.Set("X-Request-Id", "my-fixed-id")
 	rr := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr, req)

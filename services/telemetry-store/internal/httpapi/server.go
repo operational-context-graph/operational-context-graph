@@ -56,19 +56,6 @@ func NewServer(d telemetryDB, sl streamLoader, addr string) *http.Server {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// /health — legacy combined check kept for backwards compatibility.
-	r.GET("/health", func(c *gin.Context) {
-		if err := d.Ping(c.Request.Context()); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
-			return
-		}
-		if err := d.SchemaReady(c.Request.Context()); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "schema not ready"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-
 	r.NoRoute(func(c *gin.Context) {
 		c.Set(routeKey, "unmatched")
 		renderError(c, apperr.ErrNotFound)
