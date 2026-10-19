@@ -100,12 +100,12 @@ func (s *IngestionServiceServer) mapIngestError(err error) error {
 		return s.unavailableWithRetry("pipeline overloaded")
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return status.Error(codes.Unavailable, "request cancelled")
-	}
-
 	if errors.Is(err, ingest.ErrUnavailable) {
 		return s.unavailableWithRetry("service unavailable")
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.Unavailable, "request cancelled")
 	}
 
 	slog.Error("unexpected pipeline error", "err", err)
