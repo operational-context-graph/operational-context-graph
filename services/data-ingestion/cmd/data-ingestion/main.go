@@ -28,6 +28,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/schemaregistry"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/logstore"
 )
 
 func main() {
@@ -65,8 +66,14 @@ func run() error {
 		return err
 	}
 
-	// The outbox drain delivers persisted records to the stores.
-	drainProc := drain.New(outbox.NewReader(pool), drain.NewStoreRegistry(), drain.Config{
+	// The outbox drain delivers persisted records to the stores. The
+	// LogStoreWriter is a placeholder sink that logs each batch; real store
+	// writers replace it later.
+	storeRegistry := drain.NewStoreRegistry()
+	if err := storeRegistry.Register(logstore.New(slog.Default())); err != nil {
+		return fmt.Errorf("register store writer: %w", err)
+	}
+	drainProc := drain.New(outbox.NewReader(pool), storeRegistry, drain.Config{
 		PollInterval:   cfg.Drain.PollInterval,
 		BackoffInitial: cfg.Drain.BackoffInitial,
 		BackoffMax:     cfg.Drain.BackoffMax,
