@@ -15,15 +15,8 @@ data-ingestion:
     type: ClusterIP
     port: 8080
 
-postgres:
-  enabled: true
-  image:
-    repository: ghcr.io/operational-context-graph/postgres
-    tag: "latest"
-    pullPolicy: IfNotPresent
-
 pgadmin:
-  enabled: true
+  enabled: false
   image:
     repository: dpage/pgadmin4
     tag: "8"
