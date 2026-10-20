@@ -35,3 +35,5 @@ feId: "1"
 
 nameOverride: ""
 fullnameOverride: ""
+
+resources: {}

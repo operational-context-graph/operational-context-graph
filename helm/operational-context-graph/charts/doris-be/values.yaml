@@ -40,3 +40,5 @@ ports:
 
 nameOverride: ""
 fullnameOverride: ""
+
+resources: {}
