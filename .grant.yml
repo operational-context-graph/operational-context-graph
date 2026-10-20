@@ -74,10 +74,12 @@ ignore-packages:
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
 
-  # github.com/coreos/go-semver is Apache-2.0; Syft also emits a LicenseRef-* hash
-  # from the bundled NOTICE file, which grant cannot resolve to a known SPDX ID.
-  # Pulled in transitively by github.com/go-mysql-org/go-mysql.
+  # Packages below have permissive licenses (Apache-2.0 or MIT) but Syft also
+  # detects a secondary NOTICE/AUTHORS file that produces a LicenseRef-* hash
+  # which grant cannot resolve. The primary license is well-known and allowed.
   - github.com/coreos/go-semver
+  - github.com/jackc/pgx/v5
+  - github.com/quic-go/quic-go
 
   # modernc.org/{sqlite,libc,memory} are BSD-3-Clause/MIT; Syft emits additional
   # LicenseRef-* hashes from bundled LICENSE-3RD-PARTY.md files. These are

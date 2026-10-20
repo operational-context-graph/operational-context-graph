@@ -26,8 +26,8 @@ jobs:
       matrix:
         include:
           - language: go
-            # `build-mode: autobuild` fails in this go.work monorepo because it has no go.mod.
-            # We build each module ourselves (see the build step below).
+            # `build-mode: autobuild` fails in this go.work monorepo because the workspace
+            # root has no go.mod. We build each module ourselves (see the build step below).
             build-mode: manual
           # TODO: enable when JavaScript/TypeScript support is needed
           # - language: javascript-typescript
@@ -44,7 +44,7 @@ jobs:
         if: matrix.language == 'go'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: services/data-ingestion/go.mod
+          go-version-file: go.work
           cache: false
 
       - name: Set up Buf
