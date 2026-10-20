@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/drain"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
@@ -64,6 +65,15 @@ func run() error {
 		return err
 	}
 
+	// The outbox drain delivers persisted records to the stores.
+	drainProc := drain.New(outbox.NewReader(pool), drain.NewStoreRegistry(), drain.Config{
+		PollInterval:   cfg.Drain.PollInterval,
+		BackoffInitial: cfg.Drain.BackoffInitial,
+		BackoffMax:     cfg.Drain.BackoffMax,
+		BackoffJitter:  cfg.Drain.BackoffJitter,
+		MaxRetries:     cfg.Drain.MaxRetries,
+	}, slog.Default())
+
 	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
@@ -71,6 +81,12 @@ func run() error {
 	grpcErrC := make(chan error, 1)
 	go func() {
 		grpcErrC <- grpcSrv.Run(ctx)
+	}()
+
+	// The drain runs until the shared context is cancelled on shutdown.
+	drainErrC := make(chan error, 1)
+	go func() {
+		drainErrC <- drainProc.Run(ctx)
 	}()
 
 	httpErr := httpSrv.Run(ctx)
@@ -82,6 +98,10 @@ func run() error {
 	stop()
 
 	grpcErr := <-grpcErrC
+	// The drain returns context.Canceled on a normal shutdown; that is not a failure.
+	if drainErr := <-drainErrC; drainErr != nil && !errors.Is(drainErr, context.Canceled) {
+		return drainErr
+	}
 
 	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
 		return httpErr
