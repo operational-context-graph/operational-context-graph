@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the doris-fe subchart.
+# Use upstream apache/doris image for dev/demo.
+# For production, override image to apeiro/doris-fe:4.1.4-hardened (pinned to digest).
+enabled: true
+
+image:
+  repository: apache/doris
+  tag: "fe-4.1.4"
+  pullPolicy: IfNotPresent
+
+storage:
+  size: 5Gi
+  # Set to your cluster's StorageClass, or leave empty to use the default.
+  storageClassName: ""
+
+# Doris FE ports:
+#   8030 — HTTP API (Stream Load redirect, health)
+#   9020 — Thrift RPC
+#   9030 — MySQL wire protocol (read queries)
+#   9010 — BDBJE heartbeat
+ports:
+  http: 8030
+  rpc: 9020
+  query: 9030
+  heartbeat: 9010
+
+# FE node name and ID for cluster self-registration.
+# In K8s the pod FQDN (<podname>.<servicename>) is used as the stable host address.
+feNodeName: "fe1"
+feId: "1"
+
+nameOverride: ""
+fullnameOverride: ""
