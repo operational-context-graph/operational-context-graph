@@ -17,3 +17,9 @@ dependencies:
   - name: pgadmin
     version: 0.1.0
     condition: pgadmin.enabled
+  - name: doris-fe
+    version: 0.1.0
+    condition: doris-fe.enabled
+  - name: doris-be
+    version: 0.1.0
+    condition: doris-be.enabled
