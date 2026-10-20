@@ -2,8 +2,6 @@ module github.com/operational-context-graph/inventory-store
 
 go 1.27.2
 
-toolchain go1.27.2
-
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.5
