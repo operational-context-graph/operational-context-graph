@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
@@ -25,10 +26,11 @@ import (
 
 // Server owns the Gin engine, HTTP lifecycle, admission, and readiness state.
 type Server struct {
-	cfg      introspection.Config
-	checker  postgres.ReadinessChecker
-	releases *release.Service
-	cursors  *pagination.Codec
+	cfg       introspection.Config
+	checker   postgres.ReadinessChecker
+	releases  *release.Service
+	artifacts *artifact.Service
+	cursors   *pagination.Codec
 	// discoveryLinks is server-owned. Tests may replace it before requests.
 	discoveryLinks func(string) links
 	engine         *gin.Engine
@@ -48,9 +50,14 @@ func New(cfg introspection.Config, checker postgres.ReadinessChecker) *Server {
 
 // NewWithReleaseService creates a server with the release-discovery routes.
 func NewWithReleaseService(cfg introspection.Config, checker postgres.ReadinessChecker, releases *release.Service) *Server {
+	return NewWithServices(cfg, checker, releases, nil)
+}
+
+// NewWithServices creates a server with read-only API services.
+func NewWithServices(cfg introspection.Config, checker postgres.ReadinessChecker, releases *release.Service, artifacts *artifact.Service) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	server := &Server{
-		cfg: cfg, checker: checker, releases: releases, admission: make(chan struct{}, cfg.Admission.MaxInFlight),
+		cfg: cfg, checker: checker, releases: releases, artifacts: artifacts, admission: make(chan struct{}, cfg.Admission.MaxInFlight),
 	}
 	server.discoveryLinks = defaultDiscoveryLinks
 	if releases != nil {
@@ -76,6 +83,7 @@ func NewWithReleaseService(cfg introspection.Config, checker postgres.ReadinessC
 	api.Use(server.admit, server.validateRequest)
 	server.api = api
 	server.registerReleaseRoutes()
+	server.registerArtifactRoutes()
 	// Keep a scoped endpoint so lifecycle tests can verify admission.
 	api.GET("/", func(c *gin.Context) { c.Status(http.StatusNotFound) })
 

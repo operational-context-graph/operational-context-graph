@@ -429,7 +429,7 @@ WHERE ra.schema_version = $1 AND ra.kind = $2 AND ra.artifact_type = $3
 }
 
 // ReleaseArtifacts returns selected artifacts in the contract's canonical order.
-func (s *Snapshot) ReleaseArtifacts(ctx context.Context, schemaVersion string, afterKind, afterType *string, limit int) ([]model.Artifact, error) {
+func (s *Snapshot) ReleaseArtifacts(ctx context.Context, schemaVersion string, filter model.ArtifactFilter, afterKind, afterType *string, limit int) ([]model.Artifact, error) {
 	if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionArtifact); err != nil {
 		return nil, err
 	}
@@ -441,23 +441,32 @@ FROM schema_registry.release_artifacts AS ra
 JOIN schema_registry.releases AS rel ON rel.schema_version = ra.schema_version
 JOIN schema_registry.artifacts AS a ON a.artifact_revision = ra.artifact_revision
 WHERE ra.schema_version = $1 AND rel.activated_sequence IS NOT NULL
-  AND ($2::text IS NULL OR (ra.kind, ra.artifact_type) > ($2, $3))
+   AND ($2::text IS NULL OR (ra.kind, ra.artifact_type) > ($2, $3))
+   AND ($4::text = '' OR ra.kind = $4)
+   AND ($5::text = '' OR ra.artifact_type = $5)
+   AND ($6::text = '' OR a.schema_class = $6)
+   AND ($7::text = '' OR EXISTS (
+     SELECT 1 FROM schema_registry.artifact_dependencies AS dependency
+     WHERE dependency.artifact_revision = a.artifact_revision
+       AND dependency.dependency_revision = $7
+   ))
 ORDER BY ra.kind COLLATE "C", ra.artifact_type COLLATE "C"
-LIMIT $4`
-	return scanArtifacts(ctx, s.tx, query, schemaVersion, afterKind, afterType, limit)
+LIMIT $8`
+	return scanArtifacts(ctx, s.tx, query, schemaVersion, afterKind, afterType, filter.Kind, filter.ArtifactType, filter.SchemaClass, filter.DependsOnRevision, limit)
 }
 
 // ArtifactHistory returns every activated selection for a logical identity.
-func (s *Snapshot) ArtifactHistory(ctx context.Context, kind, artifactType string, beforeSequence *int64, limit int) ([]model.ReleaseArtifact, error) {
+func (s *Snapshot) ArtifactHistory(ctx context.Context, kind, artifactType string, beforeSequence *int64, maxSequence int64, limit int) ([]model.ReleaseArtifact, error) {
 	const query = `
-SELECT ra.schema_version, ra.kind, ra.artifact_type, ra.artifact_revision
+SELECT ra.schema_version, ra.kind, ra.artifact_type, ra.artifact_revision, rel.activated_sequence
 FROM schema_registry.release_artifacts AS ra
 JOIN schema_registry.releases AS rel ON rel.schema_version = ra.schema_version
 WHERE ra.kind = $1 AND ra.artifact_type = $2 AND rel.activated_sequence IS NOT NULL
-  AND ($3::bigint IS NULL OR rel.activated_sequence < $3)
+   AND ($3::bigint IS NULL OR rel.activated_sequence < $3)
+   AND rel.activated_sequence <= $4
 ORDER BY rel.activated_sequence DESC
-LIMIT $4`
-	rows, err := s.tx.Query(ctx, query, kind, artifactType, beforeSequence, limit)
+LIMIT $5`
+	rows, err := s.tx.Query(ctx, query, kind, artifactType, beforeSequence, maxSequence, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list artifact history: %w", err)
 	}
@@ -465,13 +474,23 @@ LIMIT $4`
 	history := make([]model.ReleaseArtifact, 0)
 	for rows.Next() {
 		var selection model.ReleaseArtifact
-		if err := rows.Scan(&selection.SchemaVersion, &selection.Kind, &selection.ArtifactType, &selection.ArtifactRevision); err != nil {
+		if err := rows.Scan(&selection.SchemaVersion, &selection.Kind, &selection.ArtifactType, &selection.ArtifactRevision, &selection.ActivationSequence); err != nil {
 			return nil, fmt.Errorf("scan artifact history: %w", err)
 		}
 		history = append(history, selection)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate artifact history: %w", err)
+	}
+	verified := make(map[string]struct{}, len(history))
+	for _, selection := range history {
+		if _, ok := verified[selection.SchemaVersion]; ok {
+			continue
+		}
+		if err := s.VerifyProjection(ctx, selection.SchemaVersion, model.ProjectionArtifact); err != nil {
+			return nil, err
+		}
+		verified[selection.SchemaVersion] = struct{}{}
 	}
 	return history, nil
 }
@@ -697,12 +716,12 @@ func (s *Snapshot) SourceMapping(ctx context.Context, schemaVersion, sourceArtif
 		return model.SourceMappingDetail{}, err
 	}
 	const query = `
-SELECT schema_version, mapping_revision, source_artifact_type, source_revision,
-       target_artifact_type, target_revision, target_schema_version, cardinality,
-       engine_language, engine_language_version, execution_profile, program_name, program_digest
-FROM schema_registry.source_mapping_details
-JOIN schema_registry.releases AS release ON release.schema_version = source_mapping_details.schema_version
-WHERE source_mapping_details.schema_version = $1 AND source_mapping_details.source_artifact_type = $2 AND release.activated_sequence IS NOT NULL`
+	SELECT detail.schema_version, detail.mapping_revision, detail.source_artifact_type, detail.source_revision,
+	       detail.target_artifact_type, detail.target_revision, detail.target_schema_version, detail.cardinality,
+	       detail.engine_language, detail.engine_language_version, detail.execution_profile, detail.program_name, detail.program_digest
+FROM schema_registry.source_mapping_details AS detail
+JOIN schema_registry.releases AS release ON release.schema_version = detail.schema_version
+WHERE detail.schema_version = $1 AND detail.source_artifact_type = $2 AND release.activated_sequence IS NOT NULL`
 	var detail model.SourceMappingDetail
 	err := s.tx.QueryRow(ctx, query, schemaVersion, sourceArtifactType).Scan(
 		&detail.SchemaVersion, &detail.MappingRevision, &detail.SourceArtifactType, &detail.SourceRevision,
@@ -714,6 +733,33 @@ WHERE source_mapping_details.schema_version = $1 AND source_mapping_details.sour
 	}
 	if err != nil {
 		return model.SourceMappingDetail{}, fmt.Errorf("read source mapping: %w", err)
+	}
+	return detail, nil
+}
+
+// SourceMappingByRevision returns resolved details for one selected mapping revision.
+func (s *Snapshot) SourceMappingByRevision(ctx context.Context, schemaVersion, revision string) (model.SourceMappingDetail, error) {
+	if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionSourceMapping); err != nil {
+		return model.SourceMappingDetail{}, err
+	}
+	const query = `
+	SELECT detail.schema_version, detail.mapping_revision, detail.source_artifact_type, detail.source_revision,
+	       detail.target_artifact_type, detail.target_revision, detail.target_schema_version, detail.cardinality,
+	       detail.engine_language, detail.engine_language_version, detail.execution_profile, detail.program_name, detail.program_digest
+FROM schema_registry.source_mapping_details AS detail
+JOIN schema_registry.releases AS release ON release.schema_version = detail.schema_version
+WHERE detail.schema_version = $1 AND detail.mapping_revision = $2 AND release.activated_sequence IS NOT NULL`
+	var detail model.SourceMappingDetail
+	err := s.tx.QueryRow(ctx, query, schemaVersion, revision).Scan(
+		&detail.SchemaVersion, &detail.MappingRevision, &detail.SourceArtifactType, &detail.SourceRevision,
+		&detail.TargetArtifactType, &detail.TargetRevision, &detail.TargetSchemaVersion, &detail.Cardinality,
+		&detail.EngineLanguage, &detail.EngineLanguageVersion, &detail.ExecutionProfile, &detail.ProgramName, &detail.ProgramDigest,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.SourceMappingDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return model.SourceMappingDetail{}, fmt.Errorf("read source mapping revision: %w", err)
 	}
 	return detail, nil
 }

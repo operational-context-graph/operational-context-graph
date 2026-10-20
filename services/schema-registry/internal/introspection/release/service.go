@@ -45,6 +45,11 @@ func withRequestMetadata(current model.CurrentState, selected string, err error)
 	return &RequestError{Current: current, SelectedSchemaVersion: selected, err: err}
 }
 
+// WithRequestMetadata attaches safely resolved request versions to an error.
+func WithRequestMetadata(current model.CurrentState, selected string, err error) error {
+	return withRequestMetadata(current, selected, err)
+}
+
 // Snapshot is the narrow read-only release storage contract.
 type Snapshot interface {
 	CurrentState() model.CurrentState
@@ -53,6 +58,14 @@ type Snapshot interface {
 	ReleasesAt(context.Context, *int64, int64, int) ([]model.Release, error)
 	IsAncestor(context.Context, string, string) (bool, error)
 	Artifact(context.Context, string) (model.Artifact, error)
+	ReleaseArtifact(context.Context, string, string, string) (model.Artifact, error)
+	ReleaseArtifacts(context.Context, string, model.ArtifactFilter, *string, *string, int) ([]model.Artifact, error)
+	ArtifactHistory(context.Context, string, string, *int64, int64, int) ([]model.ReleaseArtifact, error)
+	Resources(context.Context, string) ([]model.Resource, error)
+	Resource(context.Context, string, string) (model.Resource, error)
+	Dependencies(context.Context, string) ([]model.Dependency, error)
+	URIEntry(context.Context, string, string) (model.URIEntry, error)
+	SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error)
 }
 
 // Reader provides a repeatable-read snapshot. It has no mutation methods.

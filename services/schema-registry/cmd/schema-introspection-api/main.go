@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/logging"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
@@ -57,7 +58,8 @@ func run() error {
 		pool.Close()
 		return err
 	}
-	server := httpapi.NewWithReleaseService(*cfg, pool, release.New(release.NewPostgresReader(store)))
+	reader := release.NewPostgresReader(store)
+	server := httpapi.NewWithServices(*cfg, pool, release.New(reader), artifact.New(reader))
 	logger.Info("starting schema introspection API", "configuration", cfg.Redacted())
 	if err := server.Run(ctx); err != nil {
 		return fmt.Errorf("run HTTP server: %w", err)

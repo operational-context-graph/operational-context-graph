@@ -107,3 +107,16 @@ func TestManifestChangesUsesAuthoritativeManifestBytes(t *testing.T) {
 	_, err = manifestChanges([]byte(`not-json`))
 	assert.ErrorIs(t, err, ErrInconsistentState)
 }
+
+func TestValidBytesEnforcesExactSizeDigestAndProfile(t *testing.T) {
+	value := []byte("x")
+	assert.True(t, validBytes(value, 1, manifestDigest(value)))
+	assert.True(t, validBytes(nil, 0, manifestDigest(nil)))
+	assert.False(t, validBytes(value, 2, manifestDigest(value)))
+	assert.False(t, validBytes(value, 1, manifestDigest([]byte("other"))))
+
+	exact := make([]byte, 16*1024*1024)
+	assert.True(t, validBytes(exact, int64(len(exact)), manifestDigest(exact)))
+	over := make([]byte, len(exact)+1)
+	assert.False(t, validBytes(over, int64(len(over)), manifestDigest(over)))
+}

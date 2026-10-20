@@ -264,9 +264,11 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 		inactiveStores, storesErr := snapshot.StorageEntries(readCtx, "2.1.0", "inactive")
 		require.ErrorIs(t, storesErr, ErrNotFound)
 		require.Empty(t, inactiveStores)
-		history, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, 10)
+		history, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, snapshot.Current.SnapshotSequence, 10)
 		require.NoError(t, historyErr)
 		require.Len(t, history, 3)
+		_, mappingErr := snapshot.SourceMappingByRevision(readCtx, "1.1.0", "missing-mapping")
+		require.ErrorIs(t, mappingErr, ErrNotFound)
 		return nil
 	})
 	require.NoError(t, err)
@@ -339,4 +341,41 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	err = store.Read(cancelled, func(context.Context, *Snapshot) error { return nil })
 	require.Error(t, err)
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 0 }, time.Second, 10*time.Millisecond)
+}
+
+func (suite *readStoreSuite) TestArtifactHistoryRejectsCorruptHistoricalProjection() {
+	t := suite.T()
+	ctx := suite.Context
+	for _, fixture := range fixtureCatalog(t)[:3] {
+		_, err := loadValidatedFixture(t, ctx, suite.Database, fixture)
+		require.NoError(t, err)
+	}
+	require.NoError(t, prepopulateReadModelState(ctx, suite.Database, "2.0.0", map[string]int64{
+		"1.0.0": 1,
+		"1.1.0": 2,
+		"2.0.0": 3,
+	}))
+
+	_, err := suite.Database.ExecContext(ctx, `SET session_replication_role = replica`)
+	require.NoError(t, err)
+	_, err = suite.Database.ExecContext(ctx, `
+UPDATE schema_registry.release_artifacts
+SET artifact_revision = 'rev-location-v1'
+WHERE schema_version = '1.0.0' AND kind = 'schema' AND artifact_type = 'device'`)
+	require.NoError(t, err)
+	_, err = suite.Database.ExecContext(ctx, `SET session_replication_role = origin`)
+	require.NoError(t, err)
+
+	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	store, err := NewStore(pool, Timeouts{
+		Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second,
+	})
+	require.NoError(t, err)
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+		_, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, snapshot.Current.SnapshotSequence, 10)
+		return historyErr
+	})
+	require.ErrorIs(t, err, ErrInconsistentState)
 }

@@ -66,10 +66,19 @@ type Dependency struct {
 
 // ReleaseArtifact selects a revision for a logical identity in one release.
 type ReleaseArtifact struct {
-	SchemaVersion    string
-	Kind             string
-	ArtifactType     string
-	ArtifactRevision string
+	SchemaVersion      string
+	Kind               string
+	ArtifactType       string
+	ArtifactRevision   string
+	ActivationSequence int64
+}
+
+// ArtifactFilter contains exact, release-scoped artifact collection filters.
+type ArtifactFilter struct {
+	Kind              string
+	ArtifactType      string
+	SchemaClass       string
+	DependsOnRevision string
 }
 
 // ContextBinding binds a selected schema revision to a selected context revision.

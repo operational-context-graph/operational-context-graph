@@ -77,6 +77,30 @@ func (s *testSnapshot) Artifact(_ context.Context, revision string) (model.Artif
 	}
 	return model.Artifact{}, postgres.ErrNotFound
 }
+func (*testSnapshot) ReleaseArtifact(context.Context, string, string, string) (model.Artifact, error) {
+	return model.Artifact{}, postgres.ErrNotFound
+}
+func (*testSnapshot) ReleaseArtifacts(context.Context, string, model.ArtifactFilter, *string, *string, int) ([]model.Artifact, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*testSnapshot) ArtifactHistory(context.Context, string, string, *int64, int64, int) ([]model.ReleaseArtifact, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*testSnapshot) Resources(context.Context, string) ([]model.Resource, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*testSnapshot) Resource(context.Context, string, string) (model.Resource, error) {
+	return model.Resource{}, postgres.ErrNotFound
+}
+func (*testSnapshot) Dependencies(context.Context, string) ([]model.Dependency, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*testSnapshot) URIEntry(context.Context, string, string) (model.URIEntry, error) {
+	return model.URIEntry{}, postgres.ErrNotFound
+}
+func (*testSnapshot) SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error) {
+	return model.SourceMappingDetail{}, postgres.ErrNotFound
+}
 
 func TestListBindsCallerCursorToOriginalSnapshot(t *testing.T) {
 	snapshot := &testSnapshot{current: model.CurrentState{SchemaVersion: "2.0.0", ActivationSequence: 2, SnapshotSequence: 9}, releases: map[string]model.Release{"2.0.0": {SchemaVersion: "2.0.0"}}}

@@ -109,6 +109,30 @@ func (s *releaseTestSnapshot) Artifact(_ context.Context, revision string) (mode
 	}
 	return value, nil
 }
+func (*releaseTestSnapshot) ReleaseArtifact(context.Context, string, string, string) (model.Artifact, error) {
+	return model.Artifact{}, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) ReleaseArtifacts(context.Context, string, model.ArtifactFilter, *string, *string, int) ([]model.Artifact, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) ArtifactHistory(context.Context, string, string, *int64, int64, int) ([]model.ReleaseArtifact, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) Resources(context.Context, string) ([]model.Resource, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) Resource(context.Context, string, string) (model.Resource, error) {
+	return model.Resource{}, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) Dependencies(context.Context, string) ([]model.Dependency, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) URIEntry(context.Context, string, string) (model.URIEntry, error) {
+	return model.URIEntry{}, postgres.ErrNotFound
+}
+func (*releaseTestSnapshot) SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error) {
+	return model.SourceMappingDetail{}, postgres.ErrNotFound
+}
 
 func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	manifest := mustTestManifest(t)
