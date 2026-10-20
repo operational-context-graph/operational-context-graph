@@ -32,44 +32,29 @@ allow:
   - CC0-*
   - BSL-1.0
 
-# Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
-  # actions/* is licensed under MIT
-  - actions/*
+  # Note: Syft's SBOM does currently not contain license information for GitHub Actions
+  - actions/* # MIT
+  - github/codeql-action/* # MIT
+  - amannn/action-semantic-pull-request # MIT
+  - fsfe/reuse-action # CC0-1.0
+  - golangci/golangci-lint-action # MIT
+  - golang/govulncheck-action # BSD-3-Clause
+  - marocchino/sticky-pull-request-comment # MIT
+  - ossf/scorecard-action # Apache-2.0
+  - anchore/sbom-action # Apache-2.0
+  - anchore/scan-action # MIT
+  - pnpm/action-setup # MIT
+  - zizmorcore/zizmor-action # MIT
+  - bufbuild/buf-action # Apache-2.0
 
-  # github/codeql-action/* licensed under MIT
-  - github/codeql-action/*
-
-  # amannn/action-semantic-pull-request licensed under MIT
-  - amannn/action-semantic-pull-request
-
-  # fsfe/reuse-action licensed under CC0-1.0
-  - fsfe/reuse-action
-
-  # golangci/golangci-lint-action licensed under MIT
-  - golangci/golangci-lint-action
-  # golang/govulncheck-action licensed under BSD 3-Clause
-  - golang/govulncheck-action
-
-  # marocchino/sticky-pull-request-comment licensed under MIT
-  - marocchino/sticky-pull-request-comment
-
-  # ossf/scorecard-action licensed under Apache-2.0
-  - ossf/scorecard-action
-
-  # anchore/sbom-action licensed under Apache-2.0
-  - anchore/sbom-action
-  # anchore/scan-action licensed under MIT
-  - anchore/scan-action
-
-  # pnpm/action-setup licensed under MIT
-  - pnpm/action-setup
-
-  # zizmorcore/zizmor-action licensed under MIT
-  - zizmorcore/zizmor-action
-
-  # bufbuild/buf-action licensed under Apache-2.0
-  - bufbuild/buf-action
+  # Go packages
+  - github.com/opencontainers/go-digest # Apache-2.0, documentation under CC-BY-SA-4.0, but Syft only finds CC-BY-SA-4.0
+  - dario.cat/mergo # BSD-3-Clause and unknown license reference Syft cannot resolve
+  - github.com/jackc/pgx/v5 # MIT and unknown license reference Syft cannot resolve
+  - github.com/moby/patternmatcher # Apache-2.0 and unknown license reference Syft cannot resolve
+  - github.com/piprate/json-gold # Apache-2.0 and unknown license reference Syft cannot resolve
+  - github.com/quic-go/quic-go # MIT and unknown license reference Syft cannot resolve
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*

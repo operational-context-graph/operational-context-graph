@@ -4,6 +4,7 @@
 
 SHELL := /usr/bin/env bash
 
+PROJECT_ROOT ?= ../..
 BUILD_DIR ?= $(CURDIR)/bin
 COVERAGE_DIR ?= $(CURDIR)/coverage
 GOVULNCHECK_VERSION ?= v1.9.0
@@ -51,7 +52,10 @@ sbom: ## Generate a module software bill of materials
 	@if ! command -v syft >/dev/null 2>&1; then \
 		echo "syft is required for sbom"; exit 1; \
 	fi
-	syft dir:. -o spdx-json=$(CURDIR)/sbom.spdx.json
+	syft dir:. -o spdx-json=$(CURDIR)/sbom.spdx.json -c $(PROJECT_ROOT)/.syft.yml
+
+oss-license-check: ## Perform OSS license compliance check
+	grant check sbom.spdx.json -c $(PROJECT_ROOT)/.grant.yml
 
 migrate-up: ## Apply Goose migrations using DATABASE_URL
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)

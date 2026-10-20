@@ -6,6 +6,9 @@
 # Complete configuration file with all available options
 # See: https://github.com/anchore/syft
 
+enrich:
+  - golang
+
 golang:
   search-local-vendor-licenses: true
   search-remote-licenses: true
