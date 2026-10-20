@@ -64,7 +64,10 @@ type Snapshot interface {
 	Resources(context.Context, string) ([]model.Resource, error)
 	Resource(context.Context, string, string) (model.Resource, error)
 	Dependencies(context.Context, string) ([]model.Dependency, error)
+	ContextBindings(context.Context, string, string) ([]model.ContextBinding, error)
+	StorageEntries(context.Context, string, string) ([]model.StorageEntry, error)
 	URIEntry(context.Context, string, string) (model.URIEntry, error)
+	SourceMapping(context.Context, string, string) (model.SourceMappingDetail, error)
 	SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error)
 }
 

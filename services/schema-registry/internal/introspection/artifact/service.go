@@ -7,7 +7,10 @@ package artifact
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -39,6 +42,59 @@ type Descriptor struct {
 type Page struct {
 	Current model.CurrentState
 	Items   []Descriptor
+}
+
+// SchemaPackage contains the selected schema and its bound context documents.
+// Documents remain raw JSON so boolean schemas preserve their exact JSON value.
+type SchemaPackage struct {
+	Schema   Descriptor
+	Contexts []Descriptor
+}
+
+// MappingPackage contains one release-consistent mapping and its dependencies.
+type MappingPackage struct {
+	Mapping Descriptor
+	Detail  model.SourceMappingDetail
+	Program model.Resource
+	Source  Descriptor
+	Target  Descriptor
+	Stores  []model.StorageEntry
+}
+
+// Mapping is an enriched, release-selected source mapping.
+type Mapping struct {
+	Descriptor Descriptor
+	Detail     model.SourceMappingDetail
+}
+
+// SchemaStores resolves logical store assignments for one selected schema.
+func (s *Service) SchemaStores(ctx context.Context, version, artifactType string) (Result[[]model.StorageEntry], error) {
+	var result Result[[]model.StorageEntry]
+	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
+		schema, err := snapshot.ReleaseArtifact(readCtx, version, "schema", artifactType)
+		if err != nil {
+			return err
+		}
+		if schema.SchemaClass == nil {
+			return fmt.Errorf("schema class: %w", postgres.ErrInconsistentState)
+		}
+		entries, err := snapshot.StorageEntries(readCtx, version, artifactType)
+		if err != nil {
+			return err
+		}
+		if *schema.SchemaClass == "source-record" {
+			if len(entries) != 0 {
+				return fmt.Errorf("source record stores: %w", postgres.ErrInconsistentState)
+			}
+		} else if len(entries) == 0 {
+			return fmt.Errorf("canonical stores: %w", postgres.ErrInconsistentState)
+		}
+		sort.Slice(entries, func(first, second int) bool { return entries[first].Store < entries[second].Store })
+		result.Value = entries
+		return nil
+	})
+	result.Current, result.Selected = current, version
+	return result, err
 }
 
 func (s *Service) read(ctx context.Context, selected string, fn func(context.Context, release.Snapshot) error) (model.CurrentState, error) {
@@ -161,6 +217,177 @@ func (s *Service) List(ctx context.Context, version string, filter model.Artifac
 	})
 	result.Current = current
 	return result, err
+}
+
+// SchemaPackage resolves a selected schema and all bound contexts in one read snapshot.
+func (s *Service) SchemaPackage(ctx context.Context, version, artifactType string) (Result[SchemaPackage], error) {
+	var result Result[SchemaPackage]
+	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
+		schema, err := loadDescriptor(readCtx, snapshot, version, "schema", artifactType)
+		if err != nil {
+			return err
+		}
+		if schema.Artifact.Payload.MediaType != "application/schema+json" {
+			return fmt.Errorf("schema media type: %w", postgres.ErrInconsistentState)
+		}
+		bindings, err := snapshot.ContextBindings(readCtx, version, schema.Artifact.Revision)
+		if err != nil {
+			return err
+		}
+		contexts := make([]Descriptor, 0, len(bindings))
+		seenContexts := make(map[string]struct{}, len(bindings))
+		for _, binding := range bindings {
+			if _, exists := seenContexts[binding.ContextRevision]; exists {
+				return fmt.Errorf("duplicate context binding: %w", postgres.ErrInconsistentState)
+			}
+			seenContexts[binding.ContextRevision] = struct{}{}
+			contextArtifact, err := snapshot.Artifact(readCtx, binding.ContextRevision)
+			if err != nil || contextArtifact.Kind != "context" {
+				return fmt.Errorf("load bound context: %w", postgres.ErrInconsistentState)
+			}
+			if contextArtifact.Payload.MediaType != `application/ld+json;profile="http://www.w3.org/ns/json-ld#context"` {
+				return fmt.Errorf("context media type: %w", postgres.ErrInconsistentState)
+			}
+			resources, err := snapshot.Resources(readCtx, contextArtifact.Revision)
+			if err != nil {
+				return err
+			}
+			dependencies, err := snapshot.Dependencies(readCtx, contextArtifact.Revision)
+			if err != nil {
+				return err
+			}
+			contexts = append(contexts, Descriptor{Artifact: contextArtifact, Resources: resources, Dependencies: dependencies})
+		}
+		result.Value = SchemaPackage{Schema: schema, Contexts: contexts}
+		return nil
+	})
+	result.Current, result.Selected = current, version
+	return result, err
+}
+
+// MappingPackage resolves the opaque program and both selected schema dependencies.
+func (s *Service) MappingPackage(ctx context.Context, version, sourceType string) (Result[MappingPackage], error) {
+	var result Result[MappingPackage]
+	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
+		source, err := loadDescriptor(readCtx, snapshot, version, "schema", sourceType)
+		if err != nil {
+			return err
+		}
+		detail, err := snapshot.SourceMapping(readCtx, version, sourceType)
+		if err != nil {
+			return err
+		}
+		mapping, err := loadDescriptorByRevision(readCtx, snapshot, version, detail.MappingRevision)
+		if err != nil || mapping.Artifact.Kind != "source-mapping" || detail.SourceRevision != source.Artifact.Revision {
+			return fmt.Errorf("load mapping: %w", postgres.ErrInconsistentState)
+		}
+		target, err := loadDescriptor(readCtx, snapshot, version, "schema", detail.TargetArtifactType)
+		if err != nil || target.Artifact.Revision != detail.TargetRevision {
+			return fmt.Errorf("load mapping target: %w", postgres.ErrInconsistentState)
+		}
+		var program model.Resource
+		for _, resource := range mapping.Resources {
+			if resource.Name == detail.ProgramName {
+				program = resource
+				break
+			}
+		}
+		if program.Name == "" || program.Role != "program" || program.Digest != detail.ProgramDigest {
+			return fmt.Errorf("load mapping program: %w", postgres.ErrInconsistentState)
+		}
+		stores, err := snapshot.StorageEntries(readCtx, version, target.Artifact.Type)
+		if err != nil {
+			return err
+		}
+		if target.Artifact.SchemaClass == nil || *target.Artifact.SchemaClass == "source-record" || len(stores) == 0 {
+			return fmt.Errorf("load target stores: %w", postgres.ErrInconsistentState)
+		}
+		result.Value = MappingPackage{Mapping: mapping, Detail: detail, Program: program, Source: source, Target: target, Stores: stores}
+		return nil
+	})
+	result.Current, result.Selected = current, version
+	return result, err
+}
+
+// Mappings lists enriched mappings using resolved dependency metadata.
+func (s *Service) Mappings(ctx context.Context, version string, filter model.ArtifactFilter, afterType *string, limit int) (Result[[]Mapping], error) {
+	var result Result[[]Mapping]
+	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
+		var afterKind *string
+		if afterType != nil {
+			kind := "source-mapping"
+			afterKind = &kind
+		}
+		// Source-mapping predicates apply to resolved descriptor fields. Load the
+		// bounded release collection before transport applies those predicates.
+		items, err := snapshot.ReleaseArtifacts(readCtx, version, filter, afterKind, afterType, 10001)
+		if err != nil {
+			return err
+		}
+		mappings := make([]Mapping, 0, len(items))
+		for _, item := range items {
+			if item.Kind != "source-mapping" {
+				continue
+			}
+			descriptor, err := loadDescriptorByArtifact(readCtx, snapshot, version, item)
+			if err != nil {
+				return err
+			}
+			detail, err := snapshot.SourceMappingByRevision(readCtx, version, item.Revision)
+			if err != nil {
+				return err
+			}
+			mappings = append(mappings, Mapping{Descriptor: descriptor, Detail: detail})
+		}
+		result.Value = mappings
+		return nil
+	})
+	result.Current, result.Selected = current, version
+	return result, err
+}
+
+func loadDescriptor(ctx context.Context, snapshot release.Snapshot, version, kind, artifactType string) (Descriptor, error) {
+	value, err := snapshot.ReleaseArtifact(ctx, version, kind, artifactType)
+	if err != nil {
+		return Descriptor{}, err
+	}
+	return loadDescriptorByArtifact(ctx, snapshot, version, value)
+}
+
+func loadDescriptorByRevision(ctx context.Context, snapshot release.Snapshot, version, revision string) (Descriptor, error) {
+	value, err := snapshot.Artifact(ctx, revision)
+	if err != nil {
+		return Descriptor{}, err
+	}
+	return loadDescriptorByArtifact(ctx, snapshot, version, value)
+}
+
+func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, version string, value model.Artifact) (Descriptor, error) {
+	if !validPayload(value.Payload) {
+		return Descriptor{}, fmt.Errorf("artifact payload integrity: %w", postgres.ErrInconsistentState)
+	}
+	resources, err := snapshot.Resources(ctx, value.Revision)
+	if err != nil {
+		return Descriptor{}, err
+	}
+	dependencies, err := snapshot.Dependencies(ctx, value.Revision)
+	if err != nil {
+		return Descriptor{}, err
+	}
+	descriptor := Descriptor{Artifact: value, Resources: resources, Dependencies: dependencies}
+	if value.Kind == "source-mapping" {
+		detail, err := snapshot.SourceMappingByRevision(ctx, version, value.Revision)
+		if err != nil {
+			return Descriptor{}, err
+		}
+		descriptor.SourceArtifactType = detail.SourceArtifactType
+	}
+	return descriptor, nil
+}
+
+func validPayload(value model.ByteDescriptor) bool {
+	digest := sha256.Sum256(value.Bytes)
+	return int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])
 }
 
 // History returns activated logical artifact selections in descending sequence.

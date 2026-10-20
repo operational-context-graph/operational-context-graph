@@ -95,8 +95,17 @@ func (*testSnapshot) Resource(context.Context, string, string) (model.Resource, 
 func (*testSnapshot) Dependencies(context.Context, string) ([]model.Dependency, error) {
 	return nil, postgres.ErrNotFound
 }
+func (*testSnapshot) ContextBindings(context.Context, string, string) ([]model.ContextBinding, error) {
+	return nil, postgres.ErrNotFound
+}
+func (*testSnapshot) StorageEntries(context.Context, string, string) ([]model.StorageEntry, error) {
+	return nil, postgres.ErrNotFound
+}
 func (*testSnapshot) URIEntry(context.Context, string, string) (model.URIEntry, error) {
 	return model.URIEntry{}, postgres.ErrNotFound
+}
+func (*testSnapshot) SourceMapping(context.Context, string, string) (model.SourceMappingDetail, error) {
+	return model.SourceMappingDetail{}, postgres.ErrNotFound
 }
 func (*testSnapshot) SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error) {
 	return model.SourceMappingDetail{}, postgres.ErrNotFound

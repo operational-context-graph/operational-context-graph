@@ -84,6 +84,7 @@ func NewWithServices(cfg introspection.Config, checker postgres.ReadinessChecker
 	server.api = api
 	server.registerReleaseRoutes()
 	server.registerArtifactRoutes()
+	server.registerSchemaRoutes()
 	// Keep a scoped endpoint so lifecycle tests can verify admission.
 	api.GET("/", func(c *gin.Context) { c.Status(http.StatusNotFound) })
 
