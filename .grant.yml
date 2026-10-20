@@ -73,3 +73,15 @@ ignore-packages:
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
+
+  # github.com/coreos/go-semver is Apache-2.0; Syft also emits a LicenseRef-* hash
+  # from the bundled NOTICE file, which grant cannot resolve to a known SPDX ID.
+  # Pulled in transitively by github.com/go-mysql-org/go-mysql.
+  - github.com/coreos/go-semver
+
+  # modernc.org/{sqlite,libc,memory} are BSD-3-Clause/MIT; Syft emits additional
+  # LicenseRef-* hashes from bundled LICENSE-3RD-PARTY.md files. These are
+  # test-only transitive dependencies pulled in via github.com/pressly/goose/v3.
+  - modernc.org/libc
+  - modernc.org/memory
+  - modernc.org/sqlite

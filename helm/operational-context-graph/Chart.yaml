@@ -23,3 +23,6 @@ dependencies:
   - name: doris-be
     version: 0.1.0
     condition: doris-be.enabled
+  - name: telemetry-store
+    version: 0.1.0
+    condition: telemetry-store.enabled
