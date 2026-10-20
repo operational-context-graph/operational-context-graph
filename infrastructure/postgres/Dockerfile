@@ -3,17 +3,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Hardened PostgreSQL image for the OCG Inventory Store
-# Base: postgres:16 (Debian Bookworm)
+# Base: postgres:18 (Debian Bookworm)
 #
-# Alternative: postgres:16-alpine has a significantly smaller surface by default
+# Alternative: postgres:18-alpine has a significantly smaller surface by default
 # (Alpine ships almost no extra tooling). Switch the FROM line and remove the
 # apt-get block if the Alpine variant is chosen. Verify no glibc dependency
 # exists before switching (Alpine uses musl libc).
 #
 # Hardening applied:
 #   1. Pinned upstream tag. Use image digest in production:
-#        FROM postgres:16@sha256:<digest>
-#      Obtain: docker inspect --format='{{index .RepoDigests 0}}' postgres:16
+#        FROM postgres:18@sha256:<digest>
+#      Obtain: docker inspect --format='{{index .RepoDigests 0}}' postgres:18
 #   2. Build/debug tooling removed (gcc, g++, cpp, binutils, make, gdb, strace, ltrace).
 #   3. postgresql.conf and pg_hba.conf baked in (scram-sha-256 auth enforced via pg_hba.conf).
 #   4. Runs as non-root postgres user (default in upstream image, made explicit).
@@ -28,7 +28,7 @@
 # Port:
 #   5432 — PostgreSQL wire protocol
 
-FROM postgres:16
+FROM postgres:18
 
 USER root
 
