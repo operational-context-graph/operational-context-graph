@@ -111,7 +111,7 @@ type DrainConfig struct {
 	BackoffMax     time.Duration `koanf:"backoff_max"      validate:"required,gtefield=BackoffInitial"`
 	BackoffJitter  float64       `koanf:"backoff_jitter"   validate:"gte=0,lte=1"`
 	MaxRetries     int           `koanf:"max_retries"      validate:"gte=0"`
-	PageSize       int           `koanf:"page_size"        validate:"min=0"`
+	PageSize       int           `koanf:"page_size"        validate:"min=1"`
 }
 
 // defaults returns the built-in configuration applied before any override.

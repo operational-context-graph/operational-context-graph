@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-// defaultPageSize bounds how many pending rows a worker scans per pass, so a
-// large backlog does not load into memory at once.
-const defaultPageSize = 500
-
 type Config struct {
 	PollInterval   time.Duration
 	BackoffInitial time.Duration
@@ -27,14 +23,6 @@ type Config struct {
 	// worker raises its own page size to its store's MaxRecords when larger, so
 	// the record-count trigger is always reachable.
 	PageSize int
-}
-
-// withDefaults returns a copy with zero-value operational fields filled in.
-func (c Config) withDefaults() Config {
-	if c.PageSize <= 0 {
-		c.PageSize = defaultPageSize
-	}
-	return c
 }
 
 // Drain is the top-level delivery process. It starts one worker per registered
@@ -51,7 +39,7 @@ func New(ob Outbox, reg *StoreRegistry, cfg Config, log *slog.Logger) *Drain {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Drain{outbox: ob, reg: reg, cfg: cfg.withDefaults(), log: log}
+	return &Drain{outbox: ob, reg: reg, cfg: cfg, log: log}
 }
 
 // Run starts the workers and blocks until ctx is cancelled, then waits for all

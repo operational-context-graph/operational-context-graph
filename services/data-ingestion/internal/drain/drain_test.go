@@ -76,13 +76,12 @@ func TestDrain_LogOrphansError_KeepsRunning(t *testing.T) {
 	require.Eventually(t, func() bool { return cap.contains("list pending stores failed") }, time.Second, 2*time.Millisecond)
 }
 
-func TestDrain_New_NilLoggerAndDefaultPageSize(t *testing.T) {
+func TestDrain_New_NilLogger(t *testing.T) {
 	ob := &fakeOutbox{}
 	// Config{} has a zero PageSize; New must fill the default and accept a nil
 	// logger.
 	d := New(ob, NewStoreRegistry(), Config{PollInterval: 2 * time.Millisecond, BackoffInitial: time.Millisecond, BackoffMax: 2 * time.Millisecond}, nil)
 	require.NotNil(t, d)
-	assert.Equal(t, defaultPageSize, d.cfg.PageSize)
 	assert.NotNil(t, d.log)
 }
 
