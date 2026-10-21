@@ -431,7 +431,7 @@ func (s *Server) writeArtifactValidationError(c *gin.Context, code ErrorCode) {
 }
 
 func (s *Server) writeArtifactError(c *gin.Context, err error, notFound ErrorCode) {
-	code := notFound
+	var code ErrorCode
 	switch {
 	case errors.Is(err, postgres.ErrNotFound):
 		code = notFound

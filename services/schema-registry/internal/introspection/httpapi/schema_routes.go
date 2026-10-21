@@ -23,6 +23,33 @@ import (
 
 const maxGeneratedJSONBytes = 64 << 20
 
+// MappingPackageResponse represents a source-mapping package response.
+type MappingPackageResponse struct {
+	SchemaVersion string                        `json:"schemaVersion"`
+	Mapping       any                           `json:"mapping"`
+	Program       MappingPackageProgramResponse `json:"program"`
+	SourceSchema  MappingPackageSchemaResponse  `json:"sourceSchema"`
+	TargetSchema  MappingPackageSchemaResponse  `json:"targetSchema"`
+	TargetStores  []string                      `json:"targetStores"`
+	Links         links                         `json:"links"`
+}
+
+// MappingPackageProgramResponse represents program content in a source-mapping package response.
+type MappingPackageProgramResponse struct {
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+	Content   string `json:"content"`
+}
+
+// MappingPackageSchemaResponse represents a schema document in a source-mapping package response.
+type MappingPackageSchemaResponse struct {
+	Metadata descriptorResponse `json:"metadata"`
+	Document json.RawMessage    `json:"document"`
+}
+
 func (s *Server) registerSchemaRoutes() {
 	if s.artifacts == nil {
 		return
@@ -367,28 +394,28 @@ func (s *Server) mappingPackage(c *gin.Context) {
 	for _, entry := range value.Value.Stores {
 		stores = append(stores, entry.Store)
 	}
-	body := struct {
-		SchemaVersion string   `json:"schemaVersion"`
-		Mapping       any      `json:"mapping"`
-		Program       any      `json:"program"`
-		SourceSchema  any      `json:"sourceSchema"`
-		TargetSchema  any      `json:"targetSchema"`
-		TargetStores  []string `json:"targetStores"`
-		Links         links    `json:"links"`
-	}{version, enrichedMapping(artifact.Mapping{Descriptor: value.Value.Mapping, Detail: value.Value.Detail}, version), struct {
-		Name      string `json:"name"`
-		Role      string `json:"role"`
-		MediaType string `json:"mediaType"`
-		Digest    string `json:"digest"`
-		Size      int64  `json:"size"`
-		Content   string `json:"content"`
-	}{value.Value.Program.Name, value.Value.Program.Role, value.Value.Program.MediaType, value.Value.Program.Digest, value.Value.Program.Size, base64.StdEncoding.EncodeToString(value.Value.Program.Bytes)}, struct {
-		Metadata descriptorResponse `json:"metadata"`
-		Document json.RawMessage    `json:"document"`
-	}{descriptor(value.Value.Source, version), sourceDocument}, struct {
-		Metadata descriptorResponse `json:"metadata"`
-		Document json.RawMessage    `json:"document"`
-	}{descriptor(value.Value.Target, version), targetDocument}, stores, links{"self": "/v1/releases/" + version + "/schemas/" + source + "/source-mapping/package"}}
+	body := MappingPackageResponse{
+		SchemaVersion: version,
+		Mapping:       enrichedMapping(artifact.Mapping{Descriptor: value.Value.Mapping, Detail: value.Value.Detail}, version),
+		Program: MappingPackageProgramResponse{
+			Name:      value.Value.Program.Name,
+			Role:      value.Value.Program.Role,
+			MediaType: value.Value.Program.MediaType,
+			Digest:    value.Value.Program.Digest,
+			Size:      value.Value.Program.Size,
+			Content:   base64.StdEncoding.EncodeToString(value.Value.Program.Bytes),
+		},
+		SourceSchema: MappingPackageSchemaResponse{
+			Metadata: descriptor(value.Value.Source, version),
+			Document: sourceDocument,
+		},
+		TargetSchema: MappingPackageSchemaResponse{
+			Metadata: descriptor(value.Value.Target, version),
+			Document: targetDocument,
+		},
+		TargetStores: stores,
+		Links:        links{"self": "/v1/releases/" + version + "/schemas/" + source + "/source-mapping/package"},
+	}
 	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, body)
 }
 

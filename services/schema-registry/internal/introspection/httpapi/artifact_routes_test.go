@@ -587,11 +587,12 @@ func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing
 			snapshot.artifactErr, snapshot.resourceErr = nil, nil
 			test.configure()
 			got := serveArtifactRequest(server, http.MethodGet, test.path)
-			if test.code == "invalid-request" {
+			switch test.code {
+			case "invalid-request":
 				assert.Equal(t, http.StatusBadRequest, got.Code)
-			} else if test.code == "inconsistent-registry-state" {
+			case "inconsistent-registry-state":
 				assert.Equal(t, http.StatusInternalServerError, got.Code)
-			} else {
+			default:
 				assert.Equal(t, http.StatusNotFound, got.Code)
 			}
 			assert.Contains(t, got.Body.String(), `"code":"`+test.code+`"`)
