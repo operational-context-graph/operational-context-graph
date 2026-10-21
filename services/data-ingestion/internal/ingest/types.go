@@ -17,8 +17,8 @@ import (
 // schema, source mapping, or target-store entry). The pipeline treats an error
 // satisfying errors.Is(err, ErrNotFound) as a record-level rejection; any other
 // error from the registry is a request-level failure (the registry is
-// unavailable) and makes the connector retry. SchemaRegistryClient
-// implementations MUST wrap a genuine not-found with this sentinel and return
+// unavailable) and makes the connector retry. SchemaRegistry implementations
+// MUST wrap a genuine not-found with this sentinel and return
 // anything else (timeout, connectivity, server error) as a plain error.
 var ErrNotFound = errors.New("not found")
 
@@ -43,7 +43,7 @@ type StoreID string
 
 // IngestRecord is the wire-neutral record the pipeline consumes and, after
 // normalization, produces. On input Payload is the source JSON and Schema is the
-// source key; after SourceMappingExecutionEngine.Normalize, Payload is canonical
+// source key; after Normalizer.Normalize, Payload is canonical
 // JSON and Schema is the canonical key.
 type IngestRecord struct {
 	Schema      SchemaKey

@@ -17,8 +17,8 @@ packages:
   github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest:
     interfaces:
       OutboxWriter: {}
-      SchemaRegistryClient: {}
-      SourceMappingExecutionEngine: {}
+      SchemaRegistry: {}
+      Normalizer: {}
       Ingestor:
         config:
           dir: internal/grpcserver

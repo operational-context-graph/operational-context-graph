@@ -22,17 +22,17 @@ import (
 // injected dependencies, which are required to be concurrency-safe. Ingest is
 // therefore safe for concurrent use without any pipeline-level locking.
 type Pipeline struct {
-	registry SchemaRegistryClient
-	engine   SourceMappingExecutionEngine
-	outbox   OutboxWriter
+	registry   SchemaRegistry
+	normalizer Normalizer
+	outbox     OutboxWriter
 }
 
 var _ Ingestor = (*Pipeline)(nil)
 
 // NewPipeline builds a Pipeline. All three dependencies MUST be safe for
 // concurrent use; Pipeline adds no synchronization of its own.
-func NewPipeline(registry SchemaRegistryClient, engine SourceMappingExecutionEngine, outbox OutboxWriter) *Pipeline {
-	return &Pipeline{registry: registry, engine: engine, outbox: outbox}
+func NewPipeline(registry SchemaRegistry, normalizer Normalizer, outbox OutboxWriter) *Pipeline {
+	return &Pipeline{registry: registry, normalizer: normalizer, outbox: outbox}
 }
 
 // Ingest runs the synchronous ingest half for one batch.
@@ -103,7 +103,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 			ErrUnavailable, rec.Schema.LogicalArtifactType, rec.Schema.Version, err)
 	}
 
-	normalized, err := p.engine.Normalize(ctx, mapping, rec)
+	normalized, err := p.normalizer.Normalize(ctx, mapping, rec)
 	if err != nil {
 		slog.WarnContext(ctx, "ingest: normalization failed, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)

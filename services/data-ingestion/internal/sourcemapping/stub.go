@@ -11,7 +11,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
-// Stub is a no-op implementation of ingest.SourceMappingExecutionEngine for
+// Stub is a no-op implementation of ingest.Normalizer for
 // local development and integration testing before a real engine is available.
 type Stub struct{}
 

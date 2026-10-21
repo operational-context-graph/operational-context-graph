@@ -56,7 +56,7 @@ func normalized() ingest.IngestRecord {
 // stubAcceptPath wires the full happy path (schema -> mapping -> normalize ->
 // target store) for records keyed by srcKey. Call counts are not constrained so
 // it works for single and concurrent batches alike.
-func stubAcceptPath(reg *SchemaRegistryClient, eng *SourceMappingExecutionEngine, sch ingest.Schema) {
+func stubAcceptPath(reg *SchemaRegistry, eng *Normalizer, sch ingest.Schema) {
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(sch, nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
 	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(normalized(), nil)
@@ -66,8 +66,8 @@ func stubAcceptPath(reg *SchemaRegistryClient, eng *SourceMappingExecutionEngine
 // --- Group 9: happy path -----------------------------------------------------
 
 func TestPipeline_Ingest_AllAccepted(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.MatchedBy(func(rows []ingest.OutboxRecord) bool {
@@ -82,8 +82,8 @@ func TestPipeline_Ingest_AllAccepted(t *testing.T) {
 }
 
 func TestPipeline_Ingest_MixedBatch(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.MatchedBy(func(rows []ingest.OutboxRecord) bool {
@@ -98,8 +98,8 @@ func TestPipeline_Ingest_MixedBatch(t *testing.T) {
 }
 
 func TestPipeline_Ingest_AllRejected(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(nil, ingest.ErrNotFound)
 
@@ -114,8 +114,8 @@ func TestPipeline_Ingest_AllRejected(t *testing.T) {
 // --- Group 10: boundary inputs ----------------------------------------------
 
 func TestPipeline_Ingest_EmptyBatch(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 
 	p := ingest.NewPipeline(reg, eng, out)
@@ -128,8 +128,8 @@ func TestPipeline_Ingest_EmptyBatch(t *testing.T) {
 }
 
 func TestPipeline_Ingest_NilBatch(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 
 	p := ingest.NewPipeline(reg, eng, out)
@@ -140,8 +140,8 @@ func TestPipeline_Ingest_NilBatch(t *testing.T) {
 }
 
 func TestPipeline_Ingest_SingleConformingRecord(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.MatchedBy(func(rows []ingest.OutboxRecord) bool {
@@ -156,8 +156,8 @@ func TestPipeline_Ingest_SingleConformingRecord(t *testing.T) {
 }
 
 func TestPipeline_Ingest_SingleRejectedRecord(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 
@@ -170,8 +170,8 @@ func TestPipeline_Ingest_SingleRejectedRecord(t *testing.T) {
 }
 
 func TestPipeline_Ingest_EmptyPayload(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 
@@ -186,8 +186,8 @@ func TestPipeline_Ingest_EmptyPayload(t *testing.T) {
 // --- Group 11: error paths --------------------------------------------------
 
 func TestPipeline_Ingest_UnregisteredSchemaType(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 
 	badKey := ingest.SchemaKey{LogicalArtifactType: "ocg.unknown", Version: "9.9.9"}
@@ -206,8 +206,8 @@ func TestPipeline_Ingest_UnregisteredSchemaType(t *testing.T) {
 }
 
 func TestPipeline_Ingest_SchemaRegistryUnavailable(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 
 	boom := errors.New("dial tcp: connection refused")
@@ -224,8 +224,8 @@ func TestPipeline_Ingest_SchemaRegistryUnavailable(t *testing.T) {
 }
 
 func TestPipeline_Ingest_SourceMappingsNotFound(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, ingest.ErrNotFound)
@@ -239,8 +239,8 @@ func TestPipeline_Ingest_SourceMappingsNotFound(t *testing.T) {
 }
 
 func TestPipeline_Ingest_SourceMappingsUnavailable(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	boom := errors.New("registry 503")
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
@@ -257,8 +257,8 @@ func TestPipeline_Ingest_SourceMappingsUnavailable(t *testing.T) {
 }
 
 func TestPipeline_Ingest_NormalizationError(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
@@ -273,8 +273,8 @@ func TestPipeline_Ingest_NormalizationError(t *testing.T) {
 }
 
 func TestPipeline_Ingest_TargetStoreNotFound(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
@@ -290,8 +290,8 @@ func TestPipeline_Ingest_TargetStoreNotFound(t *testing.T) {
 }
 
 func TestPipeline_Ingest_TargetStoreUnavailable(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	boom := errors.New("registry timeout")
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
@@ -310,8 +310,8 @@ func TestPipeline_Ingest_TargetStoreUnavailable(t *testing.T) {
 }
 
 func TestPipeline_Ingest_OutboxWriteFailure(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	boom := errors.New("outbox down")
@@ -327,8 +327,8 @@ func TestPipeline_Ingest_OutboxWriteFailure(t *testing.T) {
 }
 
 func TestPipeline_Ingest_RegistryUnavailableAbortsBeforeOutbox(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 
 	boom := errors.New("registry unavailable")
@@ -351,8 +351,8 @@ func TestPipeline_Ingest_RegistryUnavailableAbortsBeforeOutbox(t *testing.T) {
 // --- Group 12: concurrency --------------------------------------------------
 
 func TestPipeline_Ingest_ConcurrentBatches(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.Anything).Return(nil)
@@ -385,8 +385,8 @@ func TestPipeline_Ingest_ConcurrentBatches(t *testing.T) {
 }
 
 func TestPipeline_Ingest_ConcurrentMixedBatches(t *testing.T) {
-	reg := NewSchemaRegistryClient(t)
-	eng := NewSourceMappingExecutionEngine(t)
+	reg := NewSchemaRegistry(t)
+	eng := NewNormalizer(t)
 	out := NewOutboxWriter(t)
 	stubAcceptPath(reg, eng, mustSchema(t))
 	out.EXPECT().Write(mock.Anything, mock.Anything).Return(nil)
