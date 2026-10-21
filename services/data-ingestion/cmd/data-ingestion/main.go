@@ -3,9 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Command data-ingestion is the entrypoint for the Data Ingestion service.
-//
-// It wires configuration, builds the HTTP server and gRPC server, and runs
-// both until the process receives an interrupt or termination signal.
+// It wires configuration and runs the HTTP and gRPC servers.
+// Both servers run until the process receives SIGINT or SIGTERM.
 package main
 
 import (
@@ -45,6 +44,12 @@ func run() error {
 		return err
 	}
 
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.Logging.Level)); err != nil {
+		return fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, err)
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -61,7 +66,7 @@ func run() error {
 
 	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, outbox.New(pool))
 
-	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline)
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline, &grpcserver.NoopSchemaRegistryClient{})
 	if err != nil {
 		return err
 	}
@@ -86,33 +91,32 @@ func run() error {
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
-	grpcErrC := make(chan error, 1)
-	go func() {
-		grpcErrC <- grpcSrv.Run(ctx)
-	}()
+	// The HTTP server, gRPC server, and outbox drain all run until the shared
+	// context is cancelled. Any one of them returning triggers shutdown of the
+	// others, so a failed component never leaves the process half-running.
+	errC := make(chan error, 3)
+	go func() { errC <- httpSrv.Run(ctx) }()
+	go func() { errC <- grpcSrv.Run(ctx) }()
+	go func() { errC <- drainProc.Run(ctx) }()
 
-	// The drain runs until the shared context is cancelled on shutdown.
-	drainErrC := make(chan error, 1)
-	go func() {
-		drainErrC <- drainProc.Run(ctx)
-	}()
-
-	httpErr := httpSrv.Run(ctx)
-	// Cancel the shared context so the gRPC goroutine exits when the HTTP server
-	// stops for any reason. Without this, an HTTP bind error would leave the
-	// process blocked on <-grpcErrC forever.
-	// The reverse is also true: if grpcSrv.Run returns (e.g. bind error), grpcErrC
-	// closes, <-grpcErrC unblocks, and main returns — taking the HTTP server down.
+	// Wait for the first component to stop, then cancel the context so the
+	// others exit too, and drain their results.
+	first := <-errC
 	stop()
+	second := <-errC
+	third := <-errC
 
-	grpcErr := <-grpcErrC
-	// The drain returns context.Canceled on a normal shutdown; that is not a failure.
-	if drainErr := <-drainErrC; drainErr != nil && !errors.Is(drainErr, context.Canceled) {
-		return drainErr
-	}
+	return firstRealError(first, second, third)
+}
 
-	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
-		return httpErr
+// firstRealError returns the first non-nil error that is neither
+// http.ErrServerClosed nor context.Canceled, both of which are expected on a
+// normal shutdown.
+func firstRealError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, context.Canceled) {
+			return err
+		}
 	}
-	return grpcErr
+	return nil
 }

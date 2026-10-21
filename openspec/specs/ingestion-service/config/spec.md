@@ -41,8 +41,8 @@ Environment variables MUST use the prefix `OCG_DI_`. The double-underscore `__` 
 - **THEN** the resolved `GRPCConfig.Host` is `"127.0.0.1"`
 
 #### Scenario: Double underscore separates hierarchy; single underscore is part of the field name
-- **WHEN** `OCG_DI_GRPC__TLS_CERT_FILE=/etc/tls/tls.crt` is set
-- **THEN** the resolved `GRPCConfig.TLSCertFile` is `"/etc/tls/tls.crt"`
+- **WHEN** `OCG_DI_GRPC__TLS__CERT_FILE=/etc/tls/tls.crt` is set
+- **THEN** the resolved `GRPCConfig.TLS.CertFile` is `"/etc/tls/tls.crt"`
 
 ### Requirement: Partial TLS configuration is an error
 

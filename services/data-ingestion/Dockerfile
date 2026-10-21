@@ -12,7 +12,7 @@ WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
 COPY services/data-ingestion/go.mod services/data-ingestion/go.sum services/data-ingestion/
-RUN go work init gen/go services/data-ingestion && go mod download -x 2>/dev/null; true
+RUN go work init gen/go services/data-ingestion && go mod download -x 2>/dev/null
 
 COPY gen/go/ gen/go/
 COPY services/data-ingestion/ services/data-ingestion/
