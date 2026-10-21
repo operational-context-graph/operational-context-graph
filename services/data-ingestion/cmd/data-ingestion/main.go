@@ -79,6 +79,7 @@ func run() error {
 		BackoffMax:     cfg.Drain.BackoffMax,
 		BackoffJitter:  cfg.Drain.BackoffJitter,
 		MaxRetries:     cfg.Drain.MaxRetries,
+		PageSize:       cfg.Drain.PageSize,
 	}, slog.Default())
 
 	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)

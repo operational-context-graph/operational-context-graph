@@ -104,12 +104,14 @@ type RetryConfig struct {
 // PollInterval bounds how often a worker re-scans the outbox when idle.
 // The backoff fields bound per-store retry on store overload.
 // MaxRetries bounds the retries for one batch; 0 means retry forever.
+// PageSize bounds how many pending rows a worker scans per pass.
 type DrainConfig struct {
 	PollInterval   time.Duration `koanf:"poll_interval"    validate:"required,gt=0"`
 	BackoffInitial time.Duration `koanf:"backoff_initial"  validate:"required,gt=0"`
 	BackoffMax     time.Duration `koanf:"backoff_max"      validate:"required,gtefield=BackoffInitial"`
 	BackoffJitter  float64       `koanf:"backoff_jitter"   validate:"gte=0,lte=1"`
 	MaxRetries     int           `koanf:"max_retries"      validate:"gte=0"`
+	PageSize       int           `koanf:"page_size"        validate:"min=0"`
 }
 
 // defaults returns the built-in configuration applied before any override.
@@ -144,7 +146,8 @@ func defaults() *Config {
 			BackoffInitial: 1 * time.Second,
 			BackoffMax:     60 * time.Second,
 			BackoffJitter:  0.2,
-			MaxRetries:     0, // unbounded by default
+			MaxRetries:     0,   // unbounded by default
+			PageSize:       500, // rows per scan pass
 		},
 	}
 }
