@@ -66,6 +66,11 @@ ignore-packages:
   # pnpm/action-setup licensed under MIT
   - pnpm/action-setup
 
+  # pnpm and @pnpm/exe.* are licensed under MIT (https://github.com/pnpm/pnpm/blob/main/LICENSE);
+  # @pnpm/exe.* are platform-specific binary distributions that lack SPDX metadata in the SBOM
+  - pnpm
+  - "@pnpm/exe.*"
+
   # zizmorcore/zizmor-action licensed under MIT
   - zizmorcore/zizmor-action
 
