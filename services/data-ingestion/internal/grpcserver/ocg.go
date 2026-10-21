@@ -82,10 +82,12 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	batch := make([]ingest.IngestRecord, len(req.Messages))
 	for i, env := range req.Messages {
 		batch[i] = ingest.IngestRecord{
-			LogicalArtifactID: env.GetLogicalArtifactId(),
-			SchemaVersion:     env.GetSchemaVersion(),
-			Payload:           env.GetPayload(),
-			ContentType:       env.ContentType,
+			Schema: ingest.SchemaKey{
+				LogicalArtifactType: env.GetLogicalArtifactId(),
+				Version:             env.GetSchemaVersion(),
+			},
+			Payload:     env.GetPayload(),
+			ContentType: env.GetContentType(),
 		}
 		if env.Partition != nil {
 			// Encode partition struct as a stable JSON string used as storage key.
@@ -117,15 +119,11 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 // mapIngestError converts pipeline errors to gRPC status errors.
 func (h *OCGHandler) mapIngestError(err error) error {
 	if errors.Is(err, ingest.ErrOverloaded) {
-		base := status.New(codes.Unavailable, "pipeline overloaded")
-		withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-			RetryDelay: durationpb.New(h.retry.InitialBackoff),
-		})
-		if attachErr != nil {
-			slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", attachErr)
-			return base.Err()
-		}
-		return withRetry.Err()
+		return h.unavailableWithRetry("pipeline overloaded")
+	}
+
+	if errors.Is(err, ingest.ErrUnavailable) {
+		return h.unavailableWithRetry("service unavailable")
 	}
 
 	if errors.Is(err, context.Canceled) {
@@ -137,4 +135,17 @@ func (h *OCGHandler) mapIngestError(err error) error {
 
 	slog.Error("unexpected pipeline error", "err", err)
 	return status.Error(codes.Internal, "internal error")
+}
+
+// unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
+func (s *OCGHandler) unavailableWithRetry(msg string) error {
+	base := status.New(codes.Unavailable, msg)
+	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
+		RetryDelay: durationpb.New(s.retry.InitialBackoff),
+	})
+	if err != nil {
+		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
+		return base.Err()
+	}
+	return withRetry.Err()
 }

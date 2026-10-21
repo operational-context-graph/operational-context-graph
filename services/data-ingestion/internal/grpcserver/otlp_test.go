@@ -43,10 +43,10 @@ import (
 
 // spyIngestor records calls and can be configured to return an error.
 type spyIngestor struct {
-	mu      sync.Mutex
-	calls   [][]ingest.IngestRecord
-	retErr  error
-	retRes  ingest.IngestResult
+	mu     sync.Mutex
+	calls  [][]ingest.IngestRecord
+	retErr error
+	retRes ingest.IngestResult
 }
 
 func (s *spyIngestor) Ingest(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
@@ -223,12 +223,12 @@ func hasRetryInfo(t *testing.T, err error) {
 // ── constructor tests ─────────────────────────────────────────────────────────
 
 func TestNewServer_NilSchemaClient(t *testing.T) {
-	_, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &ingest.NoopIngestor{}, nil)
+	_, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &spyIngestor{}, nil)
 	require.Error(t, err)
 }
 
 func TestNewServer_ValidOTLP(t *testing.T) {
-	srv, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &ingest.NoopIngestor{}, &grpcserver.NoopSchemaRegistryClient{})
+	srv, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &spyIngestor{}, &grpcserver.NoopSchemaRegistryClient{})
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 }
@@ -316,12 +316,12 @@ func TestOTLPLogs_IngestRecordFields(t *testing.T) {
 	batch := spy.lastBatch()
 	require.Len(t, batch, 1)
 	rec := batch[0]
-	assert.Equal(t, "ocg.test", rec.LogicalArtifactID)
-	assert.Equal(t, "2.0.0", rec.SchemaVersion)
+	assert.Equal(t, "ocg.test", rec.Schema.LogicalArtifactType)
+	assert.Equal(t, "2.0.0", rec.Schema.Version)
 	assert.Empty(t, rec.Partition)
 	assert.Nil(t, rec.Watermark)
 	require.NotNil(t, rec.ContentType)
-	assert.Equal(t, "application/json", *rec.ContentType)
+	assert.Equal(t, "application/json", rec.ContentType)
 	assert.NotEmpty(t, rec.Payload)
 	// Payload must be a JSON object with "resource" and "logRecord" keys.
 	var envelope map[string]json.RawMessage
@@ -412,8 +412,8 @@ func TestOTLPLogs_SchemaHeader_PartialOverride(t *testing.T) {
 
 	batch := spy.lastBatch()
 	require.Len(t, batch, 1)
-	assert.Equal(t, "ocg.custom", batch[0].LogicalArtifactID)
-	assert.Equal(t, "1.0.0", batch[0].SchemaVersion, "version must fall back to noop default")
+	assert.Equal(t, "ocg.custom", batch[0].Schema.LogicalArtifactType)
+	assert.Equal(t, "1.0.0", batch[0].Schema.Version, "version must fall back to noop default")
 }
 
 func TestOTLPLogs_DefaultResolvedOnce(t *testing.T) {

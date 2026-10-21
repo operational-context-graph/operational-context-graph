@@ -31,6 +31,7 @@ allow:
   - Zlib
   - CC0-*
   - BSL-1.0
+  - PostgreSQL
 
 # Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
@@ -73,3 +74,16 @@ ignore-packages:
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
+
+  # github.com/opencontainers/go-digest is Apache-2.0 (https://github.com/opencontainers/go-digest/blob/master/LICENSE);
+  # CC-BY-SA-4.0 applies only to documentation, not the Go code.
+  - github.com/opencontainers/go-digest
+
+  # github.com/jackc/pgx is licensed under MIT (https://github.com/jackc/pgx/blob/master/LICENSE)
+  - github.com/jackc/pgx/v5
+
+  # github.com/lib/pq is licensed under MIT (https://github.com/lib/pq/blob/main/LICENSE)
+  - github.com/lib/pq
+
+  # github.com/docker/docker is  licensed under Apache-2.0
+  - github.com/docker/docker

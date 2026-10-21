@@ -291,10 +291,12 @@ func payloadsToRecords(key SchemaKey, payloads [][]byte) []ingest.IngestRecord {
 	records := make([]ingest.IngestRecord, len(payloads))
 	for i, payload := range payloads {
 		records[i] = ingest.IngestRecord{
-			LogicalArtifactID: key.LogicalArtifactID,
-			SchemaVersion:     key.Version,
-			Payload:           payload,
-			ContentType:       &ct,
+			Schema: ingest.SchemaKey{
+				LogicalArtifactType: key.LogicalArtifactID,
+				Version:             key.Version,
+			},
+			Payload:     payload,
+			ContentType: ct,
 		}
 	}
 	return records

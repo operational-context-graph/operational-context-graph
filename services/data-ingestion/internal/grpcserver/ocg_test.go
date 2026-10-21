@@ -7,11 +7,13 @@ package grpcserver_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,15 +27,11 @@ import (
 
 // --- test doubles ---
 
-type fakeIngestor struct {
-	fn func(ctx context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error)
+func noop(t *testing.T) *Ingestor {
+	m := NewIngestor(t)
+	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{}, nil)
+	return m
 }
-
-func (f *fakeIngestor) Ingest(ctx context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-	return f.fn(ctx, batch)
-}
-
-func noop() *ingest.NoopIngestor { return &ingest.NoopIngestor{} }
 
 func defaultLimits() *config.LimitsConfig {
 	return &config.LimitsConfig{MaxMessages: 1000, MaxPayloadBytes: 4 * 1024 * 1024}
@@ -61,38 +59,32 @@ func envelope(payload []byte) *ingestionv1.MessageEnvelope {
 // --- 5.1: nil request → INVALID_ARGUMENT, Ingest not called ---
 
 func TestNilRequestReturnsInvalidArgument(t *testing.T) {
-	called := false
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		called = true
-		return ingest.IngestResult{}, nil
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), nil)
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
-	assert.False(t, called, "Ingest must not be called on nil request")
+	m.AssertNotCalled(t, "Ingest")
 }
 
 // --- 5.2: empty messages → INVALID_ARGUMENT, Ingest not called ---
 
 func TestEmptyMessagesReturnsInvalidArgument(t *testing.T) {
-	called := false
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		called = true
-		return ingest.IngestResult{}, nil
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: nil})
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
-	assert.False(t, called)
+	m.AssertNotCalled(t, "Ingest")
 }
 
 // --- 5.3: exactly MaxMessages accepted; MaxMessages+1 → RESOURCE_EXHAUSTED ---
 
 func TestMaxMessagesBoundary(t *testing.T) {
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: 1024 * 1024 * 1024}
-	srv := newServer(t, noop(), limits, defaultRetry())
+	srv := newServer(t, noop(t), limits, defaultRetry())
 
 	// exactly MaxMessages — should succeed
 	msgs := make([]*ingestionv1.MessageEnvelope, limits.MaxMessages)
@@ -113,7 +105,7 @@ func TestMaxMessagesBoundary(t *testing.T) {
 
 func TestNilPayloadIsAccepted(t *testing.T) {
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: 50}
-	srv := newServer(t, noop(), limits, defaultRetry())
+	srv := newServer(t, noop(t), limits, defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope(nil)},
@@ -124,7 +116,7 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 // --- 5.6: nil LimitsConfig or nil Ingestor at construction → non-nil error ---
 
 func TestNilLimitsAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(), nil, defaultRetry())
+	_, err := grpcserver.NewOCGHandler(noop(t), nil, defaultRetry())
 	require.Error(t, err)
 }
 
@@ -134,16 +126,16 @@ func TestNilIngestorAtConstruction(t *testing.T) {
 }
 
 func TestNilRetryAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(), defaultLimits(), nil)
+	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), nil)
 	require.Error(t, err)
 }
 
 // --- 6.1: ErrOverloaded → UNAVAILABLE + RetryInfo ---
 
 func TestOverloadedErrorReturnsUnavailableWithRetryInfo(t *testing.T) {
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{}, ingest.ErrOverloaded
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, ingest.ErrOverloaded)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
@@ -160,12 +152,11 @@ func TestOverloadedErrorReturnsUnavailableWithRetryInfo(t *testing.T) {
 // --- 6.2: wrapped ErrOverloaded detected via errors.Is ---
 
 func TestWrappedOverloadedDetected(t *testing.T) {
-	// Use errors.Join to wrap ErrOverloaded — errors.Is must still detect it.
-	wrappedSrv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{}, errors.Join(ingest.ErrOverloaded, errors.New("context"))
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.Join(ingest.ErrOverloaded, errors.New("context")))
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := wrappedSrv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -176,9 +167,9 @@ func TestWrappedOverloadedDetected(t *testing.T) {
 // We test this indirectly: ErrOverloaded path must never return a non-UNAVAILABLE code.
 
 func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{}, ingest.ErrOverloaded
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, ingest.ErrOverloaded)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	for i := 0; i < 5; i++ {
 		_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
@@ -189,13 +180,33 @@ func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
 	}
 }
 
-// --- 6.4: unexpected error → INTERNAL; message does not contain original error text ---
+// --- 6.4: ErrUnavailable → UNAVAILABLE ---
+
+func TestErrUnavailableReturnsUnavailable(t *testing.T) {
+	cause := errors.New("connection refused")
+	unavailErr := fmt.Errorf("%w: registry down: %w", ingest.ErrUnavailable, cause)
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, unavailErr)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.NotEmpty(t, st.Details(), "RetryInfo must be attached")
+}
+
+// --- 6.5: unexpected error → INTERNAL; message does not contain original error text ---
 
 func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	const secretMsg = "secret-db-connection-string"
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{}, errors.New(secretMsg)
-	}}, defaultLimits(), defaultRetry())
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.New(secretMsg))
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
@@ -211,9 +222,11 @@ func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 
 func TestPartialRejectionReturnsOK(t *testing.T) {
 	const rejected = 2
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected}, nil
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("a")), envelope([]byte("b")), envelope([]byte("c")), envelope([]byte("d"))},
@@ -223,9 +236,11 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 }
 
 func TestAllRejectedReturnsOK(t *testing.T) {
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		return ingest.IngestResult{Rejected: len(batch)}, nil
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x")), envelope([]byte("y"))},
@@ -240,8 +255,7 @@ func TestCancelledContextOnEntry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(t, noop(), defaultLimits(), defaultRetry())
-	// Handler delegates ctx to Ingestor; NoopIngestor ignores it, so no panic.
+	srv := newServer(t, noop(t), defaultLimits(), defaultRetry())
 	_, _ = srv.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
@@ -249,10 +263,12 @@ func TestCancelledContextOnEntry(t *testing.T) {
 
 func TestContextCancelledDuringIngest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := newServer(t, &fakeIngestor{fn: func(c context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(c context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		cancel()
 		return ingest.IngestResult{}, c.Err()
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	_, err := srv.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
@@ -264,7 +280,7 @@ func TestContextCancelledDuringIngest(t *testing.T) {
 // --- 7.1: concurrent Ingest calls — data race check (run with -race) ---
 // The assertion is the race detector itself; result values are intentionally ignored.
 func TestConcurrentIngest(t *testing.T) {
-	srv := newServer(t, noop(), defaultLimits(), defaultRetry())
+	srv := newServer(t, noop(t), defaultLimits(), defaultRetry())
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -284,10 +300,12 @@ func TestConcurrentIngest(t *testing.T) {
 
 func TestPartitionFieldMapped(t *testing.T) {
 	var captured []ingest.IngestRecord
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
 		return ingest.IngestResult{Accepted: len(batch)}, nil
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	partitionStruct, err := structpb.NewStruct(map[string]interface{}{"key": "val"})
 	require.NoError(t, err)
@@ -306,10 +324,12 @@ func TestPartitionFieldMapped(t *testing.T) {
 
 func TestWatermarkFieldMapped(t *testing.T) {
 	var captured []ingest.IngestRecord
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
 		return ingest.IngestResult{Accepted: len(batch)}, nil
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	watermarkStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(42)})
 	require.NoError(t, err)
@@ -328,10 +348,12 @@ func TestWatermarkFieldMapped(t *testing.T) {
 
 func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 	var captured []ingest.IngestRecord
-	srv := newServer(t, &fakeIngestor{fn: func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
 		return ingest.IngestResult{Accepted: len(batch)}, nil
-	}}, defaultLimits(), defaultRetry())
+	})
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	partitionStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "east"})
 	require.NoError(t, err)

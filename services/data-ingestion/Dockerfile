@@ -19,10 +19,16 @@ COPY services/data-ingestion/ services/data-ingestion/
 RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
+# Goose stage — build the migration CLI independently so it does not affect go.mod.
+FROM golang:1.27 AS goose
+RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
+
 # Runtime stage.
 FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
+COPY --from=goose /go/bin/goose /usr/local/bin/goose
+COPY services/data-ingestion/internal/outbox/migrations /migrations
 EXPOSE 8080 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/data-ingestion"]

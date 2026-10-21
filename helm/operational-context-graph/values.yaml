@@ -4,6 +4,10 @@
 
 global: {}
 
+# Bundled PostgreSQL.
+postgres:
+  enabled: true
+
 data-ingestion:
   enabled: true
   replicaCount: 1
@@ -14,3 +18,15 @@ data-ingestion:
   service:
     type: ClusterIP
     port: 8080
+  # Points at the existing OCG PostgreSQL instance. Set host and the Secret that
+  # holds the password for your environment. The password is never stored here.
+  database:
+    host: ocg-postgres
+    port: 5432
+    name: postgres
+    user: postgres
+    sslmode: disable
+    maxconns: 10
+    passwordSecret:
+      name: postgres-secret
+      key: POSTGRES_PASSWORD
