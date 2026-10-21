@@ -255,10 +255,62 @@ func TestRunListenerRejectsListenerFailure(t *testing.T) {
 
 func TestDrainRefusesNewAdmission(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
+	server.api.GET("/test-admission", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	server.Drain()
 	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/", nil))
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/test-admission", nil))
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+}
+
+func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
+	server := artifactTestServer(artifactFixture())
+	expectedPaths := []string{
+		"/v1/registry",
+		"/v1/releases",
+		"/v1/releases/:schemaVersion",
+		"/v1/releases/:schemaVersion/manifest",
+		"/v1/changes",
+		"/v1/releases/:schemaVersion/artifacts/:kind/:artifactType",
+		"/v1/releases/:schemaVersion/artifacts",
+		"/v1/artifacts/:artifactRevision/metadata",
+		"/v1/artifacts/:artifactRevision/resources/:resourceName",
+		"/v1/artifacts/:artifactRevision",
+		"/v1/resources/:kind/:artifactType/:artifactRevision",
+		"/v1/releases/:schemaVersion/resolve",
+		"/v1/artifact-kinds/:kind/:artifactType/history",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mapping/package",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mapping",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/contexts",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/package",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/content",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/stores",
+		"/v1/releases/:schemaVersion/schemas/:artifactType",
+		"/v1/releases/:schemaVersion/schemas",
+		"/v1/releases/:schemaVersion/source-mappings",
+	}
+
+	routes := make(map[string]struct{})
+	for _, route := range server.engine.Routes() {
+		routes[route.Method+" "+route.Path] = struct{}{}
+		if strings.HasPrefix(route.Path, "/v1/") {
+			assert.Contains(t, []string{http.MethodGet, http.MethodHead}, route.Method)
+		}
+	}
+	for _, path := range expectedPaths {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			_, ok := routes[method+" "+path]
+			assert.Truef(t, ok, "missing %s %s", method, path)
+		}
+	}
+	assert.Len(t, expectedPaths, 22)
+	for _, path := range []string{"/healthz", "/readyz"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			_, ok := routes[method+" "+path]
+			assert.Truef(t, ok, "missing %s %s", method, path)
+		}
+	}
+
+	assert.Len(t, routes, 48)
 }
 
 func TestShutdownForceClosesTransportAfterDeadline(t *testing.T) {

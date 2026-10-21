@@ -85,8 +85,6 @@ func NewWithServices(cfg introspection.Config, checker postgres.ReadinessChecker
 	server.registerReleaseRoutes()
 	server.registerArtifactRoutes()
 	server.registerSchemaRoutes()
-	// Keep a scoped endpoint so lifecycle tests can verify admission.
-	api.GET("/", func(c *gin.Context) { c.Status(http.StatusNotFound) })
 
 	server.engine = engine
 	server.http = &http.Server{
@@ -182,7 +180,7 @@ func (s *Server) readyz(c *gin.Context) {
 
 func (s *Server) admit(c *gin.Context) {
 	if s.draining.Load() {
-		c.Status(http.StatusServiceUnavailable)
+		WriteError(c.Writer, RegistryUnavailable, "", nil, s.cfg.Admission.RetryInterval)
 		c.Abort()
 		return
 	}

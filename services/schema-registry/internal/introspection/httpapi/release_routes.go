@@ -25,16 +25,19 @@ func (s *Server) registerReleaseRoutes() {
 	if s.releases == nil {
 		return
 	}
-	s.api.GET("/registry", s.registry)
-	s.api.HEAD("/registry", s.registry)
-	s.api.GET("/releases", s.listReleases)
-	s.api.HEAD("/releases", s.listReleases)
-	s.api.GET("/releases/:schemaVersion", s.releaseDescriptor)
-	s.api.HEAD("/releases/:schemaVersion", s.releaseDescriptor)
-	s.api.GET("/releases/:schemaVersion/manifest", s.releaseManifest)
-	s.api.HEAD("/releases/:schemaVersion/manifest", s.releaseManifest)
-	s.api.GET("/changes", s.changes)
-	s.api.HEAD("/changes", s.changes)
+	for _, route := range []struct {
+		path    string
+		handler gin.HandlerFunc
+	}{
+		{"/registry", s.registry},
+		{"/releases", s.listReleases},
+		{"/releases/:schemaVersion", s.releaseDescriptor},
+		{"/releases/:schemaVersion/manifest", s.releaseManifest},
+		{"/changes", s.changes},
+	} {
+		s.api.GET(route.path, route.handler)
+		s.api.HEAD(route.path, route.handler)
+	}
 }
 
 type links map[string]string
