@@ -52,10 +52,6 @@ func run() error {
 	}
 	defer pool.Close()
 
-	if err := outbox.Migrate(ctx, pool, "/migrations"); err != nil {
-		return fmt.Errorf("apply outbox migrations: %w", err)
-	}
-
 	httpSrv := httpserver.New(cfg)
 
 	schemaRegistry := schemaregistry.Stub{}
