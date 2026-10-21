@@ -65,7 +65,7 @@ migrate-down: ## Roll back the latest Goose migration using DATABASE_URL
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
 	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(DATABASE_URL)" down
 
-clean:
+clean: ## Clean all build, test, and static analysis artifacts
 	rm -rf $(BUILD_DIR)
 	rm -rf $(COVERAGE_DIR)
 	rm -rf $(CURDIR)/sbom.spdx.json
