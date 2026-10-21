@@ -28,7 +28,7 @@ import (
 
 // envPrefix namespaces environment variables for this service.
 // Double-underscore (__) separates hierarchy levels; single underscore is part of a field name.
-// For example OCG_DI_GRPC__TLS_CERT_FILE maps to the grpc.tls_cert_file key.
+// For example OCG_DI_GRPC__TLS__CERT_FILE maps to the grpc.tls.cert_file key.
 const envPrefix = "OCG_DI_"
 
 // envFileKey is the environment variable that points to an optional config file.
@@ -169,10 +169,10 @@ func LoadFromFile(path string) (*Config, error) {
 	// Map env vars to koanf keys.
 	// Double underscore (__) separates hierarchy levels; single underscore is preserved as part of a field name.
 	// Examples:
-	//   OCG_DI_GRPC__ADDR             -> grpc.addr
-	//   OCG_DI_GRPC__TLS_CERT_FILE    -> grpc.tls_cert_file
-	//   OCG_DI_LIMITS__MAX_MESSAGES   -> limits.max_messages
-	//   OCG_DI_RETRY__INITIAL_BACKOFF -> retry.initial_backoff
+	//   OCG_DI_GRPC__ADDR               -> grpc.addr
+	//   OCG_DI_GRPC__TLS__CERT_FILE     -> grpc.tls.cert_file
+	//   OCG_DI_LIMITS__MAX_MESSAGES     -> limits.max_messages
+	//   OCG_DI_RETRY__INITIAL_BACKOFF   -> retry.initial_backoff
 	transform := func(k, v string) (string, any) {
 		k = strings.TrimPrefix(k, envPrefix)
 		k = strings.ToLower(k)
