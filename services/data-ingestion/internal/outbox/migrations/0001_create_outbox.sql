@@ -2,6 +2,7 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
+-- +goose Up
 CREATE TABLE IF NOT EXISTS data_ingestion_outbox (
     id                    BIGSERIAL PRIMARY KEY,
     target_store          TEXT        NOT NULL,
@@ -18,3 +19,6 @@ CREATE INDEX IF NOT EXISTS data_ingestion_outbox_pending_idx ON data_ingestion_o
 
 -- Resend and delete by pinned batch.
 CREATE INDEX IF NOT EXISTS data_ingestion_outbox_batch_id_idx ON data_ingestion_outbox (batch_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS data_ingestion_outbox;
