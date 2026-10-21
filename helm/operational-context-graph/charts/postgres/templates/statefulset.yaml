@@ -30,6 +30,9 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secretName }}
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           livenessProbe:
             exec:
               command:
