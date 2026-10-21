@@ -152,7 +152,7 @@ The drain SHALL remove a batch's rows from the outbox only after `StoreWriter.Wr
 
 ### Requirement: Per-store back-pressure on overload and unexpected errors
 
-When `StoreWriter.Write` returns the store-overload sentinel, the drain SHALL pause that store and retry the same pinned batch with exponential back-off plus jitter, capped at a configured maximum interval. Any error that is neither the overload sentinel nor a permanent-failure error SHALL be treated the same as overload (pause and retry the same batch). Retries SHALL be unbounded by default. A configured maximum retry count greater than zero SHALL bound the retries for a single batch; when that count is exhausted the drain SHALL log the batch (its `batch_id` and last error) and discard it by deleting its rows, then continue with the next batch. Back-pressure on one store SHALL NOT pause any other store.
+When `StoreWriter.Write` returns the store-overload sentinel, or any error that is neither the overload sentinel nor a permanent-failure error, the drain SHALL pause that store and retry the same pinned batch with exponential back-off plus jitter, capped at a configured maximum interval. Retries SHALL be unbounded by default. Back-pressure on one store SHALL NOT pause any other store.
 
 #### Scenario: Overloaded store pauses and retries the same batch
 
@@ -171,12 +171,6 @@ When `StoreWriter.Write` returns the store-overload sentinel, the drain SHALL pa
 - **THEN** the worker keeps retrying the same pinned batch indefinitely with capped back-off
 - **AND** it never discards the batch
 
-#### Scenario: Exhausting the max-retry count discards the batch
-
-- **WHEN** the max-retry count is a positive N and a batch fails with overload or an unexpected error N times
-- **THEN** the drain logs the batch's `batch_id` and last error and deletes its rows from the outbox
-- **AND** the worker proceeds to the next batch
-
 #### Scenario: Other stores keep draining during a pause
 
 - **WHEN** the `telemetry` store is paused in overload back-off
@@ -193,6 +187,16 @@ When `StoreWriter.Write` returns the store-overload sentinel, the drain SHALL pa
 - **WHEN** the drain is shutting down (context cancelled) while a `Write` is in flight
 - **THEN** the worker stops after the call returns without deleting the batch
 - **AND** the pinned batch is left intact for the next run
+
+### Requirement: Bounded retries and batch discard on exhaustion
+
+A configured maximum retry count greater than zero SHALL bound the retries for a single batch. When that count is exhausted the drain SHALL log the batch's `batch_id` and last error, delete its rows, and continue with the next batch. A count of zero (the default) means unbounded retries.
+
+#### Scenario: Exhausting the max-retry count discards the batch
+
+- **WHEN** the max-retry count is a positive N and a batch fails with overload or an unexpected error N times
+- **THEN** the drain logs the batch's `batch_id` and last error and deletes its rows from the outbox
+- **AND** the worker proceeds to the next batch
 
 ### Requirement: Permanent failure drops the batch and keeps the store live
 
@@ -229,14 +233,24 @@ Outbox contents and delivery progress SHALL survive a restart of Data Ingestion.
 - **WHEN** two distinct pinned `batch_id`s exist for one store at startup
 - **THEN** the worker resends them in ascending `batch_id` order, each as its original immutable membership
 
-### Requirement: StoreWriter contract and limit validation at registration
+### Requirement: StoreWriter interface contract
 
-The drain SHALL depend only on a shared `StoreWriter` contract: it declares the `StoreID` it serves, reports its `BatchLimits` (`N` records, `M` bytes, `T` linger), and writes one immutable batch, signalling acceptance (nil), overload (overload sentinel), or permanent failure (permanent-failure error). The store-overload and permanent-failure sentinels SHALL be distinct from the existing `ingest.ErrOverloaded` (pipeline overload). At registration the drain SHALL reject invalid limits: `N <= 0`, `T <= 0`, negative `M`, or a duplicate `StoreID`.
+The drain SHALL depend only on a shared `StoreWriter` contract: it declares its `StoreID`, reports `BatchLimits` (`N` records, `M` bytes, `T` linger), and writes one immutable batch signalling acceptance (nil), the store-overload sentinel, or a permanent-failure error. Store-overload and permanent-failure sentinels SHALL be distinct from `ingest.ErrOverloaded` and SHALL be matched with `errors.Is`, never by message text.
 
 #### Scenario: Valid StoreWriter registers and drives a worker
 
 - **WHEN** a `StoreWriter` declares a unique `StoreID` and limits `N > 0`, `T > 0`, `M >= 0`
 - **THEN** registration succeeds and a worker is started for its `StoreID`
+
+#### Scenario: Store-overload sentinel is distinct from pipeline overload
+
+- **WHEN** the drain inspects a `Write` error
+- **THEN** it matches the delivery-half overload sentinel, not `ingest.ErrOverloaded`
+- **AND** errors are matched with `errors.Is` / `errors.As`, never by message text
+
+### Requirement: Limit validation at registration
+
+At registration the drain SHALL reject invalid limits: `N <= 0`, `T <= 0`, negative `M`, or a duplicate `StoreID`.
 
 #### Scenario: Zero record limit is rejected
 
@@ -253,12 +267,6 @@ The drain SHALL depend only on a shared `StoreWriter` contract: it declares the 
 - **WHEN** two `StoreWriter`s declare the same `StoreID`
 - **THEN** registration returns an error for the second
 - **AND** only one worker exists for that `StoreID`
-
-#### Scenario: Store-overload sentinel is distinct from pipeline overload
-
-- **WHEN** the drain inspects a `Write` error
-- **THEN** it matches the delivery-half overload sentinel, not `ingest.ErrOverloaded`
-- **AND** errors are matched with `errors.Is` / `errors.As`, never by message text
 
 ### Requirement: Drain configuration validation
 
