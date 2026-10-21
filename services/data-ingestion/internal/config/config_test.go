@@ -458,6 +458,10 @@ func TestLoad(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 9090, cfg.GRPC.Port)
+	assert.Equal(t, "http://telemetry-store:8080", cfg.TelemetryStore.BaseURL)
+	assert.Equal(t, 120*time.Second, cfg.TelemetryStore.Timeout)
+	assert.Equal(t, "http://inventory-store:8080", cfg.InventoryStore.BaseURL)
+	assert.Equal(t, 30*time.Second, cfg.InventoryStore.Timeout)
 }
 
 func TestLoadFromFileInvalidPath(t *testing.T) {

@@ -26,13 +26,17 @@ type BatchLimits struct {
 	MaxLinger  time.Duration
 }
 
-// Validate reports whether the limits are usable by the drain. MaxRecords and
-// MaxLinger must be positive (a zero record count would never flush on size and
-// a zero linger would never bound low-traffic latency). MaxBytes must not be
-// negative; 0 means the byte trigger is disabled.
+// Validate reports whether the limits are usable by the drain. MaxLinger must
+// be positive. MaxRecords must not be negative; 0 means the record-count
+// trigger is disabled. MaxBytes must not be negative; 0 means the byte trigger
+// is disabled. At least one of MaxRecords or MaxBytes must be non-zero so the
+// drain has at least one size trigger in addition to linger.
 func (l BatchLimits) Validate() error {
-	if l.MaxRecords <= 0 {
-		return fmt.Errorf("%w: MaxRecords must be > 0, got %d", ErrInvalidLimits, l.MaxRecords)
+	if l.MaxRecords < 0 {
+		return fmt.Errorf("%w: MaxRecords must be >= 0, got %d", ErrInvalidLimits, l.MaxRecords)
+	}
+	if l.MaxRecords == 0 && l.MaxBytes == 0 {
+		return fmt.Errorf("%w: at least one of MaxRecords or MaxBytes must be > 0", ErrInvalidLimits)
 	}
 	if l.MaxLinger <= 0 {
 		return fmt.Errorf("%w: MaxLinger must be > 0, got %s", ErrInvalidLimits, l.MaxLinger)

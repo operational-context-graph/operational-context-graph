@@ -36,13 +36,15 @@ const envFileKey = envPrefix + "CONFIG_FILE"
 
 // Config is the validated runtime configuration.
 type Config struct {
-	Server   ServerConfig   `koanf:"server"`
-	Logging  LoggingConfig  `koanf:"logging"`
-	Database DatabaseConfig `koanf:"database"`
-	GRPC     GRPCConfig     `koanf:"grpc"`
-	Limits   LimitsConfig   `koanf:"limits"`
-	Retry    RetryConfig    `koanf:"retry"`
-	Drain    DrainConfig    `koanf:"drain"`
+	Server         ServerConfig         `koanf:"server"`
+	Logging        LoggingConfig        `koanf:"logging"`
+	Database       DatabaseConfig       `koanf:"database"`
+	GRPC           GRPCConfig           `koanf:"grpc"`
+	Limits         LimitsConfig         `koanf:"limits"`
+	Retry          RetryConfig          `koanf:"retry"`
+	Drain          DrainConfig          `koanf:"drain"`
+	TelemetryStore TelemetryStoreConfig `koanf:"telemetry_store"`
+	InventoryStore InventoryStoreConfig `koanf:"inventory_store"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -114,6 +116,28 @@ type DrainConfig struct {
 	PageSize       int           `koanf:"page_size"        validate:"min=1"`
 }
 
+// TelemetryStoreConfig holds the connection settings for the Telemetry Store
+// ingestion API used by the telemetry delivery adapter.
+// Base URL is supplied via OCG_DI_TELEMETRY_STORE__BASE_URL.
+type TelemetryStoreConfig struct {
+	BaseURL    string        `koanf:"base_url"    validate:"required,url"`
+	Timeout    time.Duration `koanf:"timeout"`
+	MaxRecords int           `koanf:"max_records" validate:"gte=0"`
+	MaxBytes   int64         `koanf:"max_bytes"   validate:"gte=0"`
+	MaxLinger  time.Duration `koanf:"max_linger"`
+}
+
+// InventoryStoreConfig holds the connection settings for the Inventory Store
+// REST API used by the inventory delivery adapter.
+// Base URL is supplied via OCG_DI_INVENTORY_STORE__BASE_URL.
+type InventoryStoreConfig struct {
+	BaseURL    string        `koanf:"base_url"    validate:"required,url"`
+	Timeout    time.Duration `koanf:"timeout"`
+	MaxRecords int           `koanf:"max_records" validate:"gte=0"`
+	MaxBytes   int64         `koanf:"max_bytes"   validate:"gte=0"`
+	MaxLinger  time.Duration `koanf:"max_linger"`
+}
+
 // defaults returns the built-in configuration applied before any override.
 func defaults() *Config {
 	return &Config{
@@ -148,6 +172,14 @@ func defaults() *Config {
 			BackoffJitter:  0.2,
 			MaxRetries:     0,   // unbounded by default
 			PageSize:       500, // rows per scan pass
+		},
+		TelemetryStore: TelemetryStoreConfig{
+			BaseURL: "http://telemetry-store:8080",
+			Timeout: 120 * time.Second,
+		},
+		InventoryStore: InventoryStoreConfig{
+			BaseURL: "http://inventory-store:8080",
+			Timeout: 30 * time.Second,
 		},
 	}
 }

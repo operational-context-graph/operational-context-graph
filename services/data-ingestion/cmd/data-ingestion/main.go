@@ -27,7 +27,8 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/schemaregistry"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/logstore"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/inventory"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/telemetry"
 )
 
 func main() {
@@ -71,12 +72,25 @@ func run() error {
 		return err
 	}
 
-	// The outbox drain delivers persisted records to the stores. The
-	// LogStoreWriter is a placeholder sink that logs each batch; real store
-	// writers replace it later.
+	// The outbox drain delivers persisted records to the stores.
 	storeRegistry := drain.NewStoreRegistry()
-	if err := storeRegistry.Register(logstore.New(slog.Default())); err != nil {
-		return fmt.Errorf("register store writer: %w", err)
+	if err := storeRegistry.Register(telemetry.New(telemetry.Config{
+		BaseURL:    cfg.TelemetryStore.BaseURL,
+		Timeout:    cfg.TelemetryStore.Timeout,
+		MaxRecords: cfg.TelemetryStore.MaxRecords,
+		MaxBytes:   cfg.TelemetryStore.MaxBytes,
+		MaxLinger:  cfg.TelemetryStore.MaxLinger,
+	})); err != nil {
+		return fmt.Errorf("register telemetry store writer: %w", err)
+	}
+	if err := storeRegistry.Register(inventory.New(inventory.Config{
+		BaseURL:    cfg.InventoryStore.BaseURL,
+		Timeout:    cfg.InventoryStore.Timeout,
+		MaxRecords: cfg.InventoryStore.MaxRecords,
+		MaxBytes:   cfg.InventoryStore.MaxBytes,
+		MaxLinger:  cfg.InventoryStore.MaxLinger,
+	})); err != nil {
+		return fmt.Errorf("register inventory store writer: %w", err)
 	}
 	drainProc := drain.New(outbox.NewReader(pool), storeRegistry, drain.Config{
 		PollInterval:   cfg.Drain.PollInterval,

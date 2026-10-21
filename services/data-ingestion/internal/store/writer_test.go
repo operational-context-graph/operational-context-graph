@@ -29,7 +29,11 @@ func TestBatchLimits_Validate(t *testing.T) {
 			limits: BatchLimits{MaxRecords: 1, MaxBytes: 0, MaxLinger: time.Millisecond},
 		},
 		{
-			name:    "zero record limit rejected",
+			name:   "valid with record trigger disabled and byte trigger set",
+			limits: BatchLimits{MaxRecords: 0, MaxBytes: 500 << 20, MaxLinger: time.Second},
+		},
+		{
+			name:    "both record and byte triggers disabled rejected",
 			limits:  BatchLimits{MaxRecords: 0, MaxBytes: 0, MaxLinger: time.Second},
 			wantErr: true,
 		},
