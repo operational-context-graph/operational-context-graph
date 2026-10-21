@@ -13,6 +13,8 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store"
 )
 
+// This file provides test utility functionality for other test.
+
 // fakeOutbox is an in-memory Outbox for unit tests. It is safe for
 // concurrent use so workers can run against it in goroutines.
 type fakeOutbox struct {
@@ -65,18 +67,6 @@ func (f *fakeOutbox) total() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.rows)
-}
-
-func (f *fakeOutbox) rowsForBatch(batchID int64) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	c := 0
-	for _, r := range f.rows {
-		if r.batchID == batchID {
-			c++
-		}
-	}
-	return c
 }
 
 func (f *fakeOutbox) toPendingRow(r fakeRow) PendingRow {
