@@ -73,11 +73,11 @@ func (s *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		return errors.New("grpcserver: Run is already active on this Server")
 	}
 	defer s.running.Store(false)
+	defer lis.Close()
 
 	// Respect already-cancelled context before serving.
 	select {
 	case <-ctx.Done():
-		_ = lis.Close()
 		return nil
 	default:
 	}

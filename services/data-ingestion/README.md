@@ -67,14 +67,17 @@ Run the commands from the repository root.
 
 ```bash
 # 1. Build the image and load it into the minikube node.
-docker build -t data-ingestion:dev services/data-ingestion
+docker build -f services/data-ingestion/Dockerfile -t data-ingestion:dev .
 minikube image load data-ingestion:dev
 
-# 2. Install the chart with the local override values.
+# 2. Create the PostgreSQL password secret (once per cluster).
+kubectl create secret generic postgres-secret --from-literal=POSTGRES_PASSWORD=<your-password>
+
+# 3. Install the chart with the local override values.
 helm install ocg helm/operational-context-graph \
   -f helm/operational-context-graph/values.local.yaml
 
-# 3. Wait for the pod, then forward a local port to the service.
+# 4. Wait for the pod, then forward a local port to the service.
 kubectl rollout status deployment/ocg-data-ingestion
 kubectl port-forward svc/ocg-data-ingestion 8080:8080
 ```
@@ -94,7 +97,7 @@ See Github [documentation](https://docs.github.com/en/packages/working-with-a-gi
 docker login ghcr.io -u <USER>
 
 # 2. Build the image
-docker build -t ghcr.io/operational-context-graph/data-ingestion:latest services/data-ingestion
+docker build --platform linux/amd64 -t ghcr.io/operational-context-graph/data-ingestion:latest -f services/data-ingestion/Dockerfile .
 
 # 3. Push the image to GHCR
 docker push ghcr.io/operational-context-graph/data-ingestion:latest
