@@ -23,13 +23,91 @@ import (
 
 const maxGeneratedJSONBytes = 64 << 20
 
+// SchemasResponse represents a paginated schema descriptor response.
+type SchemasResponse struct {
+	SchemaVersion string               `json:"schemaVersion"`
+	Items         []descriptorResponse `json:"items"`
+	NextCursor    *string              `json:"nextCursor"`
+	Links         links                `json:"links"`
+}
+
+// PackageSchemaResponse represents a schema document in a source-mapping or schema package response.
+type PackageSchemaResponse struct {
+	Metadata descriptorResponse `json:"metadata"`
+	Document json.RawMessage    `json:"document"`
+}
+
+// SchemaContextsResponse represents the context descriptors for a schema.
+type SchemaContextsResponse struct {
+	SchemaVersion string                  `json:"schemaVersion"`
+	Schema        SchemaReferenceResponse `json:"schema"`
+	Items         []descriptorResponse    `json:"items"`
+	Links         links                   `json:"links"`
+}
+
+// SchemaReferenceResponse represents a schema artifact reference.
+type SchemaReferenceResponse struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+}
+
+// SchemaPackageResponse represents a schema document and its context documents.
+type SchemaPackageResponse struct {
+	SchemaVersion string                  `json:"schemaVersion"`
+	Schema        PackageSchemaResponse   `json:"schema"`
+	Contexts      []PackageSchemaResponse `json:"contexts"`
+	Links         links                   `json:"links"`
+}
+
+// MappingResponse represents a source-mapping descriptor response.
+type MappingResponse struct {
+	Metadata     descriptorResponse          `json:"metadata"`
+	SourceSchema MappingSourceSchemaResponse `json:"sourceSchema"`
+	TargetSchema MappingTargetSchemaResponse `json:"targetSchema"`
+	Cardinality  string                      `json:"cardinality"`
+	Engine       MappingEngineResponse       `json:"engine"`
+	Program      resourceResponse            `json:"program"`
+}
+
+// MappingSourceSchemaResponse represents the source schema for a source mapping.
+type MappingSourceSchemaResponse struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+	Content          string `json:"content"`
+	Metadata         string `json:"metadata"`
+}
+
+// MappingTargetSchemaResponse represents the target schema for a source mapping.
+type MappingTargetSchemaResponse struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+	Content          string `json:"content"`
+	Metadata         string `json:"metadata"`
+	SchemaVersion    string `json:"schemaVersion"`
+}
+
+// MappingEngineResponse represents the engine configuration for a source mapping.
+type MappingEngineResponse struct {
+	ExecutionProfile string `json:"executionProfile"`
+	Language         string `json:"language"`
+	LanguageVersion  string `json:"languageVersion"`
+}
+
+// MappingsResponse represents a paginated source-mapping descriptor response.
+type MappingsResponse struct {
+	SchemaVersion string            `json:"schemaVersion"`
+	Items         []MappingResponse `json:"items"`
+	NextCursor    *string           `json:"nextCursor"`
+	Links         links             `json:"links"`
+}
+
 // MappingPackageResponse represents a source-mapping package response.
 type MappingPackageResponse struct {
 	SchemaVersion string                        `json:"schemaVersion"`
 	Mapping       any                           `json:"mapping"`
 	Program       MappingPackageProgramResponse `json:"program"`
-	SourceSchema  MappingPackageSchemaResponse  `json:"sourceSchema"`
-	TargetSchema  MappingPackageSchemaResponse  `json:"targetSchema"`
+	SourceSchema  PackageSchemaResponse         `json:"sourceSchema"`
+	TargetSchema  PackageSchemaResponse         `json:"targetSchema"`
 	TargetStores  []string                      `json:"targetStores"`
 	Links         links                         `json:"links"`
 }
@@ -44,10 +122,19 @@ type MappingPackageProgramResponse struct {
 	Content   string `json:"content"`
 }
 
-// MappingPackageSchemaResponse represents a schema document in a source-mapping package response.
-type MappingPackageSchemaResponse struct {
-	Metadata descriptorResponse `json:"metadata"`
-	Document json.RawMessage    `json:"document"`
+// SchemaStoresResponse represents the stores associated with a schema.
+type SchemaStoresResponse struct {
+	SchemaVersion string                    `json:"schemaVersion"`
+	Schema        SchemaStoreSchemaResponse `json:"schema"`
+	Stores        []string                  `json:"stores"`
+	Links         links                     `json:"links"`
+}
+
+// SchemaStoreSchemaResponse represents a schema reference in a stores response.
+type SchemaStoreSchemaResponse struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+	SchemaClass      string `json:"schemaClass"`
 }
 
 func (s *Server) registerSchemaRoutes() {
@@ -136,12 +223,12 @@ func (s *Server) schemas(c *gin.Context) {
 	for _, item := range page.Items {
 		items = append(items, descriptor(item, version))
 	}
-	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, struct {
-		SchemaVersion string               `json:"schemaVersion"`
-		Items         []descriptorResponse `json:"items"`
-		NextCursor    *string              `json:"nextCursor"`
-		Links         links                `json:"links"`
-	}{version, items, next, links{"self": "/v1/releases/" + version + "/schemas"}})
+	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, SchemasResponse{
+		SchemaVersion: version,
+		Items:         items,
+		NextCursor:    next,
+		Links:         links{"self": "/v1/releases/" + version + "/schemas"},
+	})
 }
 
 func (s *Server) schemaMetadata(c *gin.Context) {
@@ -197,12 +284,15 @@ func (s *Server) schemaContexts(c *gin.Context) {
 	for _, item := range value.Value.Contexts {
 		items = append(items, descriptor(item, version))
 	}
-	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, struct {
-		SchemaVersion string               `json:"schemaVersion"`
-		Schema        map[string]string    `json:"schema"`
-		Items         []descriptorResponse `json:"items"`
-		Links         links                `json:"links"`
-	}{version, map[string]string{"artifactType": artifactType, "artifactRevision": value.Value.Schema.Artifact.Revision}, items, links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/contexts", "schema": "/v1/releases/" + version + "/schemas/" + artifactType}})
+	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, SchemaContextsResponse{
+		SchemaVersion: version,
+		Schema: SchemaReferenceResponse{
+			ArtifactType:     artifactType,
+			ArtifactRevision: value.Value.Schema.Artifact.Revision,
+		},
+		Items: items,
+		Links: links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/contexts", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
+	})
 }
 
 func parsedDocument(value artifact.Descriptor) (json.RawMessage, error) {
@@ -228,30 +318,30 @@ func (s *Server) schemaPackage(c *gin.Context) {
 		s.writeArtifactError(c, err, SchemaNotInRelease)
 		return
 	}
-	contexts := make([]any, 0, len(value.Value.Contexts))
+	contexts := make([]PackageSchemaResponse, 0, len(value.Value.Contexts))
 	for _, item := range value.Value.Contexts {
 		document, err := parsedDocument(item)
 		if err != nil {
 			s.writeArtifactError(c, err, SchemaNotInRelease)
 			return
 		}
-		contexts = append(contexts, struct {
-			Metadata descriptorResponse `json:"metadata"`
-			Document json.RawMessage    `json:"document"`
-		}{descriptor(item, version), document})
+		contexts = append(contexts, PackageSchemaResponse{
+			Metadata: descriptor(item, version),
+			Document: document,
+		})
 	}
-	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, struct {
-		SchemaVersion string `json:"schemaVersion"`
-		Schema        any    `json:"schema"`
-		Contexts      []any  `json:"contexts"`
-		Links         links  `json:"links"`
-	}{version, struct {
-		Metadata descriptorResponse `json:"metadata"`
-		Document json.RawMessage    `json:"document"`
-	}{descriptor(value.Value.Schema, version), schema}, contexts, links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/package", "content": "/v1/releases/" + version + "/schemas/" + artifactType + "/content"}})
+	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, SchemaPackageResponse{
+		SchemaVersion: version,
+		Schema: PackageSchemaResponse{
+			Metadata: descriptor(value.Value.Schema, version),
+			Document: schema,
+		},
+		Contexts: contexts,
+		Links:    links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/package", "content": "/v1/releases/" + version + "/schemas/" + artifactType + "/content"},
+	})
 }
 
-func enrichedMapping(value artifact.Mapping, version string) any {
+func enrichedMapping(value artifact.Mapping, version string) MappingResponse {
 	program := resourceResponse{Name: value.Detail.ProgramName, Role: "program", Digest: value.Detail.ProgramDigest, Href: "/v1/artifacts/" + value.Descriptor.Artifact.Revision + "/resources/" + value.Detail.ProgramName}
 	for _, resource := range value.Descriptor.Resources {
 		if resource.Name == value.Detail.ProgramName {
@@ -259,14 +349,29 @@ func enrichedMapping(value artifact.Mapping, version string) any {
 			break
 		}
 	}
-	return struct {
-		Metadata     descriptorResponse `json:"metadata"`
-		SourceSchema any                `json:"sourceSchema"`
-		TargetSchema any                `json:"targetSchema"`
-		Cardinality  string             `json:"cardinality"`
-		Engine       any                `json:"engine"`
-		Program      resourceResponse   `json:"program"`
-	}{descriptor(value.Descriptor, version), map[string]string{"artifactType": value.Detail.SourceArtifactType, "artifactRevision": value.Detail.SourceRevision, "metadata": "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType, "content": "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType + "/content"}, map[string]string{"artifactType": value.Detail.TargetArtifactType, "artifactRevision": value.Detail.TargetRevision, "schemaVersion": value.Detail.TargetSchemaVersion, "metadata": "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType, "content": "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType + "/content"}, value.Detail.Cardinality, map[string]string{"language": value.Detail.EngineLanguage, "languageVersion": value.Detail.EngineLanguageVersion, "executionProfile": value.Detail.ExecutionProfile}, program}
+	return MappingResponse{
+		Metadata: descriptor(value.Descriptor, version),
+		SourceSchema: MappingSourceSchemaResponse{
+			ArtifactType:     value.Detail.SourceArtifactType,
+			ArtifactRevision: value.Detail.SourceRevision,
+			Metadata:         "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType,
+			Content:          "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType + "/content",
+		},
+		TargetSchema: MappingTargetSchemaResponse{
+			ArtifactType:     value.Detail.TargetArtifactType,
+			ArtifactRevision: value.Detail.TargetRevision,
+			SchemaVersion:    value.Detail.TargetSchemaVersion,
+			Metadata:         "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType,
+			Content:          "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType + "/content",
+		},
+		Cardinality: value.Detail.Cardinality,
+		Engine: MappingEngineResponse{
+			Language:         value.Detail.EngineLanguage,
+			LanguageVersion:  value.Detail.EngineLanguageVersion,
+			ExecutionProfile: value.Detail.ExecutionProfile,
+		},
+		Program: program,
+	}
 }
 
 func (s *Server) mappings(c *gin.Context) {
@@ -317,7 +422,7 @@ func (s *Server) mappings(c *gin.Context) {
 		s.writeArtifactError(c, err, ReleaseNotFound)
 		return
 	}
-	items := make([]any, 0)
+	items := make([]MappingResponse, 0)
 	matchedTypes := make([]string, 0)
 	seenSources := make(map[string]struct{})
 	for _, item := range result.Value {
@@ -343,12 +448,12 @@ func (s *Server) mappings(c *gin.Context) {
 		}
 		next, items = &token, items[:limit]
 	}
-	s.writeJSON(c, http.StatusOK, result.Current.SchemaVersion, version, struct {
-		SchemaVersion string  `json:"schemaVersion"`
-		Items         []any   `json:"items"`
-		NextCursor    *string `json:"nextCursor"`
-		Links         links   `json:"links"`
-	}{version, items, next, links{"self": "/v1/releases/" + version + "/source-mappings"}})
+	s.writeJSON(c, http.StatusOK, result.Current.SchemaVersion, version, MappingsResponse{
+		SchemaVersion: version,
+		Items:         items,
+		NextCursor:    next,
+		Links:         links{"self": "/v1/releases/" + version + "/source-mappings"},
+	})
 }
 
 func (s *Server) schemaMapping(c *gin.Context) {
@@ -405,11 +510,11 @@ func (s *Server) mappingPackage(c *gin.Context) {
 			Size:      value.Value.Program.Size,
 			Content:   base64.StdEncoding.EncodeToString(value.Value.Program.Bytes),
 		},
-		SourceSchema: MappingPackageSchemaResponse{
+		SourceSchema: PackageSchemaResponse{
 			Metadata: descriptor(value.Value.Source, version),
 			Document: sourceDocument,
 		},
-		TargetSchema: MappingPackageSchemaResponse{
+		TargetSchema: PackageSchemaResponse{
 			Metadata: descriptor(value.Value.Target, version),
 			Document: targetDocument,
 		},
@@ -439,12 +544,16 @@ func (s *Server) schemaStores(c *gin.Context) {
 	for _, entry := range value.Value {
 		stores = append(stores, entry.Store)
 	}
-	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, struct {
-		SchemaVersion string   `json:"schemaVersion"`
-		Schema        any      `json:"schema"`
-		Stores        []string `json:"stores"`
-		Links         links    `json:"links"`
-	}{version, map[string]string{"artifactType": artifactType, "artifactRevision": metadata.Value.Artifact.Revision, "schemaClass": *metadata.Value.Artifact.SchemaClass}, stores, links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/stores", "schema": "/v1/releases/" + version + "/schemas/" + artifactType}})
+	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, SchemaStoresResponse{
+		SchemaVersion: version,
+		Schema: SchemaStoreSchemaResponse{
+			ArtifactType:     artifactType,
+			ArtifactRevision: metadata.Value.Artifact.Revision,
+			SchemaClass:      *metadata.Value.Artifact.SchemaClass,
+		},
+		Stores: stores,
+		Links:  links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/stores", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
+	})
 }
 
 func (s *Server) writeBoundedJSON(c *gin.Context, schema, selected string, value any) {
