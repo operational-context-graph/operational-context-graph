@@ -1,13 +1,13 @@
 # data-ingestion/outbox-persistence Specification
 
 ## Purpose
-The outbox persistence layer is the durable write target of the synchronous ingest pipeline. It provides the concrete `pgx`-backed `OutboxWriter` that atomically writes a batch of canonical records to the PostgreSQL outbox table, owns the outbox-table schema and its migrations, and defines how the service connects to PostgreSQL and reports database health.
+The outbox persistence layer is the durable write target of the synchronous ingest pipeline. It provides the `pgx`-backed `OutboxWriter`. The writer atomically writes a batch of canonical records to the PostgreSQL outbox table. It owns the outbox-table schema and its migrations. It also defines how the service connects to PostgreSQL and reports database health.
 
 ## Requirements
 
 ### Requirement: Atomic batch write to the outbox
 
-The `pgx`-backed `OutboxWriter` SHALL implement `ingest.OutboxWriter` and write all rows of one `Write(ctx, rows)` call in a single transaction. On a nil return every row SHALL be durable; on a non-nil return no row SHALL be visible to any reader. The implementation SHALL NOT expose a `pgx` transaction type across the `ingest.OutboxWriter` interface.
+The `pgx`-backed `OutboxWriter` SHALL implement `ingest.OutboxWriter`. It SHALL write all rows of one `Write(ctx, rows)` call in a single transaction. On a nil return every row SHALL be durable. On a non-nil return no row SHALL be visible to any reader. The implementation SHALL NOT expose a `pgx` transaction type across the `ingest.OutboxWriter` interface.
 
 #### Scenario: Batch committed atomically
 
@@ -35,7 +35,7 @@ The `pgx`-backed `OutboxWriter` SHALL implement `ingest.OutboxWriter` and write 
 
 ### Requirement: Database unavailability surfaces as an error
 
-`Write` SHALL return a non-nil error whenever the database cannot durably accept the batch — connection refused, pool exhausted, statement timeout, or context cancellation. It SHALL NOT silently drop rows or return nil on a failed commit. This lets the pipeline classify the failure as request-level (back-pressure) rather than a record rejection.
+`Write` SHALL return a non-nil error whenever the database cannot durably accept the batch. This covers connection refused, pool exhausted, statement timeout, and context cancellation. It SHALL NOT silently drop rows or return nil on a failed commit. This lets the pipeline classify the failure as request-level rather than a record rejection.
 
 #### Scenario: Connection refused returns an error
 
@@ -57,7 +57,7 @@ The `pgx`-backed `OutboxWriter` SHALL implement `ingest.OutboxWriter` and write 
 
 ### Requirement: Outbox table schema and migrations
 
-The service SHALL own the outbox-table schema as versioned, embedded migrations and apply them to the target database. The table SHALL carry the columns defined by the SDD: `id` (DB-generated monotonic primary key), `target_store`, `logical_artifact_type`, `schema_version`, `payload`, `content_type`, `batch_id` (nullable), and `created_at`. Migrations SHALL be idempotent across restarts and safe when several replicas start concurrently.
+The service SHALL own the outbox-table schema as versioned, embedded migrations. It SHALL apply them to the target database. The table SHALL carry the columns defined by the SDD: `id` (DB-generated monotonic primary key), `target_store`, `logical_artifact_type`, `schema_version`, `payload`, `content_type`, `batch_id` (nullable), and `created_at`. Migrations SHALL be idempotent across restarts and safe when several replicas start concurrently.
 
 #### Scenario: Migrations create the outbox table on first start
 
@@ -85,7 +85,7 @@ The service SHALL own the outbox-table schema as versioned, embedded migrations 
 
 ### Requirement: Canonical record persisted to the correct columns
 
-`Write` SHALL map each `OutboxRecord` to a row so the drain can route and interpret it: `target_store`, `logical_artifact_type`, `schema_version`, `payload`, and `content_type` are written from the record, `id` and `created_at` are set by the database, and `batch_id` is left NULL (pending).
+`Write` SHALL map each `OutboxRecord` to a row so the drain can route and interpret it. `target_store`, `logical_artifact_type`, `schema_version`, `payload`, and `content_type` are written from the record. `id` and `created_at` are set by the database. `batch_id` is left NULL (pending).
 
 #### Scenario: Row carries the resolved target store and canonical identity
 
@@ -100,7 +100,7 @@ The service SHALL own the outbox-table schema as versioned, embedded migrations 
 
 ### Requirement: Database connection configuration
 
-The service SHALL load its PostgreSQL connection settings through the existing layered config (`OCG_DI_DATABASE__*`), with the password supplied only via environment/secret, never a plaintext config value. Required settings absent SHALL fail validation at startup.
+The service SHALL load its PostgreSQL connection settings through the existing layered config (`OCG_DI_DATABASE__*`). The password SHALL be supplied only via environment/secret, never a plaintext config value. Required settings that are absent SHALL fail validation at startup.
 
 #### Scenario: Valid configuration opens a pool
 
