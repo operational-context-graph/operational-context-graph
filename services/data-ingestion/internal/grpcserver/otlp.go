@@ -80,17 +80,13 @@ func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.Resour
 
 	var payloads [][]byte
 	for _, resourceLogs := range rls {
-		resJSON, merr := marshalResourceJSON(resourceLogs.GetResource())
-		if merr != nil {
-			return merr
-		}
 		for _, scopeLogs := range resourceLogs.GetScopeLogs() {
 			for _, logRecord := range scopeLogs.GetLogRecords() {
-				payload, merr := marshalEnvelope(resJSON, "logRecord", logRecord)
+				recordJSON, merr := pjsonOpts.Marshal(logRecord)
 				if merr != nil {
-					return merr
+					return status.Errorf(codes.Internal, "marshal OTLP log record: %v", merr)
 				}
-				payloads = append(payloads, payload)
+				payloads = append(payloads, recordJSON)
 			}
 		}
 	}
