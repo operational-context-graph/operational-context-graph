@@ -44,4 +44,7 @@ spec:
     configMapInfo:
       configMapName: {{ .Release.Name }}-doris-be-config
       resolveKey: be.conf
+    envVars:
+      - name: SKIP_CHECK_ULIMIT
+        value: "true"
 {{- end }}

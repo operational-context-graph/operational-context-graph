@@ -19,7 +19,7 @@ data:
     rpc_port = {{ .Values.feSpec.config.rpcPort }}
     query_port = {{ .Values.feSpec.config.queryPort }}
     edit_log_port = {{ .Values.feSpec.config.editLogPort }}
-    JAVA_OPTS = "{{ .Values.feSpec.config.javaOpts }}"
+    JAVA_OPTS_FOR_JDK_17 = "{{ .Values.feSpec.config.javaOpts }}"
     query_timeout = {{ .Values.feSpec.config.queryTimeout }}
     stream_load_default_timeout_second = {{ .Values.feSpec.config.streamLoadTimeout }}
 {{- end }}
