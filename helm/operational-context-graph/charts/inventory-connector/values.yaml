@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the inventory-connector subchart.
+enabled: true
+
+image:
+  repository: ghcr.io/operational-context-graph/inventory-connector
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+netbox:
+  baseURL: ""
+  pageSize: 1000
+  tokenSecret:
+    name: ""
+    key: token
+
+grpc:
+  endpoint: ""
+  connectorID: "ocg-inventory-connector"
+
+connector:
+  schemaVersion: "0.1.0"
+  # artifactTypes overrides the default endpoint→artifact-type mapping.
+  # Keys are NetBox endpoint paths (e.g. "dcim/devices/"), values are type names
+  # (e.g. "netbox.Device"). Omit to use built-in defaults for all endpoints.
+  artifactTypes: {}
+  endpoints:
+    - "dcim/cable-terminations/"
+    - "dcim/cables/"
+    - "dcim/console-port-templates/"
+    - "dcim/console-ports/"
+    - "dcim/console-server-port-templates/"
+    - "dcim/console-server-ports/"
+    - "dcim/device-bay-templates/"
+    - "dcim/device-bays/"
+    - "dcim/device-roles/"
+    - "dcim/device-types/"
+    - "dcim/devices/"
+    - "dcim/front-port-templates/"
+    - "dcim/front-ports/"
+    - "dcim/interface-templates/"
+    - "dcim/interfaces/"
+    - "dcim/inventory-item-roles/"
+    - "dcim/inventory-item-templates/"
+    - "dcim/inventory-items/"
+    - "dcim/locations/"
+    - "dcim/manufacturers/"
+    - "dcim/module-bay-templates/"
+    - "dcim/module-bays/"
+    - "dcim/module-types/"
+    - "dcim/modules/"
+    - "dcim/platforms/"
+    - "dcim/power-feeds/"
+    - "dcim/power-outlet-templates/"
+    - "dcim/power-outlets/"
+    - "dcim/power-panels/"
+    - "dcim/power-port-templates/"
+    - "dcim/power-ports/"
+    - "dcim/rack-reservations/"
+    - "dcim/rack-roles/"
+    - "dcim/rack-types/"
+    - "dcim/racks/"
+    - "dcim/rear-port-templates/"
+    - "dcim/rear-ports/"
+    - "dcim/regions/"
+    - "dcim/site-groups/"
+    - "dcim/sites/"
+    - "dcim/virtual-chassis/"
+    - "dcim/virtual-device-contexts/"
+    - "ipam/aggregates/"
+    - "ipam/asn-ranges/"
+    - "ipam/asns/"
+    - "ipam/fhrp-group-assignments/"
+    - "ipam/fhrp-groups/"
+    - "ipam/ip-addresses/"
+    - "ipam/ip-ranges/"
+    - "ipam/prefixes/"
+    - "ipam/rirs/"
+    - "ipam/roles/"
+    - "ipam/route-targets/"
+    - "ipam/service-templates/"
+    - "ipam/services/"
+    - "ipam/vlan-groups/"
+    - "ipam/vlans/"
+    - "ipam/vrfs/"
+    - "virtualization/cluster-groups/"
+    - "virtualization/cluster-types/"
+    - "virtualization/clusters/"
+    - "virtualization/interfaces/"
+    - "virtualization/virtual-disks/"
+    - "virtualization/virtual-machines/"
+
+# tls configures mTLS for the gRPC connection.
+# Set enabled: true and provide a secretName referencing a Secret with:
+#   tls.crt  — client certificate PEM
+#   tls.key  — client private key PEM
+tls:
+  enabled: false
+  secretName: ""
+  mountPath: /etc/tls
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""

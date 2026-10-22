@@ -1,13 +1,13 @@
 # data-ingestion/sync-ingest-pipeline Specification
 
 ## Purpose
-The synchronous ingest pipeline is the shared business-logic core of the Data Ingestion service. It validates each record in a batch against its registered schema, normalizes conforming records into the canonical shape, writes each normalized record to the persistent outbox, and returns per-batch rejection counts to the receiving layer so it can report partial success to connectors.
+The synchronous ingest pipeline is the shared business-logic core of the Data Ingestion service. It validates each record in a batch against its registered schema. It normalizes conforming records into the canonical shape. It writes each normalized record to the persistent outbox. It returns per-batch rejection counts to the receiving layer so it can report partial success to connectors.
 
 ## Requirements
 
 ### Requirement: Schema validation per record
 
-The pipeline SHALL validate each record's `payload` against the schema returned by `SchemaRegistryClient.Schema`. A record SHALL be rejected — not written, logged, and counted in `IngestResult.Rejected` — when its payload is non-conforming, or when `Schema` returns an error satisfying `errors.Is(err, ErrNotFound)` (unregistered schema). Any other error from `Schema` is a request-level failure: the pipeline SHALL abort the batch and return a non-nil error so the connector retries.
+The pipeline SHALL validate each record's `payload` against the schema returned by `SchemaRegistryClient.Schema`. A record SHALL be rejected — not written, logged, and counted in `IngestResult.Rejected` — when its payload is non-conforming, or when `Schema` returns an error satisfying `errors.Is(err, ErrNotFound)` (unregistered schema). Any other error from `Schema` is a request-level failure. The pipeline SHALL abort the batch and return a non-nil error so the connector retries.
 
 #### Scenario: Conforming record passes validation
 
@@ -75,7 +75,17 @@ The pipeline SHALL process every record in the batch independently. A validation
 
 ### Requirement: Canonical normalization via source mapping
 
-The pipeline SHALL normalize each validated record to its canonical shape by (1) fetching the source-mapping artifact for its `SchemaKey` from `SchemaRegistryClient.SourceMappings`, then (2) calling `SourceMappingExecutionEngine.Normalize` with that mapping and the record. `Normalize` SHALL return the normalized record as an `IngestRecord` whose `Payload` is canonical JSON and whose `Schema` is the canonical `SchemaKey`. That normalized record SHALL be the value written to the outbox.
+The pipeline SHALL normalize each validated record to its canonical shape. It fetches the source-mapping artifact for its `SchemaKey` from `SchemaRegistryClient.SourceMappings`. It then calls `SourceMappingExecutionEngine.Normalize` with that mapping and the record.
+
+#### Scenario: Source mapping fetched and normalization called
+
+- **WHEN** a record passes schema validation
+- **THEN** the pipeline calls `SchemaRegistryClient.SourceMappings` with the record's `SchemaKey`
+- **AND** calls `SourceMappingExecutionEngine.Normalize` with the returned mapping and the record
+
+### Requirement: Normalized record shape and outbox write
+
+`Normalize` SHALL return the normalized record as an `IngestRecord`. Its `Payload` SHALL be canonical JSON. Its `Schema` SHALL be the canonical `SchemaKey`. That normalized record SHALL be the value written to the outbox.
 
 #### Scenario: Successful normalization
 
@@ -104,7 +114,17 @@ The pipeline SHALL normalize each validated record to its canonical shape by (1)
 
 ### Requirement: Target store resolution
 
-The pipeline SHALL resolve the target store for each normalized record by calling `SchemaRegistryClient.TargetStore` with the normalized record's canonical `SchemaKey` and carry the resolved `StoreID` on the outbox row as `target_store`. The pipeline SHALL NOT hard-code routing decisions. An `ErrNotFound` result is a record-level rejection; any other error is a Schema Registry unavailability and a request-level failure.
+The pipeline SHALL resolve the target store for each normalized record. It calls `SchemaRegistryClient.TargetStore` with the normalized record's canonical `SchemaKey`. It carries the resolved `StoreID` on the outbox row as `target_store`. The pipeline SHALL NOT hard-code routing decisions.
+
+#### Scenario: Target store resolved for normalized record
+
+- **WHEN** a record is successfully normalized
+- **THEN** the pipeline calls `SchemaRegistryClient.TargetStore` with the normalized record's canonical `SchemaKey`
+- **AND** the resolved `StoreID` is set on the outbox row's `target_store` field
+
+### Requirement: Target store error handling
+
+An `ErrNotFound` result from `TargetStore` MUST be treated as a record-level rejection. Any other error MUST be treated as a Schema Registry unavailability and a request-level failure.
 
 #### Scenario: Target store resolved and persisted
 
@@ -126,7 +146,7 @@ The pipeline SHALL resolve the target store for each normalized record by callin
 
 ### Requirement: Request-level failure propagation
 
-`Ingest` SHALL return a non-nil error (request-level failure) when any registry lookup (`Schema`, `SourceMappings`, or `TargetStore`) returns a non-`ErrNotFound` error, or when the outbox write fails. On a request-level failure the receiving layer MUST NOT acknowledge the connector and maps the error to `UNAVAILABLE` (registry or outbox) or `INTERNAL` (unexpected). Record-level rejections (non-conforming payload, `ErrNotFound`, normalization failure) SHALL NOT be request-level failures.
+`Ingest` SHALL return a non-nil error (request-level failure) when any registry lookup (`Schema`, `SourceMappings`, or `TargetStore`) returns a non-`ErrNotFound` error, or when the outbox write fails. On a request-level failure the receiving layer MUST NOT acknowledge the connector. It maps the error to `UNAVAILABLE` (registry or outbox) or `INTERNAL` (unexpected). Record-level rejections (non-conforming payload, `ErrNotFound`, normalization failure) SHALL NOT be request-level failures.
 
 #### Scenario: Schema Registry unavailable is a request-level failure
 
@@ -149,7 +169,7 @@ The pipeline SHALL resolve the target store for each normalized record by callin
 
 ### Requirement: Outbox write before acknowledgement
 
-The pipeline SHALL write all successfully normalized records to the outbox via a single `OutboxWriter.Write(ctx, rows)` call before returning. The write is atomic: on nil all rows are durable; on error none are visible. A non-nil error from `OutboxWriter.Write` SHALL cause `Ingest` to return a non-nil error; the receiving layer MUST NOT acknowledge the connector in that case.
+The pipeline SHALL write all successfully normalized records to the outbox via a single `OutboxWriter.Write(ctx, rows)` call before returning. The write is atomic: on nil all rows are durable; on error none are visible. A non-nil error from `OutboxWriter.Write` SHALL cause `Ingest` to return a non-nil error. The receiving layer MUST NOT acknowledge the connector in that case.
 
 #### Scenario: All normalized records written in one atomic call before return
 
