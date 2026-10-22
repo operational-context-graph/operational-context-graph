@@ -11,6 +11,9 @@ dependencies:
   - name: data-ingestion
     version: 0.1.0
     condition: data-ingestion.enabled
+  - name: telemetry-store
+    version: 0.1.0
+    condition: telemetry-store.enabled
   - name: postgres
     version: 0.1.0
     condition: postgres.enabled

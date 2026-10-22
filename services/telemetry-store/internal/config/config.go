@@ -1,0 +1,76 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package config
+
+import (
+	"fmt"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/knadh/koanf/providers/env/v2"
+	"github.com/knadh/koanf/v2"
+)
+
+// Config holds all runtime configuration for telemetry-store.
+type Config struct {
+	HTTPPort                string `koanf:"HTTP_PORT"                  validate:"required"`
+	DorisDSN                string `koanf:"DORIS_DSN"                  validate:"required"`
+	DorisStreamLoadURL      string `koanf:"DORIS_STREAM_LOAD_URL"      validate:"required,url"`
+	DorisStreamLoadUser     string `koanf:"DORIS_STREAM_LOAD_USER"     validate:"required"`
+	DorisStreamLoadPassword string `koanf:"DORIS_STREAM_LOAD_PASSWORD" validate:"required"`
+	LogLevel                string `koanf:"LOG_LEVEL"`
+	DorisBuckets            string `koanf:"DORIS_BUCKETS"`
+	DorisReplicationNum     string `koanf:"DORIS_REPLICATION_NUM"`
+	MaxIngestBodyBytes      int64  `koanf:"MAX_INGEST_BODY_BYTES"`
+}
+
+// MigratorConfig holds runtime configuration for the migrate command.
+type MigratorConfig struct {
+	DorisDSN            string `koanf:"DORIS_DSN"           validate:"required"`
+	DorisReplicationNum string `koanf:"DORIS_REPLICATION_NUM"`
+	DorisBuckets        string `koanf:"DORIS_BUCKETS"`
+}
+
+// LoadMigrator reads migrator configuration from environment variables and validates it.
+func LoadMigrator() (*MigratorConfig, error) {
+	k := koanf.New(".")
+	if err := k.Load(env.Provider(".", env.Opt{}), nil); err != nil {
+		return nil, fmt.Errorf("load env config: %w", err)
+	}
+	var cfg MigratorConfig
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if cfg.DorisReplicationNum == "" {
+		cfg.DorisReplicationNum = "3"
+	}
+	if cfg.DorisBuckets == "" {
+		cfg.DorisBuckets = "10"
+	}
+	if err := validator.New().Struct(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	return &cfg, nil
+}
+
+// Load reads configuration from environment variables and validates it.
+func Load() (*Config, error) {
+	k := koanf.New(".")
+	if err := k.Load(env.Provider(".", env.Opt{}), nil); err != nil {
+		return nil, fmt.Errorf("load env config: %w", err)
+	}
+	var cfg Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "info"
+	}
+	if cfg.MaxIngestBodyBytes <= 0 {
+		cfg.MaxIngestBodyBytes = 10 * 1024 * 1024 * 1024
+	}
+	if err := validator.New().Struct(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	return &cfg, nil
+}
