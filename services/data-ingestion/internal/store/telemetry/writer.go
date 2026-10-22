@@ -141,32 +141,20 @@ func (w *Writer) handleResponse(resp *http.Response, label string) error {
 		return fmt.Errorf("%w: telemetry writer: parse response: %w", store.ErrOverloaded, err)
 	}
 
-	switch result.Status {
-	case "Success":
-		if result.NumberFilteredRows > 0 {
-			slog.Warn("telemetry writer: store filtered rows — silent data loss",
-				"label", label,
-				"filtered_rows", result.NumberFilteredRows,
-				"error_url", result.ErrorURL,
-			)
-		}
-		return nil
-	case "Label Already Exists":
-		return nil
-	case "Publish Timeout":
-		return nil
-	case "Fail":
-		return &store.PermanentError{Reason: fmt.Sprintf("store rejected batch (label=%s): %s", label, result.Status)}
-	default:
-		return fmt.Errorf("%w: telemetry writer: unexpected status %q (label=%s)", store.ErrOverloaded, result.Status, label)
+	if result.FilteredRows > 0 {
+		slog.Warn("telemetry writer: store filtered rows — silent data loss",
+			"label", label,
+			"filtered_rows", result.FilteredRows,
+			"error_url", result.ErrorURL,
+		)
 	}
+	return nil
 }
 
 type storeResponse struct {
-	Status             string `json:"Status"`
-	NumberLoadedRows   int64  `json:"NumberLoadedRows"`
-	NumberFilteredRows int64  `json:"NumberFilteredRows"`
-	ErrorURL           string `json:"ErrorURL"`
+	LoadedRows   int64  `json:"loaded_rows"`
+	FilteredRows int64  `json:"filtered_rows"`
+	ErrorURL     string `json:"error_url"`
 }
 
 func groupBySignal(recs []store.Record) (map[string][]store.Record, error) {
