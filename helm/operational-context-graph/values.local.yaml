@@ -15,3 +15,24 @@ data-ingestion:
     repository: data-ingestion
     tag: dev
     pullPolicy: Never
+
+inventory-connector:
+  enabled: true
+  image:
+    repository: inventory-connector
+    tag: dev
+    pullPolicy: Never
+  netbox:
+    baseURL: "http://host.docker.internal:8081"
+    pageSize: 1000
+    tokenSecret:
+      name: netbox-token
+      key: token
+  grpc:
+    endpoint: "ocg-data-ingestion:9090"
+    connectorID: "ocg-inventory-connector"
+  connector:
+    schemaVersion: "0.1.0"
+    endpoints:
+      - "dcim/sites/"
+      - "dcim/device-types/"

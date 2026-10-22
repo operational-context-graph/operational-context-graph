@@ -1,0 +1,42 @@
+---
+title: OCG Inventory Connector — Internal Component Interaction
+---
+flowchart TD
+    subgraph cmd ["cmd/connector"]
+        MAIN["main.go"]
+    end
+
+    subgraph config ["internal/config"]
+        CFG["Config"]
+    end
+
+    subgraph netbox ["internal/netbox"]
+        CLIENT["HTTPClient"]
+        ENDPOINTS["DefaultEndpoints"]
+    end
+
+    subgraph envelope ["internal/envelope"]
+        ENV["Message builder"]
+    end
+
+    subgraph runner ["internal/runner"]
+        ORCH["Connector"]
+    end
+
+    subgraph publisher ["internal/publisher"]
+        PUB["Publisher interface"]
+        GRPC["GRPCPublisher"]
+        STUB["StubPublisher"]
+    end
+
+    MAIN --> CFG
+    MAIN --> ORCH
+
+    ORCH --> CLIENT
+    ORCH --> ENV
+    ORCH --> PUB
+
+    PUB --> GRPC
+    PUB --> STUB
+
+    ORCH --> ENDPOINTS

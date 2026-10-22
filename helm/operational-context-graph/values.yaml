@@ -30,3 +30,18 @@ data-ingestion:
     passwordSecret:
       name: postgres-secret
       key: POSTGRES_PASSWORD
+
+inventory-connector:
+  enabled: true
+  image:
+    repository: ghcr.io/operational-context-graph/inventory-connector
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  netbox:
+    baseURL: ""
+    tokenSecret:
+      name: ""
+      key: token
+  grpc:
+    endpoint: ""
+    connectorID: "ocg-inventory-connector"

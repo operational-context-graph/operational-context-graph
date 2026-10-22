@@ -14,6 +14,9 @@ dependencies:
   - name: telemetry-store
     version: 0.1.0
     condition: telemetry-store.enabled
+  - name: inventory-connector
+    version: 0.1.0
+    condition: inventory-connector.enabled
   - name: postgres
     version: 0.1.0
     condition: postgres.enabled
