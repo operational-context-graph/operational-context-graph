@@ -25,7 +25,7 @@ type Stub struct{}
 
 func (s *Stub) Normalize(_ context.Context, _ ingest.SourceMapping, record ingest.IngestRecord) ([]ingest.IngestRecord, error) {
 	switch record.Schema.LogicalArtifactType {
-	case "netbox.Device":
+	case "netbox.device":
 		return normalizeNetboxDevice(record)
 	case "generic.log":
 		return normalizeOctobusLog(record)
@@ -71,13 +71,14 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_chassis", chassis)
@@ -119,13 +120,14 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_network_device", nd)
@@ -262,19 +264,16 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 		"severity":           severity,
 		"body":               body,
 		"resource_attributes": map[string]any{
-			"host.name":    hostName,
-			"cluster.name": getString(inner, "sap.ocb.cluster.name"),
-			"tenant.id":    getString(inner, "sap.ocb.tenant.id"),
+			"host.name": hostName,
 		},
-		"attributes": map[string]any{
+		"attributes": map[string]any{},
+		"extensions": map[string]any{
 			"syslog_facility":      getString(inner, "syslog_facility"),
 			"syslog_pri":           getPath(inner, "syslog_pri"),
 			"syslog_severity_code": getPath(inner, "syslog_severity_code"),
 			"tags":                 tags,
-		},
-		"extensions": map[string]any{
-			"event_hash": recordID,
-			"fqdn":       getString(inner, "fqdn"),
+			"event_hash":           recordID,
+			"fqdn":                 getString(inner, "fqdn"),
 		},
 	}
 

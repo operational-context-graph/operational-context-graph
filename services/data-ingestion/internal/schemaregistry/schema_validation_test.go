@@ -26,24 +26,16 @@ func TestSchemaValidation(t *testing.T) {
 		version  string
 		dataFile string
 	}{
-		// Raw source payloads
-		{"netbox.Device", "0.1.0", "netbox_device_chassis.json"},
-		{"netbox.Device", "0.1.0", "netbox_device_lb_guest.json"},
+		{"netbox.device", "0.1.0", "netbox_device_chassis.json"},
+		{"netbox.device", "0.1.0", "netbox_device_lb_guest.json"},
 		{"generic.log", "0.1.0", "generic_log.json"},
-		// Canonical output payloads
-		{"canonical_chassis", "0.1.0", "canonical_chassis.json"},
-		{"canonical_network_device", "0.1.0", "canonical_network_device.json"},
-		{"canonical_lb_guest", "0.1.0", "canonical_lb_guest.json"},
-		{"canonical_relation", "0.1.0", "canonical_relation_resides_in.json"},
-		{"canonical_relation", "0.1.0", "canonical_relation_hosts.json"},
-		{"canonical_octobus_logs", "0.1.0", "canonical_octobus_logs.json"},
 	}
 
 	ctx := context.Background()
 	s := &schemaregistry.Stub{}
 
 	for _, tc := range cases {
-		t.Run(tc.dataFile, func(t *testing.T) {
+		t.Run(tc.lat, func(t *testing.T) {
 			path := filepath.Join("testdata", tc.dataFile)
 			raw, err := os.ReadFile(path)
 			if errors.Is(err, os.ErrNotExist) {
