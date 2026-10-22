@@ -1,0 +1,12 @@
+dependencies:
+- name: data-ingestion
+  repository: ""
+  version: 0.1.0
+- name: doris-operator
+  repository: https://charts.selectdb.com
+  version: 25.8.0
+- name: doris
+  repository: ""
+  version: 0.1.0
+digest: sha256:83f208e3ebcf1551e8040955ec5b2c358b3f30ab0f4b724813e5811b8d621750
+generated: "2026-10-21T17:14:05.224711+02:00"
