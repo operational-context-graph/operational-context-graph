@@ -20,16 +20,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
 
@@ -894,16 +891,25 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		})
 	}
 
-	t.Run("expired cursor is rejected", func(t *testing.T) {
+	t.Run("cursor remains valid without expiry", func(t *testing.T) {
 		snapshot := artifactFixture()
-		snapshot.history = []model.ReleaseArtifact{{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 1}}
+		snapshot.current = model.CurrentState{SchemaVersion: "2.0.0", ActivationSequence: 2, SnapshotSequence: 2}
+		snapshot.releases["2.0.0"] = model.Release{SchemaVersion: "2.0.0", ActivationSequence: 2}
+		snapshot.history = []model.ReleaseArtifact{
+			{SchemaVersion: "2.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 2},
+			{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 1},
+		}
 		server := artifactTestServer(snapshot)
-		server.cursors, _ = pagination.New(pagination.Key{ID: "expired", Secret: make([]byte, 32), Deadline: time.Now().Add(-time.Second)}, nil)
-		token, err := server.cursors.Encode(pagination.Payload{Resource: "artifact-history", Limit: 100, Sort: "activation-desc", Filters: map[string]string{"kind": "schema", "artifactType": "device"}, Last: "1", Snapshot: "1"})
-		require.NoError(t, err)
-		response := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?cursor="+url.QueryEscape(token))
-		assert.Equal(t, http.StatusGone, response.Code)
-		assert.Contains(t, response.Body.String(), `"code":"cursor-expired"`)
+		first := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1")
+		require.Equal(t, http.StatusOK, first.Code)
+		var page struct {
+			NextCursor *string `json:"nextCursor"`
+		}
+		require.NoError(t, json.Unmarshal(first.Body.Bytes(), &page))
+		require.NotNil(t, page.NextCursor)
+		response := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1&cursor="+url.QueryEscape(*page.NextCursor))
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.NotContains(t, response.Body.String(), `"cursor-expired"`)
 	})
 }
 
@@ -943,7 +949,6 @@ func fixtureBytes(bytes []byte, mediaType string) model.ByteDescriptor {
 func artifactTestServer(snapshot *artifactTestSnapshot) *Server {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 64
-	cfg.Cursor.ActiveKey = introspection.CursorKey{ID: "test", Secret: string(make([]byte, 32)), Deadline: time.Now().Add(time.Hour)}
 	reader := artifactTestReader{snapshot: snapshot}
 	return NewWithServices(cfg, &fakeChecker{}, release.New(reader), artifact.New(reader))
 }

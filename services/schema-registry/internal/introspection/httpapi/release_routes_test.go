@@ -18,13 +18,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gowebpki/jcs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
@@ -282,7 +280,7 @@ func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 		"schemas":        "/v1/releases/2.0.0/schemas",
 		"sourceMappings": "/v1/releases/2.0.0/source-mappings",
 	}, firstPage.Items[0].Links)
-	// Simulate externally supplied later state. The signed cursor keeps the
+	// Simulate externally supplied later state. The unsigned cursor keeps the
 	// second page bound to the original snapshot ceiling of two.
 	snapshot.releases = append([]model.Release{{SchemaVersion: "3.0.0", ActivationSequence: 3}}, snapshot.releases...)
 	response = httptest.NewRecorder()
@@ -388,7 +386,6 @@ func TestReleaseValidationErrorsReportNoActiveRelease(t *testing.T) {
 			}
 		})
 	}
-	server.cursors, _ = pagination.New(pagination.Key{ID: "expired", Secret: make([]byte, 32), Deadline: time.Now().Add(-time.Second)}, nil)
 	token, err := server.cursors.Encode(pagination.Payload{Resource: "releases", Limit: 100, Sort: "activation-desc", Filters: map[string]string{}, Last: "1", Snapshot: "1"})
 	require.NoError(t, err)
 	response := httptest.NewRecorder()
@@ -398,16 +395,15 @@ func TestReleaseValidationErrorsReportNoActiveRelease(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"code":"no-active-release"`)
 }
 
-func TestReleaseCollectionRejectsExpiredCursor(t *testing.T) {
+func TestReleaseCollectionAcceptsCursorAfterElapsedTime(t *testing.T) {
 	server := releaseTestServer(&releaseTestSnapshot{current: model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1}, releases: []model.Release{{SchemaVersion: "1.0.0", ActivationSequence: 1}}})
-	server.cursors, _ = pagination.New(pagination.Key{ID: "expired", Secret: make([]byte, 32), Deadline: time.Now().Add(-time.Second)}, nil)
 	token, err := server.cursors.Encode(pagination.Payload{Resource: "releases", Limit: 1, Sort: "activation-desc", Filters: map[string]string{}, Last: "1", Snapshot: "1"})
 	require.NoError(t, err)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/releases?limit=1&cursor="+token, nil))
-	assert.Equal(t, http.StatusGone, response.Code)
+	assert.Equal(t, http.StatusOK, response.Code)
 	assert.Equal(t, "1.0.0", response.Header().Get("Schema-Version"))
-	assert.Contains(t, response.Body.String(), `"code":"cursor-expired"`)
+	assert.NotContains(t, response.Body.String(), `"cursor-expired"`)
 }
 
 func TestManifestSupportsGzipAndRejectsNoncanonicalBytes(t *testing.T) {
@@ -692,7 +688,6 @@ func serveStatus(server *Server, path string) int {
 func releaseTestServer(snapshot *releaseTestSnapshot) *Server {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 64
-	cfg.Cursor.ActiveKey = introspection.CursorKey{ID: "test", Secret: string(make([]byte, 32)), Deadline: time.Now().Add(time.Hour)}
 	return NewWithReleaseService(cfg, &fakeChecker{}, release.New(releaseTestReader{snapshot: snapshot}))
 }
 func mustTestManifest(t *testing.T) []byte {

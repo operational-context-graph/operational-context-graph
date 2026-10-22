@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Supply database.url and cursor keys through secret-backed environment variables.
+# Supply database.url through secret-backed environment variables.
 server:
   host: 0.0.0.0
   port: 8081

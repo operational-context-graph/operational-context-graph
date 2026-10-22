@@ -2,115 +2,75 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package pagination implements signed, stateless keyset cursors.
+// Package pagination provides unsigned stateless keyset cursors.
+//
+// Pagination cursors are opaque, unsigned, unpadded Base64url-encoded JSON. They do not expire and
+// have no signing-key or rotation configuration. The service validates every decoded value, request
+// binding, and activated snapshot before use. A valid caller-constructed cursor receives the same
+// visibility and service limits as a server-issued cursor. Tokens provide no cryptographic tamper
+// detection.
 package pagination
 
 import (
 	"bytes"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
 )
 
 const (
-	maxTokenBytes   = 8 * 1024
-	maxPreviousKeys = 3
-	cursorVersion   = 1
+	maxTokenBytes = 8 * 1024
+	cursorVersion = 1
 )
 
-var (
-	ErrInvalid = errors.New("invalid cursor")
-	ErrExpired = errors.New("cursor expired")
-)
+var ErrInvalid = errors.New("invalid cursor")
 
-// Key is one non-secret cursor-signing key identifier and its secret material.
-type Key struct {
-	ID       string
-	Secret   []byte
-	Deadline time.Time
-}
-
-// Payload contains the complete signed keyset state.
+// Payload contains complete untrusted keyset state. The calling service MUST
+// validate its snapshot against visible read-model data before using it.
 type Payload struct {
 	Version  int               `json:"v"`
-	KeyID    string            `json:"k"`
 	Resource string            `json:"r"`
 	Filters  map[string]string `json:"f"`
 	Limit    int               `json:"l"`
 	Sort     string            `json:"s"`
 	Last     string            `json:"a"`
 	Snapshot string            `json:"n"`
-	Deadline time.Time         `json:"d"`
 }
 
-// Codec is immutable after construction and safe for concurrent Encode and
-// Decode calls. Tests can replace now before starting concurrent callers.
-type Codec struct {
-	active Key
-	keys   map[string]Key
-	now    func() time.Time
-}
+// Codec is safe for concurrent Encode and Decode calls.
+type Codec struct{}
 
-// New creates a codec with one active key and at most three previous keys.
-func New(active Key, previous []Key) (*Codec, error) {
-	if !validKey(active) || len(previous) > maxPreviousKeys {
-		return nil, ErrInvalid
-	}
-	active = cloneKey(active)
-	keys := map[string]Key{active.ID: active}
-	for _, key := range previous {
-		if !validKey(key) {
-			return nil, ErrInvalid
-		}
-		if _, found := keys[key.ID]; found {
-			return nil, ErrInvalid
-		}
-		key = cloneKey(key)
-		keys[key.ID] = key
-	}
-	return &Codec{active: active, keys: keys, now: time.Now}, nil
-}
+// New creates an unsigned cursor codec.
+func New() *Codec { return &Codec{} }
 
-// Encode creates a canonical, HMAC-SHA-256 signed cursor with the active key.
+// Encode creates a canonical versioned JSON cursor with unpadded Base64url.
 func (c *Codec) Encode(value Payload) (string, error) {
 	if c == nil || !validPayloadInput(value) {
 		return "", ErrInvalid
 	}
 	value.Version = cursorVersion
-	value.KeyID = c.active.ID
 	value.Filters = cloneFilters(value.Filters)
-	value.Deadline = c.active.Deadline
 	data, err := json.Marshal(value)
 	if err != nil || len(data) > maxTokenBytes {
 		return "", ErrInvalid
 	}
-	signature := sign(c.active.Secret, data)
-	token := base64.RawURLEncoding.EncodeToString(data) + "." + base64.RawURLEncoding.EncodeToString(signature)
+	token := base64.RawURLEncoding.EncodeToString(data)
 	if len(token) > maxTokenBytes {
 		return "", ErrInvalid
 	}
 	return token, nil
 }
 
-// Decode verifies and binds a cursor to the request's effective parameters.
+// Decode validates a cursor and binds it to effective request parameters.
 func (c *Codec) Decode(token string, expected Payload) (Payload, error) {
-	if c == nil || len(token) == 0 || len(token) > maxTokenBytes || strings.Count(token, ".") != 1 || !validExpected(expected) {
+	if c == nil || token == "" || len(token) > maxTokenBytes || !validExpected(expected) {
 		return Payload{}, ErrInvalid
 	}
-	parts := strings.SplitN(token, ".", 2)
-	data, err := base64.RawURLEncoding.DecodeString(parts[0])
+	data, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(data) == 0 || len(data) > maxTokenBytes {
-		return Payload{}, ErrInvalid
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || len(signature) != sha256.Size {
 		return Payload{}, ErrInvalid
 	}
 	value, err := parsePayload(data)
@@ -121,31 +81,11 @@ func (c *Codec) Decode(token string, expected Payload) (Payload, error) {
 	if err != nil || !bytes.Equal(data, canonical) {
 		return Payload{}, ErrInvalid
 	}
-	key, found := c.keys[value.KeyID]
-	if !found || !hmac.Equal(sign(key.Secret, data), signature) {
-		return Payload{}, ErrInvalid
-	}
-	if !value.Deadline.Equal(key.Deadline) {
-		return Payload{}, ErrInvalid
-	}
-	if !c.now().Before(value.Deadline) {
-		return Payload{}, ErrExpired
-	}
 	if value.Resource != expected.Resource || value.Limit != expected.Limit || value.Sort != expected.Sort || !sameFilters(value.Filters, expected.Filters) {
 		return Payload{}, ErrInvalid
 	}
 	value.Filters = cloneFilters(value.Filters)
 	return value, nil
-}
-
-func validKey(key Key) bool {
-	return key.ID != "" && len(key.Secret) >= sha256.Size && !key.Deadline.IsZero()
-}
-
-func cloneKey(key Key) Key {
-	key.Secret = append([]byte(nil), key.Secret...)
-	key.Deadline = key.Deadline.UTC()
-	return key
 }
 
 func validPayloadInput(value Payload) bool {
@@ -157,8 +97,8 @@ func validExpected(value Payload) bool {
 }
 
 func parsePayload(data []byte) (Payload, error) {
-	object, err := strictjson.Object(data)
-	if err != nil || strictjson.RejectUnknownFields(object, "v", "k", "r", "f", "l", "s", "a", "n", "d") != nil || len(object) != 9 {
+	object, err := strictObject(data)
+	if err != nil || len(object) != 7 {
 		return Payload{}, ErrInvalid
 	}
 	version, ok := integer(object["v"])
@@ -167,10 +107,6 @@ func parsePayload(data []byte) (Payload, error) {
 	}
 	limit, ok := integer(object["l"])
 	if !ok {
-		return Payload{}, ErrInvalid
-	}
-	keyID, ok := object["k"].(string)
-	if !ok || keyID == "" {
 		return Payload{}, ErrInvalid
 	}
 	resource, ok := object["r"].(string)
@@ -189,23 +125,23 @@ func parsePayload(data []byte) (Payload, error) {
 	if !ok || snapshot == "" {
 		return Payload{}, ErrInvalid
 	}
-	deadlineText, ok := object["d"].(string)
-	if !ok {
-		return Payload{}, ErrInvalid
-	}
-	deadline, err := time.Parse(time.RFC3339Nano, deadlineText)
-	if err != nil {
-		return Payload{}, ErrInvalid
-	}
 	filters, ok := stringMap(object["f"])
 	if !ok {
 		return Payload{}, ErrInvalid
 	}
-	value := Payload{Version: version, KeyID: keyID, Resource: resource, Filters: filters, Limit: limit, Sort: sort, Last: last, Snapshot: snapshot, Deadline: deadline.UTC()}
+	value := Payload{Version: version, Resource: resource, Filters: filters, Limit: limit, Sort: sort, Last: last, Snapshot: snapshot}
 	if !validPayloadInput(value) {
 		return Payload{}, ErrInvalid
 	}
 	return value, nil
+}
+
+func strictObject(data []byte) (map[string]any, error) {
+	object, err := strictjson.Object(data)
+	if err != nil || strictjson.RejectUnknownFields(object, "v", "r", "f", "l", "s", "a", "n") != nil {
+		return nil, ErrInvalid
+	}
+	return object, nil
 }
 
 func integer(value any) (int, bool) {
@@ -231,13 +167,6 @@ func stringMap(value any) (map[string]string, bool) {
 		filters[key] = text
 	}
 	return filters, true
-}
-
-func sign(secret, data []byte) []byte {
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte("ocg-schema-registry-cursor-v1\x00"))
-	_, _ = mac.Write(data)
-	return mac.Sum(nil)
 }
 
 func cloneFilters(filters map[string]string) map[string]string {

@@ -60,14 +60,20 @@ transport contract.
 
 Start from `configs/schema-introspection-api.example.yaml`. The loader applies
 built-in defaults, optional YAML, and `OCG_SCHEMA_INTROSPECTION_` environment
-overrides in that order. Supply database credentials and cursor keys through a
-secret-backed environment or mounted secret. Do not store them in this
-repository.
+overrides in that order. Supply database credentials through a secret-backed
+environment or mounted secret. Do not store them in this repository.
 
 The configuration validates positive timeouts, a positive `/v1` admission
 limit, reserved readiness capacity, verified PostgreSQL Transport Layer
-Security (TLS), bounded cursor keys, and 256-bit signing keys before listening.
-Production PostgreSQL connections require peer and hostname verification.
+Security (TLS) before listening. Production PostgreSQL connections require peer
+and hostname verification.
+
+Pagination cursors are opaque, unsigned, unpadded Base64url-encoded JSON. They
+do not expire and have no signing-key or rotation configuration. The service
+validates every decoded value, request binding, and activated snapshot before
+use. A valid caller-constructed cursor receives the same visibility and service
+limits as a server-issued cursor. Tokens provide no cryptographic tamper
+detection.
 
 ## Storage, trust, and recovery
 

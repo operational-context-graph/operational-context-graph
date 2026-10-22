@@ -6,7 +6,6 @@
 package introspection
 
 import (
-	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -24,10 +23,6 @@ import (
 const (
 	envPrefix  = "OCG_SCHEMA_INTROSPECTION_"
 	envFileKey = envPrefix + "CONFIG_FILE"
-
-	maxPreviousKeys = 3
-	// maxCursorKeyLifetime limits the replay window after a key compromise.
-	maxCursorKeyLifetime = 24 * time.Hour
 )
 
 // Serviceability limits are fixed by the version 1 contract.
@@ -45,7 +40,6 @@ type Config struct {
 	Server    ServerConfig    `koanf:"server"`
 	Database  DatabaseConfig  `koanf:"database"`
 	Admission AdmissionConfig `koanf:"admission"`
-	Cursor    CursorConfig    `koanf:"cursor"`
 	Logging   LoggingConfig   `koanf:"logging"`
 }
 
@@ -75,17 +69,6 @@ type DatabaseConfig struct {
 type AdmissionConfig struct {
 	MaxInFlight   int           `koanf:"max_in_flight" validate:"gt=0"`
 	RetryInterval time.Duration `koanf:"retry_interval" validate:"gte=0"`
-}
-
-type CursorConfig struct {
-	ActiveKey    CursorKey   `koanf:"active_key"`
-	PreviousKeys []CursorKey `koanf:"previous_keys"`
-}
-
-type CursorKey struct {
-	ID       string    `koanf:"id"`
-	Secret   string    `koanf:"secret"`
-	Deadline time.Time `koanf:"deadline"`
 }
 
 type LoggingConfig struct {
@@ -156,9 +139,6 @@ func validate(cfg *Config) error {
 	if cfg.Admission.MaxInFlight > int(cfg.Database.PoolMaxConnections-cfg.Database.ReservedConnections) {
 		return fmt.Errorf("validate configuration: admission.max_in_flight exceeds unreserved database capacity")
 	}
-	if err := validateCursor(cfg.Cursor); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -182,51 +162,12 @@ func validateDatabase(cfg DatabaseConfig) error {
 	return nil
 }
 
-func validateCursor(cfg CursorConfig) error {
-	now := time.Now()
-	if err := validateCursorKey(cfg.ActiveKey, "active", now); err != nil {
-		return err
-	}
-	if len(cfg.PreviousKeys) > maxPreviousKeys {
-		return fmt.Errorf("validate configuration: too many previous cursor keys")
-	}
-	seen := map[string]struct{}{cfg.ActiveKey.ID: {}}
-	for _, key := range cfg.PreviousKeys {
-		if err := validateCursorKey(key, "previous", now); err != nil {
-			return err
-		}
-		if key.Deadline.After(cfg.ActiveKey.Deadline) {
-			return fmt.Errorf("validate configuration: previous cursor key deadline exceeds active key deadline")
-		}
-		if _, exists := seen[key.ID]; exists {
-			return fmt.Errorf("validate configuration: duplicate cursor key identifier")
-		}
-		seen[key.ID] = struct{}{}
-	}
-	return nil
-}
-
-func validateCursorKey(key CursorKey, kind string, now time.Time) error {
-	if key.ID == "" || key.Deadline.IsZero() || !key.Deadline.After(now) {
-		return fmt.Errorf("validate configuration: %s cursor key must have an identifier and future deadline", kind)
-	}
-	if key.Deadline.After(now.Add(maxCursorKeyLifetime)) {
-		return fmt.Errorf("validate configuration: %s cursor key deadline exceeds %s", kind, maxCursorKeyLifetime)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(key.Secret)
-	if err != nil || len(decoded) < 32 {
-		return fmt.Errorf("validate configuration: %s cursor key must be base64 encoded and at least 256 bits", kind)
-	}
-	return nil
-}
-
-// Redacted returns a log-safe summary. It never exposes database credentials or keys.
+// Redacted returns a log-safe summary. It never exposes database credentials.
 func (c Config) Redacted() map[string]any {
 	return map[string]any{
 		"server_host": c.Server.Host, "server_port": c.Server.Port,
 		"database_host": databaseHost(c.Database.URL), "pool_max_connections": c.Database.PoolMaxConnections,
 		"reserved_connections": c.Database.ReservedConnections, "max_in_flight": c.Admission.MaxInFlight,
-		"cursor_active_key_id": c.Cursor.ActiveKey.ID,
 	}
 }
 

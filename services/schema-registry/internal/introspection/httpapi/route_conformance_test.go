@@ -20,7 +20,6 @@ import (
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 )
 
 type blockingConformanceReader struct {
@@ -123,7 +122,7 @@ func TestHTTPDrainConformance(t *testing.T) {
 }
 
 func TestHTTPFailureConformance(t *testing.T) {
-	t.Run("conditional, negotiation, missing, and expired-cursor statuses traverse the API", func(t *testing.T) {
+	t.Run("conditional, negotiation, missing, and invalid-cursor statuses traverse the API", func(t *testing.T) {
 		server := conformanceServer(t)
 		client, baseURL := newHTTPConformanceClient(t, server)
 
@@ -146,15 +145,10 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Equal(t, http.StatusNotAcceptable, unacceptable.StatusCode)
 		assert.Contains(t, readConformanceBody(t, unacceptable), `"code":"not-acceptable"`)
 
-		expiredCodec, err := pagination.New(pagination.Key{ID: "expired", Secret: make([]byte, 32), Deadline: time.Now().Add(-time.Second)}, nil)
-		require.NoError(t, err)
-		server.cursors = expiredCodec
-		token, err := expiredCodec.Encode(pagination.Payload{Resource: "artifact-history", Limit: 100, Sort: "activation-desc", Filters: map[string]string{"kind": "schema", "artifactType": "device"}, Last: "1", Snapshot: "1"})
-		require.NoError(t, err)
-		expired := requestConformance(t, client, http.MethodGet, baseURL+"/v1/artifact-kinds/schema/device/history?cursor="+token, nil)
-		closeConformanceBody(t, expired)
-		assert.Equal(t, http.StatusGone, expired.StatusCode)
-		assert.Contains(t, readConformanceBody(t, expired), `"code":"cursor-expired"`)
+		invalid := requestConformance(t, client, http.MethodGet, baseURL+"/v1/artifact-kinds/schema/device/history?cursor=invalid", nil)
+		closeConformanceBody(t, invalid)
+		assert.Equal(t, http.StatusBadRequest, invalid.StatusCode)
+		assert.Contains(t, readConformanceBody(t, invalid), `"code":"invalid-cursor"`)
 	})
 
 	t.Run("client cancellation releases API admission", func(t *testing.T) {

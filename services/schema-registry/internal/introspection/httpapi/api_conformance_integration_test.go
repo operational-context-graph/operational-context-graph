@@ -118,8 +118,5 @@ func apiConfig() introspection.Config {
 		},
 		Database:  introspection.DatabaseConfig{QueryTimeout: time.Second},
 		Admission: introspection.AdmissionConfig{MaxInFlight: 1, RetryInterval: time.Second},
-		Cursor: introspection.CursorConfig{ActiveKey: introspection.CursorKey{
-			ID: "test", Secret: string(make([]byte, 32)), Deadline: time.Now().Add(time.Hour),
-		}},
 	}
 }

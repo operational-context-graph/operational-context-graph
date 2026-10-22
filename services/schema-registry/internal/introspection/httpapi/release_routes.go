@@ -236,11 +236,7 @@ func (s *Server) writeReleaseRepresentationError(c *gin.Context, metadata ErrorM
 }
 
 func (s *Server) writeCursorError(c *gin.Context, err error) {
-	if errors.Is(err, pagination.ErrExpired) {
-		s.writeReleaseValidationError(c, CursorExpired)
-	} else {
-		s.writeReleaseValidationError(c, InvalidCursor)
-	}
+	s.writeReleaseValidationError(c, InvalidCursor)
 }
 
 func (s *Server) writeReleaseValidationError(c *gin.Context, code ErrorCode) {

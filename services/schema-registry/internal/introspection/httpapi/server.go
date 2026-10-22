@@ -61,15 +61,7 @@ func NewWithServices(cfg introspection.Config, checker postgres.ReadinessChecker
 	}
 	server.discoveryLinks = defaultDiscoveryLinks
 	if releases != nil {
-		previous := make([]pagination.Key, 0, len(cfg.Cursor.PreviousKeys))
-		for _, key := range cfg.Cursor.PreviousKeys {
-			previous = append(previous, pagination.Key{ID: key.ID, Secret: []byte(key.Secret), Deadline: key.Deadline})
-		}
-		codec, err := pagination.New(pagination.Key{ID: cfg.Cursor.ActiveKey.ID, Secret: []byte(cfg.Cursor.ActiveKey.Secret), Deadline: cfg.Cursor.ActiveKey.Deadline}, previous)
-		if err != nil {
-			panic("validated cursor configuration produced invalid codec")
-		}
-		server.cursors = codec
+		server.cursors = pagination.New()
 	}
 
 	engine := gin.New()
