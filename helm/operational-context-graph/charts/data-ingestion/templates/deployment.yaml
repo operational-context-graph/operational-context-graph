@@ -74,6 +74,10 @@ spec:
                 secretKeyRef:
                   name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
                   key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: OCG_DI_TELEMETRY_STORE__BASE_URL
+              value: {{ .Values.telemetryStore.baseURL | quote }}
+            - name: OCG_DI_INVENTORY_STORE__BASE_URL
+              value: {{ .Values.inventoryStore.baseURL | quote }}
           {{- if .Values.tls.enabled }}
             - name: OCG_DI_GRPC__TLS__CERT_FILE
               value: {{ .Values.tls.mountPath }}/tls.crt

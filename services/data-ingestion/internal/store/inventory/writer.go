@@ -84,13 +84,13 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	}
 
 	if len(assets) > 0 {
-		if err := w.postBatch(ctx, "/assets/batch", assets); err != nil {
+		if err := w.postBatch(ctx, "/v1/assets/batch", "assets", assets); err != nil {
 			return err
 		}
 	}
 
 	if len(relationships) > 0 {
-		if err := w.postBatch(ctx, "/relationships/batch", relationships); err != nil {
+		if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", relationships); err != nil {
 			return err
 		}
 	}
@@ -98,8 +98,8 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	return nil
 }
 
-func (w *Writer) postBatch(ctx context.Context, path string, recs []store.Record) error {
-	body := buildJSONArray(recs)
+func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.Record) error {
+	body := buildWrappedJSONArray(key, recs)
 
 	url := strings.TrimRight(w.cfg.BaseURL, "/") + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -143,16 +143,18 @@ func isRelationship(rec store.Record) bool {
 	return strings.Contains(t, "relationship") || strings.Contains(t, ".rel.")
 }
 
-// buildJSONArray assembles payloads into a JSON array body.
-// Each payload is already valid canonical JSON; they are joined with commas.
-func buildJSONArray(recs []store.Record) []byte {
+// buildWrappedJSONArray assembles payloads into {"<key>": [...]} body.
+// Each payload is already valid canonical JSON.
+func buildWrappedJSONArray(key string, recs []store.Record) []byte {
 	payloads := make([][]byte, len(recs))
 	for i, rec := range recs {
 		payloads[i] = rec.Payload
 	}
 	var buf bytes.Buffer
-	buf.WriteByte('[')
+	buf.WriteString(`{"`)
+	buf.WriteString(key)
+	buf.WriteString(`":[`)
 	buf.Write(bytes.Join(payloads, []byte(",")))
-	buf.WriteByte(']')
+	buf.WriteString("]}")
 	return buf.Bytes()
 }
