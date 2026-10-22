@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permissions": [
+    // Rules are evaluated by pattern match, with the last matching rule winning.
+    { "action": "shell", "resource": "*", "effect": "ask" },
+    // Git
+    { "action": "shell", "resource": "git status *", "effect": "allow" },
+    { "action": "shell", "resource": "git diff *", "effect": "allow" },
+    // Go
+    { "action": "shell", "resource": "go vet *", "effect": "allow" },
+    // OpenSpec
+    { "action": "shell", "resource": "openspec *", "effect": "allow" }
+  ]
+}
