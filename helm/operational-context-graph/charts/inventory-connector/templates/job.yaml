@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "inventory-connector.fullname" . }}
+  labels:
+    {{- include "inventory-connector.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "inventory-connector.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: CONNECTOR_NETBOX__BASE_URL
+              value: {{ required "netbox.baseURL is required" .Values.netbox.baseURL | quote }}
+            - name: CONNECTOR_NETBOX__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "netbox.tokenSecret.name is required" .Values.netbox.tokenSecret.name | quote }}
+                  key: {{ .Values.netbox.tokenSecret.key | quote }}
+            - name: CONNECTOR_NETBOX__PAGE_SIZE
+              value: {{ .Values.netbox.pageSize | quote }}
+            - name: CONNECTOR_GRPC__ENDPOINT
+              value: {{ required "grpc.endpoint is required" .Values.grpc.endpoint | quote }}
+            - name: CONNECTOR_GRPC__CONNECTOR_ID
+              value: {{ .Values.grpc.connectorID | quote }}
+            - name: CONNECTOR_SCHEMA_VERSION
+              value: {{ .Values.connector.schemaVersion | quote }}
+            {{- if .Values.connector.endpoints }}
+            - name: CONNECTOR_ENDPOINTS
+              value: {{ .Values.connector.endpoints | join "," | quote }}
+            {{- end }}
+            {{- if .Values.connector.artifactTypes }}
+            - name: CONNECTOR_ARTIFACT_TYPES
+              value: {{ .Values.connector.artifactTypes | toJson | quote }}
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: CONNECTOR_GRPC__CERT_FILE
+              value: {{ .Values.tls.mountPath }}/tls.crt
+            - name: CONNECTOR_GRPC__KEY_FILE
+              value: {{ .Values.tls.mountPath }}/tls.key
+            {{- end }}
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+      {{- end }}
