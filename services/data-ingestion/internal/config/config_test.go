@@ -458,6 +458,10 @@ func TestLoad(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 9090, cfg.GRPC.Port)
+	assert.Equal(t, "http://telemetry-store:8080", cfg.TelemetryStore.BaseURL)
+	assert.Equal(t, 120*time.Second, cfg.TelemetryStore.Timeout)
+	assert.Equal(t, "http://inventory-store:8080", cfg.InventoryStore.BaseURL)
+	assert.Equal(t, 30*time.Second, cfg.InventoryStore.Timeout)
 }
 
 func TestLoadFromFileInvalidPath(t *testing.T) {
@@ -474,5 +478,41 @@ func TestMaxBackoffNegative(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  max_backoff: -1s\n"), 0600))
 
 	_, err := LoadFromFile(cfgFile)
+	require.Error(t, err)
+}
+
+// --- DrainConfig ---
+
+func TestDrainDefaultsValid(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
+	cfg, err := LoadFromFile("")
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Second, cfg.Drain.PollInterval)
+	assert.Equal(t, 0, cfg.Drain.MaxRetries, "unbounded retries by default")
+	assert.GreaterOrEqual(t, cfg.Drain.BackoffMax, cfg.Drain.BackoffInitial)
+}
+
+func TestDrainZeroPollIntervalFails(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
+	t.Setenv("OCG_DI_DRAIN__POLL_INTERVAL", "0s")
+
+	_, err := LoadFromFile("")
+	require.Error(t, err)
+}
+
+func TestDrainBackoffMaxBelowInitialFails(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
+	t.Setenv("OCG_DI_DRAIN__BACKOFF_INITIAL", "10s")
+	t.Setenv("OCG_DI_DRAIN__BACKOFF_MAX", "1s")
+
+	_, err := LoadFromFile("")
+	require.Error(t, err)
+}
+
+func TestDrainNegativeMaxRetriesFails(t *testing.T) {
+	t.Setenv(dbPasswordEnv, "testpassword")
+	t.Setenv("OCG_DI_DRAIN__MAX_RETRIES", "-1")
+
+	_, err := LoadFromFile("")
 	require.Error(t, err)
 }
