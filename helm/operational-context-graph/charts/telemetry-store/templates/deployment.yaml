@@ -21,6 +21,8 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsNonRoot: true
+      # This migration approach (mysql:8 init container + raw SQL) is a temporary
+      # workaround until a proper Doris migration solution is in place.
       initContainers:
         - name: migrate
           image: mysql:8
