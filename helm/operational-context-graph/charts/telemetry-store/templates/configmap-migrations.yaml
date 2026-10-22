@@ -1,0 +1,73 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "telemetry-store.fullname" . }}-migrations
+  labels:
+    {{- include "telemetry-store.labels" . | nindent 4 }}
+data:
+  migrations.sql: |
+    CREATE DATABASE IF NOT EXISTS ocg;
+
+    CREATE TABLE IF NOT EXISTS ocg.logs (
+      `timestamp`            DATETIME(6)   NOT NULL,
+      `iri`                  VARCHAR(512)  NOT NULL,
+      `observed_timestamp`   DATETIME(6)   NULL,
+      `host_name`            VARCHAR(256)  NULL,
+      `severity`             VARCHAR(16)   NULL,
+      `body`                 TEXT          NULL,
+      `resource_attributes`  VARIANT       NULL,
+      `attributes`           VARIANT       NULL,
+      INDEX idx_host_name (`host_name`) USING INVERTED,
+      INDEX idx_severity  (`severity`)  USING INVERTED,
+      INDEX idx_body      (`body`)      USING INVERTED
+      PROPERTIES("parser" = "unicode", "support_phrase" = "true")
+    )
+    ENGINE = OLAP
+    UNIQUE KEY(`timestamp`, `iri`)
+    PARTITION BY RANGE(`timestamp`) ()
+    DISTRIBUTED BY HASH(`iri`) BUCKETS {{ .Values.env.DORIS_BUCKETS }}
+    PROPERTIES (
+      "compression"                       = "zstd",
+      "light_schema_change"               = "true",
+      "replication_num"                   = "{{ .Values.env.DORIS_REPLICATION_NUM }}",
+      "dynamic_partition.enable"          = "true",
+      "dynamic_partition.time_unit"       = "DAY",
+      "dynamic_partition.start"           = "-6",
+      "dynamic_partition.end"             = "1",
+      "dynamic_partition.prefix"          = "p",
+      "dynamic_partition.buckets"         = "{{ .Values.env.DORIS_BUCKETS }}",
+      "dynamic_partition.replication_num" = "{{ .Values.env.DORIS_REPLICATION_NUM }}"
+    );
+
+    CREATE TABLE IF NOT EXISTS ocg.metrics (
+      `timestamp`            DATETIME(6)   NOT NULL,
+      `iri`                  VARCHAR(512)  NOT NULL,
+      `observed_timestamp`   DATETIME(6)   NULL,
+      `host_name`            VARCHAR(256)  NULL,
+      `metric_name`          VARCHAR(256)  NULL,
+      `value`                DOUBLE        NULL,
+      `resource_attributes`  VARIANT       NULL,
+      `attributes`           VARIANT       NULL,
+      INDEX idx_host_name   (`host_name`)   USING INVERTED,
+      INDEX idx_metric_name (`metric_name`) USING INVERTED
+    )
+    ENGINE = OLAP
+    UNIQUE KEY(`timestamp`, `iri`)
+    PARTITION BY RANGE(`timestamp`) ()
+    DISTRIBUTED BY HASH(`iri`) BUCKETS {{ .Values.env.DORIS_BUCKETS }}
+    PROPERTIES (
+      "compression"                       = "zstd",
+      "light_schema_change"               = "true",
+      "replication_num"                   = "{{ .Values.env.DORIS_REPLICATION_NUM }}",
+      "dynamic_partition.enable"          = "true",
+      "dynamic_partition.time_unit"       = "DAY",
+      "dynamic_partition.start"           = "-6",
+      "dynamic_partition.end"             = "1",
+      "dynamic_partition.prefix"          = "p",
+      "dynamic_partition.buckets"         = "{{ .Values.env.DORIS_BUCKETS }}",
+      "dynamic_partition.replication_num" = "{{ .Values.env.DORIS_REPLICATION_NUM }}"
+    );

@@ -23,19 +23,32 @@ spec:
         runAsNonRoot: true
       initContainers:
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/usr/local/bin/goose", "-dir", "/migrations", "mysql", "$(GOOSE_DBSTRING)", "up"]
+          image: mysql:8
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              MYSQL_PASS_ARG=""
+              if [ -n "${DORIS_MIGRATE_PASSWORD}" ]; then
+                MYSQL_PASS_ARG="-p${DORIS_MIGRATE_PASSWORD}"
+              fi
+              until mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} -e "SHOW FRONTENDS;" 2>/dev/null; do
+                echo "waiting for Doris FE..."; sleep 5;
+              done
+              mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} < /migrations/migrations.sql
           env:
-            - name: REPLICATION_NUM
-              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
-            - name: BUCKETS
-              value: {{ .Values.env.DORIS_BUCKETS | quote }}
-            - name: GOOSE_DBSTRING
+            - name: DORIS_MIGRATE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.dorisMigratorSecretName }}
-                  key: DORIS_MIGRATE_DSN
+                  key: DORIS_MIGRATE_PASSWORD
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -64,3 +77,7 @@ spec:
               value: {{ .Values.env.LOG_LEVEL | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: migrations
+          configMap:
+            name: {{ include "telemetry-store.fullname" . }}-migrations
