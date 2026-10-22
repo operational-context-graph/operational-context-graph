@@ -1,48 +1,30 @@
 # SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# OCG Telemetry Store image
-#
-# Build:
-#   docker build -f services/telemetry-store/Dockerfile \
-#     --build-arg VERSION=1.0.0 \
-#     -t ghcr.io/operational-context-graph/telemetry-store:1.0.0 \
-#     services/telemetry-store
-#
-# The image contains two binaries:
-#   /telemetry-store         — HTTP API server (default entrypoint); Port: 8080
-#   /telemetry-store-migrator — schema migration command; override the entrypoint to run it
+# syntax=docker/dockerfile:1
 
-FROM golang:1.27 AS builder
+# Build context must be the repository root so go.work resolves gen/go.
+# Example: docker build -f services/telemetry-store/Dockerfile .
+FROM golang:1.27 AS build
+WORKDIR /src
 
-ARG VERSION=dev
+COPY services/telemetry-store/go.mod services/telemetry-store/go.sum services/telemetry-store/
+RUN cd services/telemetry-store && go mod download
 
-WORKDIR /build
+COPY services/telemetry-store/ services/telemetry-store/
+RUN CGO_ENABLED=0 go build -trimpath -o /out/telemetry-store \
+    github.com/operational-context-graph/operational-context-graph/services/telemetry-store/cmd/telemetry-store
 
-COPY go.mod go.sum ./
-RUN go mod download
+# Goose stage — build the migration CLI independently so it does not affect go.mod.
+FROM golang:1.27 AS goose
+RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.24.0
 
-COPY . .
-
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/telemetry-store \
-    ./cmd/telemetry-store
-
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/telemetry-store-migrator \
-    ./cmd/migrate
-
+# Runtime stage.
 FROM gcr.io/distroless/static-debian12
-
-COPY --from=builder /out/telemetry-store /telemetry-store
-COPY --from=builder /out/telemetry-store-migrator /telemetry-store-migrator
-
-USER 1000:1000
-
+LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
+COPY --from=build /out/telemetry-store /usr/local/bin/telemetry-store
+COPY --from=goose /go/bin/goose /usr/local/bin/goose
+COPY services/telemetry-store/migrations/*.sql /migrations/
 EXPOSE 8080
-
-ENTRYPOINT ["/telemetry-store"]
+USER 1000:1000
+ENTRYPOINT ["/usr/local/bin/telemetry-store"]

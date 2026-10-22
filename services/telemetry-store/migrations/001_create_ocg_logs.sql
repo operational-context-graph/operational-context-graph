@@ -25,18 +25,18 @@ CREATE TABLE IF NOT EXISTS ocg.logs (
 ENGINE = OLAP
 UNIQUE KEY(`timestamp`, `iri`)
 PARTITION BY RANGE(`timestamp`) ()
-DISTRIBUTED BY HASH(`iri`) BUCKETS ${BUCKETS:-10}
+DISTRIBUTED BY HASH(`iri`) BUCKETS ${BUCKETS}
 PROPERTIES (
   "compression"                       = "zstd",
   "light_schema_change"               = "true",
-  "replication_num"                   = "${REPLICATION_NUM:-3}",
+  "replication_num"                   = "${REPLICATION_NUM}",
   "dynamic_partition.enable"          = "true",
   "dynamic_partition.time_unit"       = "DAY",
   "dynamic_partition.start"           = "-6",
   "dynamic_partition.end"             = "1",
   "dynamic_partition.prefix"          = "p",
-  "dynamic_partition.buckets"         = "${BUCKETS:-10}",
-  "dynamic_partition.replication_num" = "${REPLICATION_NUM:-3}"
+  "dynamic_partition.buckets"         = "${BUCKETS}",
+  "dynamic_partition.replication_num" = "${REPLICATION_NUM}"
 );
 -- +goose StatementEnd
 

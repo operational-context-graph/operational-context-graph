@@ -28,19 +28,13 @@ dorisSecretName: telemetry-store-doris-secret
 # The Secret must be created before installing this chart.
 dorisReadSecretName: telemetry-store-doris-read-secret
 
-# Name of the pre-existing Kubernetes Secret holding the DDL account DSN for the migrator Job.
-# Goose applies DDL over the MySQL wire protocol (:9030); the secret must provide DORIS_MIGRATE_DSN
-# in the format: <ddl_user>:<password>@tcp(<fe-host>:9030)/<database>
+# Name of the pre-existing Kubernetes Secret holding the DDL account DSN for the migration init container.
+# The secret must provide DORIS_MIGRATE_DSN in the format:
+#   <ddl_user>:<password>@tcp(<fe-host>:9030)/<database>
 # The DDL account requires CREATE/ALTER/DROP privilege — distinct from the service's LOAD_PRIV account.
-# The migrator runs as a pre-install/pre-upgrade Job; service pods never apply migrations.
+# The migration init container runs before the service container starts.
 # The Secret must be created before installing this chart.
 dorisMigratorSecretName: telemetry-store-doris-ddl-secret
-
-migrator:
-  image:
-    repository: ghcr.io/operational-context-graph/telemetry-store-migrator
-    tag: "0.1.0"
-    pullPolicy: IfNotPresent
 
 env:
   HTTP_PORT: "8080"

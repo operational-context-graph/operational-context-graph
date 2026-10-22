@@ -21,6 +21,21 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsNonRoot: true
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/goose", "-dir", "/migrations", "mysql", "$(GOOSE_DBSTRING)", "up"]
+          env:
+            - name: REPLICATION_NUM
+              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
+            - name: BUCKETS
+              value: {{ .Values.env.DORIS_BUCKETS | quote }}
+            - name: GOOSE_DBSTRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dorisMigratorSecretName }}
+                  key: DORIS_MIGRATE_DSN
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -47,9 +62,5 @@ spec:
               value: {{ .Values.env.HTTP_PORT | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.env.LOG_LEVEL | quote }}
-            - name: DORIS_REPLICATION_NUM
-              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
-            - name: DORIS_BUCKETS
-              value: {{ .Values.env.DORIS_BUCKETS | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

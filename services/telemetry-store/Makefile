@@ -11,7 +11,6 @@ BIN_DIR      := $(CURDIR)/bin
 build: ## Build all commands into bin/
 	mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/telemetry-store ./cmd/telemetry-store
-	go build -o $(BIN_DIR)/telemetry-store-migrator ./cmd/migrate
 
 run: ## Run the telemetry-store service from source
 	go run ./cmd/telemetry-store
