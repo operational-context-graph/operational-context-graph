@@ -323,11 +323,10 @@ func TestOTLPLogs_IngestRecordFields(t *testing.T) {
 	require.NotNil(t, rec.ContentType)
 	assert.Equal(t, "application/json", rec.ContentType)
 	assert.NotEmpty(t, rec.Payload)
-	// Payload must be a JSON object with "resource" and "logRecord" keys.
-	var envelope map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(rec.Payload, &envelope))
-	assert.Contains(t, envelope, "resource")
-	assert.Contains(t, envelope, "logRecord")
+	// Payload is the log record JSON directly (no envelope wrapper).
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Payload, &fields))
+	assert.Contains(t, fields, "body")
 }
 
 // ── error paths ───────────────────────────────────────────────────────────────
