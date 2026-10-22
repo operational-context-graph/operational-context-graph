@@ -30,3 +30,63 @@ data-ingestion:
     passwordSecret:
       name: postgres-secret
       key: POSTGRES_PASSWORD
+
+doris:
+  enabled: true
+
+  # Doris Operator watches this DorisCluster resource and creates the
+  # StatefulSet, Service, and PVC resources for FE and BE.
+  # Override image tags to pin to a specific Doris release.
+  feSpec:
+    replicas: 1
+    image: apache/doris:fe-4.1.4
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+    persistentVolumes:
+      - mountPath: /opt/apache-doris/fe/doris-meta
+        name: fe-meta
+        persistentVolumeClaimSpec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+      - mountPath: /opt/apache-doris/fe/log
+        name: fe-log
+        persistentVolumeClaimSpec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+
+  beSpec:
+    replicas: 1
+    image: apache/doris:be-4.1.4
+    requests:
+      cpu: "4"
+      memory: 8Gi
+    limits:
+      cpu: "8"
+      memory: 16Gi
+    persistentVolumes:
+      - mountPath: /opt/apache-doris/be/storage
+        name: be-storage
+        persistentVolumeClaimSpec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+      - mountPath: /opt/apache-doris/be/log
+        name: be-log
+        persistentVolumeClaimSpec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
