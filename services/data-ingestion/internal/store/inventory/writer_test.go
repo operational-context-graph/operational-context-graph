@@ -68,7 +68,7 @@ func TestWriter_Write_AssetsOnly(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, *log, 1)
-	assert.Equal(t, "/assets/batch", (*log)[0].Path)
+	assert.Equal(t, "/v1/assets/batch", (*log)[0].Path)
 }
 
 func TestWriter_Write_RelationshipsOnly(t *testing.T) {
@@ -78,7 +78,7 @@ func TestWriter_Write_RelationshipsOnly(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, *log, 1)
-	assert.Equal(t, "/relationships/batch", (*log)[0].Path)
+	assert.Equal(t, "/v1/relationships/batch", (*log)[0].Path)
 }
 
 func TestWriter_Write_MixedBatch_AssetsFirst(t *testing.T) {
@@ -88,8 +88,8 @@ func TestWriter_Write_MixedBatch_AssetsFirst(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, *log, 2, "mixed batch must produce exactly two requests")
-	assert.Equal(t, "/assets/batch", (*log)[0].Path, "assets must be written first")
-	assert.Equal(t, "/relationships/batch", (*log)[1].Path, "relationships must be written second")
+	assert.Equal(t, "/v1/assets/batch", (*log)[0].Path, "assets must be written first")
+	assert.Equal(t, "/v1/relationships/batch", (*log)[1].Path, "relationships must be written second")
 }
 
 func TestWriter_Write_EmptyBatchIsNoOp(t *testing.T) {
@@ -112,7 +112,7 @@ func TestWriter_Write_JSONArrayBody(t *testing.T) {
 	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), assetRecord(`{"iri":"urn:2"}`)))
 
 	require.NoError(t, err)
-	assert.Equal(t, `[{"iri":"urn:1"},{"iri":"urn:2"}]`, (*log)[0].Body)
+	assert.Equal(t, `{"assets":[{"iri":"urn:1"},{"iri":"urn:2"}]}`, (*log)[0].Body)
 }
 
 // ── permanent failures ────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ func TestWriter_Write_Relationship404_IsPermanentError(t *testing.T) {
 	var callCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		callCount++
-		if r.URL.Path == "/assets/batch" {
+		if r.URL.Path == "/v1/assets/batch" {
 			rw.WriteHeader(http.StatusOK)
 		} else {
 			rw.WriteHeader(http.StatusNotFound)
@@ -200,7 +200,7 @@ func TestWriter_Write_AssetFails_RelationshipNotAttempted(t *testing.T) {
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, store.ErrOverloaded))
-	assert.Equal(t, []string{"/assets/batch"}, paths, "relationship request must not be sent when assets fail")
+	assert.Equal(t, []string{"/v1/assets/batch"}, paths, "relationship request must not be sent when assets fail")
 }
 
 // ── writer metadata ───────────────────────────────────────────────────────────

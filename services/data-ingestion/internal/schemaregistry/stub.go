@@ -7,6 +7,7 @@ package schemaregistry
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -34,7 +35,14 @@ func (s *Stub) SourceMappings(_ context.Context, key ingest.SchemaKey) (ingest.S
 
 func (s *Stub) TargetStore(_ context.Context, key ingest.SchemaKey) (ingest.StoreID, error) {
 	slog.Info("schemaregistry stub: TargetStore called", "type", key.LogicalArtifactType, "version", key.Version)
-	return "stub", nil
+	switch key.LogicalArtifactType {
+	case "logs", "metrics", "traces":
+		return "telemetry", nil
+	case "assets", "relationships":
+		return "inventory", nil
+	default:
+		return "", fmt.Errorf("%w: no target store for artifact type %q", ingest.ErrNotFound, key.LogicalArtifactType)
+	}
 }
 
 func (s *Stub) DefaultLogSchema(_ context.Context) (ingest.SchemaKey, error) {
