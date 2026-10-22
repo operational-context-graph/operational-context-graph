@@ -9,7 +9,7 @@ enabled: true
 
 feSpec:
   replicas: 1
-  image: apache/doris:fe-4.1.4
+  image: apache/doris:fe-4.1.4@sha256:3cbfc9b6293057a0b7f10c2e597f20f4a6bafed0729dfa9795db21eae2e136bb
   requests:
     cpu: "2"
     memory: 4Gi
@@ -46,7 +46,7 @@ feSpec:
 
 beSpec:
   replicas: 1
-  image: apache/doris:be-4.1.4
+  image: apache/doris:be-4.1.4@sha256:08c139f3d0ec45090a5214fd76f19f84b871d05f1a2db83b5e35a85c193617b2
   requests:
     cpu: "4"
     memory: 8Gi
