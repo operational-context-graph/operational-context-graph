@@ -4,9 +4,30 @@
 
 global: {}
 
-# Bundled PostgreSQL.
-postgres:
+postgresql:
   enabled: true
+  auth:
+    existingSecret: postgres-secret
+    secretKeys:
+      adminPasswordKey: password
+    username: ocg
+    database: ocg
+  primary:
+    persistence:
+      size: 10Gi
+      storageClass: ""
+    extendedConfiguration: |
+      password_encryption = scram-sha-256
+
+pgadmin:
+  enabled: false
+  image:
+    repository: dpage/pgadmin4
+    tag: "8"
+    pullPolicy: IfNotPresent
+  secretName: pgadmin-secret
+  service:
+    port: 80
 
 data-ingestion:
   enabled: true
@@ -18,15 +39,13 @@ data-ingestion:
   service:
     type: ClusterIP
     port: 8080
-  # Points at the existing OCG PostgreSQL instance. Set host and the Secret that
-  # holds the password for your environment. The password is never stored here.
   database:
-    host: ocg-postgres
+    host: ocg-postgresql
     port: 5432
-    name: postgres
-    user: postgres
+    name: ocg
+    user: ocg
     sslmode: disable
     maxconns: 10
     passwordSecret:
       name: postgres-secret
-      key: POSTGRES_PASSWORD
+      key: password

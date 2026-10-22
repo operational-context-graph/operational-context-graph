@@ -138,3 +138,5 @@ docs/superpowers
 # misc
 *.code-workspace
 .tool-versions
+# Helm — downloaded chart archives
+helm/**/charts/*.tgz
