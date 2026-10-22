@@ -20,12 +20,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/drain"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/schemaregistry"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/logstore"
 )
 
 func main() {
@@ -69,26 +71,50 @@ func run() error {
 		return err
 	}
 
+	// The outbox drain delivers persisted records to the stores. The
+	// LogStoreWriter is a placeholder sink that logs each batch; real store
+	// writers replace it later.
+	storeRegistry := drain.NewStoreRegistry()
+	if err := storeRegistry.Register(logstore.New(slog.Default())); err != nil {
+		return fmt.Errorf("register store writer: %w", err)
+	}
+	drainProc := drain.New(outbox.NewReader(pool), storeRegistry, drain.Config{
+		PollInterval:   cfg.Drain.PollInterval,
+		BackoffInitial: cfg.Drain.BackoffInitial,
+		BackoffMax:     cfg.Drain.BackoffMax,
+		BackoffJitter:  cfg.Drain.BackoffJitter,
+		MaxRetries:     cfg.Drain.MaxRetries,
+		PageSize:       cfg.Drain.PageSize,
+	}, slog.Default())
+
 	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
 	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
-	errC := make(chan error, 2)
+	// The HTTP server, gRPC server, and outbox drain all run until the shared
+	// context is cancelled. Any one of them returning triggers shutdown of the
+	// others, so a failed component never leaves the process half-running.
+	errC := make(chan error, 3)
 	go func() { errC <- httpSrv.Run(ctx) }()
 	go func() { errC <- grpcSrv.Run(ctx) }()
+	go func() { errC <- drainProc.Run(ctx) }()
 
-	// Wait for either server to stop. Cancel the context so the other exits too.
+	// Wait for the first component to stop, then cancel the context so the
+	// others exit too, and drain their results.
 	first := <-errC
 	stop()
 	second := <-errC
+	third := <-errC
 
-	return firstRealError(first, second)
+	return firstRealError(first, second, third)
 }
 
-// firstRealError returns the first non-nil error that is not http.ErrServerClosed.
+// firstRealError returns the first non-nil error that is neither
+// http.ErrServerClosed nor context.Canceled, both of which are expected on a
+// normal shutdown.
 func firstRealError(errs ...error) error {
 	for _, err := range errs {
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, context.Canceled) {
 			return err
 		}
 	}
