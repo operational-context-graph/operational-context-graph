@@ -1,0 +1,15 @@
+{
+  "timeUnixNano": "1782838801397921024",
+  "observedTimeUnixNano": "1792678430572626944",
+  "body": {
+    "stringValue": "{\"fqdn\": \"ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap\", \"message\": \"<85>2026-06-30T17:00:01.393344+00:00 ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap audit-service[12]: priority=\\\"Notice\\\" version=1.0 msgid=0x1f03000000000002 msg=\\\"audit\\\" user=\\\"cc-snmpcollector/359398572\\\" cmd=\\\"terminated session (reason: normal)\\\".\", \"syslog_severity_code\": 5, \"syslog_facility_code\": 10, \"@version\": \"1\", \"syslog_severity\": \"notice\", \"syslog_facility\": \"security/authorization\", \"sap\": {\"ocb\": {\"tenant\": {\"id\": \"c0002\"}, \"cluster\": {\"name\": \"cca-apjp1-ocb\"}, \"logstash\": {\"pipeline\": {\"version\": {\"ccloud\": {\"in-syslog-logstash\": \"0.28.649\"}}}}, \"timestamps\": {\"ccloud\": {\"in-syslog-logstash\": \"2026-06-30T17:00:01.773093Z\"}}, \"input\": {\"name\": \"in-syslog-logstash\"}, \"event\": {\"index\": \"c0002_log\", \"hash\": \"5e1af1b5-cf4d-486b-bace-a54301f13833\"}, \"sourcetype\": {\"generic\": \"log\"}}}, \"log.syslog.hostname\": \"ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap\", \"tags\": [\"sap.ocb.message_json_skipped\", \"sap.ocb.ccloud\", \"sap.ocb.tenant_id\", \"sap.ocb.syslog_pri\", \"sap.ocb.timestamps\", \"sap.ocb.pipeline_version\", \"sap.ocb.fqdn\", \"sap.ocb.cnd-hostname\"], \"@timestamp\": \"2026-06-30T17:00:01.397921449Z\", \"syslog_pri\": \"85\"}"
+  },
+  "attributes": [
+    {
+      "key": "source",
+      "value": {
+        "stringValue": "mockreplay"
+      }
+    }
+  ]
+}

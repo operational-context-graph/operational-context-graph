@@ -1,0 +1,1627 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "description": "Base serializer class for models inheriting from PrimaryModel.",
+  "properties": {
+    "id": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "readOnly": true
+    },
+    "display_url": {
+      "type": "string",
+      "format": "uri",
+      "readOnly": true
+    },
+    "display": {
+      "type": "string",
+      "readOnly": true
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "device_type": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Base serializer class for models inheriting from PrimaryModel.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "readOnly": true
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "readOnly": true
+        },
+        "display": {
+          "type": "string",
+          "readOnly": true
+        },
+        "manufacturer": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Base serializer class for models inheriting from OrganizationalModel.",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "readOnly": true
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "readOnly": true
+            },
+            "display": {
+              "type": "string",
+              "readOnly": true
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "slug": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[-a-zA-Z0-9_]+$"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[-a-zA-Z0-9_]+$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "device_count": {
+          "type": "integer",
+          "readOnly": true
+        }
+      }
+    },
+    "role": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Base serializer class for models inheriting from NestedGroupModel.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "readOnly": true
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "readOnly": true
+        },
+        "display": {
+          "type": "string",
+          "readOnly": true
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[-a-zA-Z0-9_]+$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "device_count": {
+          "type": "integer",
+          "readOnly": true,
+          "default": 0
+        },
+        "virtualmachine_count": {
+          "type": "integer",
+          "readOnly": true,
+          "default": 0
+        },
+        "_depth": {
+          "type": "integer",
+          "readOnly": true,
+          "title": " depth"
+        }
+      }
+    },
+    "tenant": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[-a-zA-Z0-9_]+$"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "platform": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from NestedGroupModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[-a-zA-Z0-9_]+$"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "device_count": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "default": 0
+                },
+                "virtualmachine_count": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "default": 0
+                },
+                "_depth": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "title": " depth"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "serial": {
+      "type": "string",
+      "title": "Serial number",
+      "description": "Chassis serial number, assigned by the manufacturer",
+      "maxLength": 50
+    },
+    "asset_tag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A unique tag used to identify this device",
+      "maxLength": 50
+    },
+    "site": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Base serializer class for models inheriting from PrimaryModel.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "readOnly": true
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "readOnly": true
+        },
+        "display": {
+          "type": "string",
+          "readOnly": true
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the site",
+          "maxLength": 100
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[-a-zA-Z0-9_]+$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "location": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from NestedGroupModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[-a-zA-Z0-9_]+$"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "rack_count": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "default": 0
+                },
+                "_depth": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "title": " depth"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rack": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "position": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double",
+      "minimum": 0.5,
+      "exclusiveMaximum": 1000,
+      "title": "Position (U)"
+    },
+    "face": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "front",
+            "rear",
+            ""
+          ],
+          "type": "string",
+          "description": "* `front` - Front\n* `rear` - Rear",
+          "x-spec-enum-id": "d2fb9b3f75158b83"
+        },
+        "label": {
+          "type": "string",
+          "enum": [
+            "Front",
+            "Rear"
+          ]
+        }
+      }
+    },
+    "latitude": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double",
+      "maximum": 90.0,
+      "minimum": -90.0,
+      "description": "GPS coordinate in decimal format (xx.yyyyyy)"
+    },
+    "longitude": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double",
+      "maximum": 180.0,
+      "minimum": -180.0,
+      "description": "GPS coordinate in decimal format (xx.yyyyyy)"
+    },
+    "parent_device": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 64
+                }
+              }
+            }
+          ],
+          "readOnly": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string",
+          "description": "* `offline` - Offline\n* `active` - Active\n* `planned` - Planned\n* `staged` - Staged\n* `failed` - Failed\n* `inventory` - Inventory\n* `decommissioning` - Decommissioning",
+          "x-spec-enum-id": "65feb4244cc9110c"
+        },
+        "label": {
+          "type": "string",
+          "enum": [
+            "Offline",
+            "Active",
+            "Planned",
+            "Staged",
+            "Failed",
+            "Inventory",
+            "Decommissioning"
+          ]
+        }
+      }
+    },
+    "airflow": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "front-to-rear",
+            "rear-to-front",
+            "left-to-right",
+            "right-to-left",
+            "side-to-rear",
+            "rear-to-side",
+            "bottom-to-top",
+            "top-to-bottom",
+            "passive",
+            "mixed",
+            ""
+          ],
+          "type": "string",
+          "description": "* `front-to-rear` - Front to rear\n* `rear-to-front` - Rear to front\n* `left-to-right` - Left to right\n* `right-to-left` - Right to left\n* `side-to-rear` - Side to rear\n* `rear-to-side` - Rear to side\n* `bottom-to-top` - Bottom to top\n* `top-to-bottom` - Top to bottom\n* `passive` - Passive\n* `mixed` - Mixed",
+          "x-spec-enum-id": "11cb3d363b41ba9e"
+        },
+        "label": {
+          "type": "string",
+          "enum": [
+            "Front to rear",
+            "Rear to front",
+            "Left to right",
+            "Right to left",
+            "Side to rear",
+            "Rear to side",
+            "Bottom to top",
+            "Top to bottom",
+            "Passive",
+            "Mixed"
+          ]
+        }
+      }
+    },
+    "cooling_method": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "air",
+            "liquid",
+            "hybrid",
+            "immersion",
+            "",
+            null
+          ],
+          "type": "string",
+          "description": "* `air` - Air\n* `liquid` - Liquid\n* `hybrid` - Hybrid\n* `immersion` - Immersion",
+          "x-spec-enum-id": "fff5375d415a4fdc"
+        },
+        "label": {
+          "type": "string",
+          "enum": [
+            "Air",
+            "Liquid",
+            "Hybrid",
+            "Immersion"
+          ]
+        }
+      }
+    },
+    "primary_ip": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "family": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "enum": [
+                        4,
+                        6
+                      ],
+                      "type": "integer",
+                      "description": "* `4` - IPv4\n* `6` - IPv6",
+                      "x-spec-enum-id": "d72003fd1af3603d"
+                    },
+                    "label": {
+                      "type": "string",
+                      "enum": [
+                        "IPv4",
+                        "IPv6"
+                      ]
+                    }
+                  },
+                  "readOnly": true
+                },
+                "address": {
+                  "type": "string"
+                },
+                "nat_inside": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display_url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display": {
+                              "type": "string",
+                              "readOnly": true
+                            },
+                            "family": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "address": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nat_outside": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display": {
+                        "type": "string",
+                        "readOnly": true
+                      },
+                      "family": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "readOnly": true
+                },
+                "dns_name": {
+                  "description": "Hostname or FQDN (not case-sensitive)",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^([0-9A-Za-z_-]+|\\*)(\\.[0-9A-Za-z_-]+)*\\.?$",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ],
+          "readOnly": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "primary_ip4": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "family": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "enum": [
+                        4,
+                        6
+                      ],
+                      "type": "integer",
+                      "description": "* `4` - IPv4\n* `6` - IPv6",
+                      "x-spec-enum-id": "d72003fd1af3603d"
+                    },
+                    "label": {
+                      "type": "string",
+                      "enum": [
+                        "IPv4",
+                        "IPv6"
+                      ]
+                    }
+                  },
+                  "readOnly": true
+                },
+                "address": {
+                  "type": "string"
+                },
+                "nat_inside": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display_url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display": {
+                              "type": "string",
+                              "readOnly": true
+                            },
+                            "family": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "address": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nat_outside": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display": {
+                        "type": "string",
+                        "readOnly": true
+                      },
+                      "family": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "readOnly": true
+                },
+                "dns_name": {
+                  "description": "Hostname or FQDN (not case-sensitive)",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^([0-9A-Za-z_-]+|\\*)(\\.[0-9A-Za-z_-]+)*\\.?$",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "primary_ip6": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "family": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "enum": [
+                        4,
+                        6
+                      ],
+                      "type": "integer",
+                      "description": "* `4` - IPv4\n* `6` - IPv6",
+                      "x-spec-enum-id": "d72003fd1af3603d"
+                    },
+                    "label": {
+                      "type": "string",
+                      "enum": [
+                        "IPv4",
+                        "IPv6"
+                      ]
+                    }
+                  },
+                  "readOnly": true
+                },
+                "address": {
+                  "type": "string"
+                },
+                "nat_inside": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display_url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display": {
+                              "type": "string",
+                              "readOnly": true
+                            },
+                            "family": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "address": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nat_outside": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display": {
+                        "type": "string",
+                        "readOnly": true
+                      },
+                      "family": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "readOnly": true
+                },
+                "dns_name": {
+                  "description": "Hostname or FQDN (not case-sensitive)",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^([0-9A-Za-z_-]+|\\*)(\\.[0-9A-Za-z_-]+)*\\.?$",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "oob_ip": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "family": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "enum": [
+                        4,
+                        6
+                      ],
+                      "type": "integer",
+                      "description": "* `4` - IPv4\n* `6` - IPv6",
+                      "x-spec-enum-id": "d72003fd1af3603d"
+                    },
+                    "label": {
+                      "type": "string",
+                      "enum": [
+                        "IPv4",
+                        "IPv6"
+                      ]
+                    }
+                  },
+                  "readOnly": true
+                },
+                "address": {
+                  "type": "string"
+                },
+                "nat_inside": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display_url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display": {
+                              "type": "string",
+                              "readOnly": true
+                            },
+                            "family": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "address": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nat_outside": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true
+                      },
+                      "display": {
+                        "type": "string",
+                        "readOnly": true
+                      },
+                      "family": {
+                        "type": "integer",
+                        "readOnly": true
+                      },
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "readOnly": true
+                },
+                "dns_name": {
+                  "description": "Hostname or FQDN (not case-sensitive)",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^([0-9A-Za-z_-]+|\\*)(\\.[0-9A-Za-z_-]+)*\\.?$",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cluster": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "virtual_chassis": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Base serializer class for models inheriting from PrimaryModel.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "master": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "readOnly": true
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display_url": {
+                              "type": "string",
+                              "format": "uri",
+                              "readOnly": true
+                            },
+                            "display": {
+                              "type": "string",
+                              "readOnly": true
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "member_count": {
+                  "type": "integer",
+                  "readOnly": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "vc_position": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "maximum": 255,
+      "minimum": 0
+    },
+    "vc_priority": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "maximum": 255,
+      "minimum": 0,
+      "description": "Virtual chassis master election priority"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "owner": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Extends the built-in ModelSerializer to enforce calling full_clean() on a copy of the associated instance during\nvalidation. (DRF does not do this by default; see https://github.com/encode/django-rest-framework/issues/3144)\n\nSerializers may declare `model_clean_fields` in Meta, naming scalar model fields whose clean()-normalized values\nmust reach the database. DRF builds a fresh instance from the validated data on create, discarding what clean()\nwrote.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comments": {
+      "type": "string"
+    },
+    "config_template": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Adds an `owner` field for models which have a ForeignKey to users.Owner.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "readOnly": true
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "readOnly": true
+                },
+                "display": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "config_context": {
+      "readOnly": true
+    },
+    "local_context_data": {
+      "description": "Local config context data takes precedence over source contexts in the final rendered config context"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "Represents an object related through a ForeignKey field. On write, it accepts a primary key (PK) value or a\ndictionary of attributes which can be used to uniquely identify the related object. This class should be\nsubclassed to return a full representation of the related object on read.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "readOnly": true
+          },
+          "display_url": {
+            "type": "string",
+            "format": "uri",
+            "readOnly": true
+          },
+          "display": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[-\\w]+$",
+            "maxLength": 100
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{6}$",
+            "maxLength": 6
+          }
+        }
+      }
+    },
+    "custom_fields": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {}
+    },
+    "created": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "readOnly": true
+    },
+    "last_updated": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "readOnly": true
+    },
+    "console_port_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "console_server_port_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "power_port_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "power_outlet_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "cooling_intake_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "cooling_outflow_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "interface_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "front_port_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "rear_port_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "device_bay_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "module_bay_count": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "inventory_item_count": {
+      "type": "integer",
+      "readOnly": true
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:netbox.device:1.0.0"
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:netbox.relation:1.0.0",
+  "type": "object",
+  "required": ["artifact_type", "source_system", "source_iri", "target_iri"],
+  "properties": {
+    "artifact_type": {
+      "type": "string",
+      "enum": ["RESIDES_IN", "HOSTS"]
+    },
+    "source_system": { "type": "string" },
+    "source_iri": { "type": "string" },
+    "target_iri": { "type": "string" },
+    "source_key": {
+      "type": ["array", "null"],
+      "prefixItems": [
+        { "type": "string" },
+        { "type": "string" }
+      ],
+      "items": false
+    },
+    "target_key": {
+      "type": ["array", "null"],
+      "prefixItems": [
+        { "type": "string" },
+        { "type": "string" }
+      ],
+      "items": false
+    },
+    "valid_time": { "type": ["string", "null"], "format": "date-time" },
+    "extensions": { "type": "object" },
+    "ingested_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}
