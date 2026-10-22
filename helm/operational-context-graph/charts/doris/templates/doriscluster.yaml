@@ -25,6 +25,9 @@ spec:
     persistentVolumes:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+    configMapInfo:
+      configMapName: {{ .Release.Name }}-doris-fe-config
+      resolveKey: fe.conf
   beSpec:
     replicas: {{ .Values.beSpec.replicas }}
     image: {{ .Values.beSpec.image }}
@@ -38,4 +41,7 @@ spec:
     persistentVolumes:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+    configMapInfo:
+      configMapName: {{ .Release.Name }}-doris-be-config
+      resolveKey: be.conf
 {{- end }}

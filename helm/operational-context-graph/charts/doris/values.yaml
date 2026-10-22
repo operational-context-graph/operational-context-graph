@@ -33,6 +33,16 @@ feSpec:
         resources:
           requests:
             storage: 5Gi
+  config:
+    metaDir: /opt/apache-doris/fe/doris-meta
+    priorityNetworks: 10.0.0.0/8
+    httpPort: 8030
+    rpcPort: 9020
+    queryPort: 9030
+    editLogPort: 9010
+    javaOpts: "-Xmx4096m -Xms4096m"
+    queryTimeout: 300
+    streamLoadTimeout: 600
 
 beSpec:
   replicas: 1
@@ -60,3 +70,15 @@ beSpec:
         resources:
           requests:
             storage: 5Gi
+  config:
+    storageRootPath: /opt/apache-doris/be/storage
+    priorityNetworks: 10.0.0.0/8
+    bePort: 9060
+    webserverPort: 8040
+    heartbeatServicePort: 9050
+    brpcPort: 8060
+    cumulativeCompactionThreads: 2
+    baseCompactionThreads: 1
+    maxCompactionThreads: 10
+    memLimit: "90%"
+    streamingLoadMaxMb: 10240
