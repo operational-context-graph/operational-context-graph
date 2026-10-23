@@ -71,7 +71,7 @@ docker build -f services/data-ingestion/Dockerfile -t data-ingestion:dev .
 minikube image load data-ingestion:dev
 
 # 2. Create the PostgreSQL password secret (once per cluster).
-kubectl create secret generic postgres-secret --from-literal=POSTGRES_PASSWORD=<your-password>
+kubectl create secret generic postgres-secret --from-literal=password=<your-password>
 
 # 3. Install the chart with the local override values.
 helm install ocg helm/operational-context-graph \

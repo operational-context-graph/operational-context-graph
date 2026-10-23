@@ -2,41 +2,23 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Local/dev overrides: bundle a throwaway PostgreSQL and point the service at it.
-postgres:
-  enabled: true
-  fullnameOverride: ocg-postgres
-  secretName: postgres-secret
-  # Password is never stored here. Create the secret once before deploying:
-  #   kubectl create secret generic postgres-secret --from-literal=POSTGRES_PASSWORD=<your-password>
-
 data-ingestion:
   image:
     repository: data-ingestion
     tag: dev
     pullPolicy: Never
 
+telemetry-store:
+  replicaCount: 1
+  env:
+    DORIS_REPLICATION_NUM: "1"
+
 inventory-connector:
-  enabled: true
   image:
     repository: inventory-connector
     tag: dev
     pullPolicy: Never
   netbox:
     baseURL: "http://mockreplay-netbox:8081"
-    pageSize: 1000
     tokenSecret:
       name: netbox-token
-      key: token
-  grpc:
-    endpoint: "ocg-data-ingestion:9090"
-    connectorID: "ocg-inventory-connector"
-  connector:
-    schemaVersion: "0.1.0"
-    endpoints:
-      - "dcim/devices/"
-
-otelcol:
-  enabled: true
-  fullnameOverride: otelcol
-  dataIngestionEndpoint: "ocg-data-ingestion:9090"
