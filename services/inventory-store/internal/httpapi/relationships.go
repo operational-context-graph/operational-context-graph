@@ -21,7 +21,6 @@ const (
 	RouteUpsertRelationship      = "upsert-relationship"
 	RouteUpsertRelationshipBatch = "upsert-relationship-batch"
 	RouteGetRelationship         = "get-relationship"
-	RouteCloseRelationship       = "close-relationship"
 	RouteListRelationships       = "list-relationships"
 	RouteFilterRelationships     = "filter-relationships"
 
@@ -35,7 +34,6 @@ func registerRelationshipRoutes(rg *gin.RouterGroup, d db) {
 	rg.POST("/relationships", setRoute(RouteUpsertRelationship), handleUpsertRelationship(d))
 	rg.POST("/relationships/batch", setRoute(RouteUpsertRelationshipBatch), handleUpsertRelationshipBatch(d))
 	rg.GET("/relationships/:id", setRoute(RouteGetRelationship), handleGetRelationship(d))
-	rg.DELETE("/relationships/:id", setRoute(RouteCloseRelationship), handleCloseRelationship(d))
 	rg.GET("/relationships", setRoute(RouteFilterRelationships), handleFilterRelationships(d))
 	rg.GET("/assets/:id/relationships", setRoute(RouteListRelationships), handleListRelationships(d))
 }
@@ -307,19 +305,4 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		resp.LastUpdatedAtSource = &s
 	}
 	return resp
-}
-
-func handleCloseRelationship(d db) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id, err := uuid.Parse(c.Param("id"))
-		if err != nil {
-			renderError(c, fmt.Errorf("%w: invalid uuid", apperr.ErrInvalidInput))
-			return
-		}
-		if err := d.CloseRelationship(c.Request.Context(), id); err != nil {
-			renderError(c, err)
-			return
-		}
-		c.Status(http.StatusNoContent)
-	}
 }
