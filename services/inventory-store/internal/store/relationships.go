@@ -14,22 +14,22 @@ import (
 )
 
 // relColumns is the canonical SELECT column list for the relationships table.
-const relColumns = `id, iri, source_asset_id, target_asset_id, artifact_type,
-	source_system, source_id, source_key, target_key, extensions, ingested_at,
+const relColumns = `id, source_asset_id, target_asset_id, artifact_type,
+	source_system, source_key, target_key, extensions, ingested_at,
 	created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
 func scanRelationship(row pgx.Row, r *Relationship) error {
 	return row.Scan(
-		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceID, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
 		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
 	)
 }
 
 func scanRelationshipRows(rows pgx.Rows, r *Relationship) error {
 	return rows.Scan(
-		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceID, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
 		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
 	)
 }
@@ -83,18 +83,18 @@ WHERE source_key = $1 AND target_key = $2 AND artifact_type = $3 AND valid_to IS
 	created := tag.RowsAffected() == 0
 
 	const insert = `
-INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
-                           source_system, source_id, source_key, target_key,
+INSERT INTO relationships (source_asset_id, target_asset_id, artifact_type,
+                           source_system, source_key, target_key,
                            extensions, ingested_at,
                            created_at_source, last_updated_at_source,
                            valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($10, NOW()), NULL)
 RETURNING ` + relColumns
 
 	var r Relationship
 	err = scanRelationship(tx.QueryRow(ctx, insert,
-		nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-		in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
+		in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
+		in.SourceSystem, nullStr(in.SourceKey), nullStr(in.TargetKey),
 		nullJSON(in.Extensions), in.IngestedAt,
 		in.CreatedAtSource, in.LastUpdatedAtSource,
 	), &r)

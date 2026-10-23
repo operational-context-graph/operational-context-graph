@@ -46,10 +46,8 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			return
 		}
 		if err := validateRequired(
-			requiredField{"iri", req.IRI},
 			requiredField{"artifact_type", req.ArtifactType},
 			requiredField{"source_system", req.SourceSystem},
-			requiredField{"source_id", req.SourceID},
 			requiredField{"source_key", req.SourceKey},
 			requiredField{"target_key", req.TargetKey},
 		); err != nil {
@@ -68,12 +66,10 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			return
 		}
 		in := store.RelationshipInput{
-			IRI:           req.IRI,
 			SourceAssetID: req.SourceAssetID,
 			TargetAssetID: req.TargetAssetID,
 			ArtifactType:  req.ArtifactType,
 			SourceSystem:  req.SourceSystem,
-			SourceID:      req.SourceID,
 			SourceKey:     req.SourceKey,
 			TargetKey:     req.TargetKey,
 			Extensions:    json.RawMessage(req.Extensions),
@@ -209,10 +205,8 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 		inputs := make([]store.RelationshipInput, len(req.Relationships))
 		for i, r := range req.Relationships {
 			if err := validateRequired(
-				requiredField{"iri", r.IRI},
 				requiredField{"artifact_type", r.ArtifactType},
 				requiredField{"source_system", r.SourceSystem},
-				requiredField{"source_id", r.SourceID},
 				requiredField{"source_key", r.SourceKey},
 				requiredField{"target_key", r.TargetKey},
 			); err != nil {
@@ -224,12 +218,10 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				return
 			}
 			in := store.RelationshipInput{
-				IRI:           r.IRI,
 				SourceAssetID: r.SourceAssetID,
 				TargetAssetID: r.TargetAssetID,
 				ArtifactType:  r.ArtifactType,
 				SourceSystem:  r.SourceSystem,
-				SourceID:      r.SourceID,
 				SourceKey:     r.SourceKey,
 				TargetKey:     r.TargetKey,
 				Extensions:    json.RawMessage(r.Extensions),
@@ -276,12 +268,10 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 	resp := v1.RelationshipResponse{
 		ID:            r.ID,
-		IRI:           derefStr(r.IRI),
 		SourceAssetID: r.SourceAssetID,
 		TargetAssetID: r.TargetAssetID,
 		ArtifactType:  r.ArtifactType,
 		SourceSystem:  r.SourceSystem,
-		SourceID:      derefStr(r.SourceID),
 		SourceKey:     derefStr(r.SourceKey),
 		TargetKey:     derefStr(r.TargetKey),
 		Extensions:    []byte(r.Extensions),

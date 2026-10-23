@@ -4,12 +4,10 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS relationships (
     id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    iri                    TEXT,
     source_asset_id        UUID         NOT NULL REFERENCES assets(id),
     target_asset_id        UUID         NOT NULL REFERENCES assets(id),
     artifact_type          VARCHAR(64)  NOT NULL,
     source_system          VARCHAR(128) NOT NULL,
-    source_id              TEXT,
     source_key             TEXT,
     target_key             TEXT,
     extensions             JSONB        NOT NULL DEFAULT '{}',

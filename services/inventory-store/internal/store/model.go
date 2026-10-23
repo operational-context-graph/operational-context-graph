@@ -48,12 +48,10 @@ type BatchResult struct {
 // Relationship mirrors the relationships table.
 type Relationship struct {
 	ID                  uuid.UUID       `json:"id"`
-	IRI                 *string         `json:"iri,omitempty"`
 	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
-	SourceID            *string         `json:"source_id,omitempty"`
 	SourceKey           *string         `json:"source_key,omitempty"`
 	TargetKey           *string         `json:"target_key,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
@@ -67,12 +65,10 @@ type Relationship struct {
 
 // RelationshipInput is the request body for POST /relationships.
 type RelationshipInput struct {
-	IRI                 string          `json:"iri"`
 	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
-	SourceID            string          `json:"source_id"`
 	SourceKey           string          `json:"source_key"`
 	TargetKey           string          `json:"target_key"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
