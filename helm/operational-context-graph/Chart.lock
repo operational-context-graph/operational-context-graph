@@ -17,5 +17,8 @@ dependencies:
 - name: doris
   repository: ""
   version: 0.1.0
-digest: sha256:056c429ba2f37839bd60051a17e16ff2c23bf69d95913ef4f98cb55e9852ec14
-generated: "2026-10-22T18:22:11.394677+02:00"
+- name: otelcol
+  repository: ""
+  version: 0.1.0
+digest: sha256:20a5b18161a6c26932b8a35bc30d77b242d0ab8e905e4e4f716fbd0f84298a34
+generated: "2026-10-23T11:04:58.986161+02:00"
