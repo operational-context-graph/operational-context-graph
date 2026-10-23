@@ -18,6 +18,9 @@ dependencies:
   - name: pgadmin
     version: 0.1.0
     condition: pgadmin.enabled
+  - name: inventory-store
+    version: 0.1.0
+    condition: inventory-store.enabled
   - name: telemetry-store
     version: 0.1.0
     condition: telemetry-store.enabled
