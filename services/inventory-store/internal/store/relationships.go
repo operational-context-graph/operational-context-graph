@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -34,11 +33,14 @@ func scanRelationshipRows(rows pgx.Rows, r *Relationship) error {
 	)
 }
 
-// upsertRelationshipTx performs the expire-then-insert reconcile for one relationship inside tx.
+// upsertRelationshipTx reconciles one relationship inside tx using open/re-point semantics.
 //
-// Temporal dedup: if the open row has the same last_updated_at_source as the incoming record,
-// the row is returned unchanged (idempotent re-delivery). Otherwise the open row is expired
-// and a new row is inserted so topology history is preserved.
+// Three cases, evaluated in order:
+//  1. Re-delivery: open row exists with same last_updated_at_source → return unchanged, created=false.
+//  2. Re-point: open row exists, last_updated_at_source changed → UPDATE endpoint UUIDs and
+//     last_updated_at_source in place; the edge UUID and valid_from are preserved because the
+//     topology (source_key/target_key) has not changed, only the asset version UUID has.
+//  3. Open: no open row exists → INSERT new row, created=true.
 func upsertRelationshipTx(ctx context.Context, tx pgx.Tx, in RelationshipInput) (Relationship, bool, error) {
 	const checkCurrent = `
 SELECT ` + relColumns + `
@@ -57,31 +59,32 @@ FOR UPDATE`
 		return Relationship{}, false, fmt.Errorf("check current relationship: %w", err)
 	}
 
-	// Temporal dedup: skip new version if last_updated_at_source unchanged.
-	if rowExists && in.LastUpdatedAtSource != nil && cur.LastUpdatedAtSource != nil {
-		if cur.LastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
+	if rowExists {
+		// Case 1: re-delivery — same timestamp, nothing to do.
+		if in.LastUpdatedAtSource != nil && cur.LastUpdatedAtSource != nil &&
+			cur.LastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
 			return cur, false, nil
 		}
+
+		// Case 2: re-point — topology unchanged, asset re-versioned.
+		// Update endpoint UUIDs and last_updated_at_source in place; preserve edge UUID and valid_from.
+		const repoint = `
+UPDATE relationships
+SET source_asset_id = $4, target_asset_id = $5, last_updated_at_source = $6
+WHERE source_key = $1 AND target_key = $2 AND artifact_type = $3 AND valid_to IS NULL
+RETURNING ` + relColumns
+		var r Relationship
+		err = scanRelationship(tx.QueryRow(ctx, repoint,
+			nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
+			in.SourceAssetID, in.TargetAssetID, in.LastUpdatedAtSource,
+		), &r)
+		if err != nil {
+			return Relationship{}, false, fmt.Errorf("re-point relationship: %w", err)
+		}
+		return r, false, nil
 	}
 
-	// Use last_updated_at_source as the temporal boundary when present.
-	var validFrom *time.Time
-	if in.LastUpdatedAtSource != nil {
-		validFrom = in.LastUpdatedAtSource
-	}
-
-	// Expire the current open row. valid_to matches the new valid_from for a contiguous timeline.
-	const expire = `
-UPDATE relationships SET valid_to = COALESCE($4, NOW())
-WHERE source_key = $1 AND target_key = $2 AND artifact_type = $3 AND valid_to IS NULL`
-	tag, err := tx.Exec(ctx, expire,
-		nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType, validFrom,
-	)
-	if err != nil {
-		return Relationship{}, false, fmt.Errorf("expire relationship: %w", err)
-	}
-	created := tag.RowsAffected() == 0
-
+	// Case 3: open — no existing row, insert new edge.
 	const insert = `
 INSERT INTO relationships (source_asset_id, target_asset_id, artifact_type,
                            source_system, source_key, target_key,
@@ -101,7 +104,7 @@ RETURNING ` + relColumns
 	if err != nil {
 		return Relationship{}, false, fmt.Errorf("insert relationship: %w", err)
 	}
-	return r, created, nil
+	return r, true, nil
 }
 
 // UpsertRelationship reconciles a relationship using expire-then-insert versioning.
