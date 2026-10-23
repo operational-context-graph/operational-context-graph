@@ -8,6 +8,7 @@ import "github.com/google/uuid"
 // UpsertAssetRequest is the body for POST /v1/assets.
 type UpsertAssetRequest struct {
 	IRI                 string  `json:"iri"                    validate:"required"`
+	Name                string  `json:"name,omitempty"`
 	ArtifactType        string  `json:"artifact_type"          validate:"required"`
 	SourceSystem        string  `json:"source_system"          validate:"required"`
 	SourceID            string  `json:"source_id"              validate:"required"`
@@ -21,6 +22,7 @@ type UpsertAssetRequest struct {
 type AssetResponse struct {
 	ID                  uuid.UUID `json:"id"`
 	IRI                 string    `json:"iri"`
+	Name                *string   `json:"name,omitempty"`
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
 	SourceID            string    `json:"source_id"`
