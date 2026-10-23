@@ -23,7 +23,7 @@ inventory-connector:
     tag: dev
     pullPolicy: Never
   netbox:
-    baseURL: "http://mockreplay-netbox:8081"
+    baseURL: "http://host.docker.internal:8081"
     pageSize: 1000
     tokenSecret:
       name: netbox-token
