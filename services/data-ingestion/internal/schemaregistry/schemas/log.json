@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:generic.log:1.0.0",
+  "type": "object",
+  "required": ["body"],
+  "properties": {
+    "timeUnixNano": {
+      "description": "Epoch nanoseconds as integer or numeric string",
+      "oneOf": [
+        { "type": "integer" },
+        { "type": "string" }
+      ]
+    },
+    "observedTimeUnixNano": {
+      "oneOf": [
+        { "type": "integer" },
+        { "type": "string" }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "description": "OTLP AnyValue wrapper, e.g. {\"stringValue\": \"...\"}"
+    },
+    "attributes": {
+      "type": "array"
+    }
+  }
+}

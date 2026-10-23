@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:netbox.network_device:1.0.0",
+  "type": "object",
+  "required": ["iri", "artifact_type", "source_system", "source_id"],
+  "properties": {
+    "iri": { "type": "string" },
+    "artifact_type": { "type": "string", "const": "NetworkDevice" },
+    "source_system": { "type": "string" },
+    "ingested_at": { "type": ["string", "null"], "format": "date-time" },
+    "name": { "type": ["string", "null"] },
+    "source_id": { "type": "string" },
+    "created_at_source": { "type": ["string", "null"], "format": "date-time" },
+    "last_updated_at_source": { "type": ["string", "null"], "format": "date-time" },
+    "extensions": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "serial": { "type": "string" },
+        "platform": { "type": "string" },
+        "primary_ip4": { "type": "string" },
+        "site_id": { "type": "string" },
+        "status": { "type": "string" },
+        "netbox_id": { "type": ["integer", "string"] },
+        "network_function": { "type": "string" }
+      }
+    }
+  }
+}

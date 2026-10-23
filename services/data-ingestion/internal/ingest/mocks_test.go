@@ -39,22 +39,24 @@ func (_m *Normalizer) EXPECT() *Normalizer_Expecter {
 }
 
 // Normalize provides a mock function for the type Normalizer
-func (_mock *Normalizer) Normalize(ctx context.Context, mapping ingest.SourceMapping, record ingest.IngestRecord) (ingest.IngestRecord, error) {
+func (_mock *Normalizer) Normalize(ctx context.Context, mapping ingest.SourceMapping, record ingest.IngestRecord) ([]ingest.IngestRecord, error) {
 	ret := _mock.Called(ctx, mapping, record)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Normalize")
 	}
 
-	var r0 ingest.IngestRecord
+	var r0 []ingest.IngestRecord
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ingest.SourceMapping, ingest.IngestRecord) (ingest.IngestRecord, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ingest.SourceMapping, ingest.IngestRecord) ([]ingest.IngestRecord, error)); ok {
 		return returnFunc(ctx, mapping, record)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ingest.SourceMapping, ingest.IngestRecord) ingest.IngestRecord); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ingest.SourceMapping, ingest.IngestRecord) []ingest.IngestRecord); ok {
 		r0 = returnFunc(ctx, mapping, record)
 	} else {
-		r0 = ret.Get(0).(ingest.IngestRecord)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ingest.IngestRecord)
+		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, ingest.SourceMapping, ingest.IngestRecord) error); ok {
 		r1 = returnFunc(ctx, mapping, record)
@@ -100,12 +102,12 @@ func (_c *Normalizer_Normalize_Call) Run(run func(ctx context.Context, mapping i
 	return _c
 }
 
-func (_c *Normalizer_Normalize_Call) Return(ingestRecord ingest.IngestRecord, err error) *Normalizer_Normalize_Call {
-	_c.Call.Return(ingestRecord, err)
+func (_c *Normalizer_Normalize_Call) Return(ingestRecords []ingest.IngestRecord, err error) *Normalizer_Normalize_Call {
+	_c.Call.Return(ingestRecords, err)
 	return _c
 }
 
-func (_c *Normalizer_Normalize_Call) RunAndReturn(run func(ctx context.Context, mapping ingest.SourceMapping, record ingest.IngestRecord) (ingest.IngestRecord, error)) *Normalizer_Normalize_Call {
+func (_c *Normalizer_Normalize_Call) RunAndReturn(run func(ctx context.Context, mapping ingest.SourceMapping, record ingest.IngestRecord) ([]ingest.IngestRecord, error)) *Normalizer_Normalize_Call {
 	_c.Call.Return(run)
 	return _c
 }

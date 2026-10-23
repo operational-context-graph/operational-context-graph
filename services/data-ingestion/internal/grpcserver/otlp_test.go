@@ -79,28 +79,28 @@ type spySchemaClient struct {
 	retErr      error
 }
 
-func (s *spySchemaClient) DefaultLogSchema(_ context.Context) (grpcserver.SchemaKey, error) {
+func (s *spySchemaClient) DefaultLogSchema(_ context.Context) (ingest.SchemaKey, error) {
 	s.logCalls.Add(1)
 	if s.retErr != nil {
-		return grpcserver.SchemaKey{}, s.retErr
+		return ingest.SchemaKey{}, s.retErr
 	}
-	return grpcserver.SchemaKey{LogicalArtifactID: "ocg.otlp.logs", Version: "1.0.0"}, nil
+	return ingest.SchemaKey{LogicalArtifactType: "ocg.otlp.logs", Version: "1.0.0"}, nil
 }
 
-func (s *spySchemaClient) DefaultMetricSchema(_ context.Context) (grpcserver.SchemaKey, error) {
+func (s *spySchemaClient) DefaultMetricSchema(_ context.Context) (ingest.SchemaKey, error) {
 	s.metricCalls.Add(1)
 	if s.retErr != nil {
-		return grpcserver.SchemaKey{}, s.retErr
+		return ingest.SchemaKey{}, s.retErr
 	}
-	return grpcserver.SchemaKey{LogicalArtifactID: "ocg.otlp.metrics", Version: "1.0.0"}, nil
+	return ingest.SchemaKey{LogicalArtifactType: "ocg.otlp.metrics", Version: "1.0.0"}, nil
 }
 
-func (s *spySchemaClient) DefaultTraceSchema(_ context.Context) (grpcserver.SchemaKey, error) {
+func (s *spySchemaClient) DefaultTraceSchema(_ context.Context) (ingest.SchemaKey, error) {
 	s.traceCalls.Add(1)
 	if s.retErr != nil {
-		return grpcserver.SchemaKey{}, s.retErr
+		return ingest.SchemaKey{}, s.retErr
 	}
-	return grpcserver.SchemaKey{LogicalArtifactID: "ocg.otlp.traces", Version: "1.0.0"}, nil
+	return ingest.SchemaKey{LogicalArtifactType: "ocg.otlp.traces", Version: "1.0.0"}, nil
 }
 
 // ── bufconn helpers ───────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ func TestNewServer_NilSchemaClient(t *testing.T) {
 }
 
 func TestNewServer_ValidOTLP(t *testing.T) {
-	srv, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &spyIngestor{}, &grpcserver.NoopSchemaRegistryClient{})
+	srv, err := grpcserver.NewServer(testGRPCCfg, testLimits, testRetry, &spyIngestor{}, &spySchemaClient{})
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 }
@@ -237,7 +237,7 @@ func TestNewServer_ValidOTLP(t *testing.T) {
 
 func TestOTLPLogs_HappyPath(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
@@ -247,7 +247,7 @@ func TestOTLPLogs_HappyPath(t *testing.T) {
 
 func TestOTLPLogs_EmptyRequest(t *testing.T) {
 	spy := &spyIngestor{}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.logs.Export(context.Background(), &collectorlogsv1.ExportLogsServiceRequest{})
@@ -259,7 +259,7 @@ func TestOTLPLogs_EmptyRequest(t *testing.T) {
 
 func TestOTLPMetrics_HappyPath(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.metrics.Export(context.Background(), sampleMetricsReq())
@@ -269,7 +269,7 @@ func TestOTLPMetrics_HappyPath(t *testing.T) {
 
 func TestOTLPMetrics_EmptyRequest(t *testing.T) {
 	spy := &spyIngestor{}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.metrics.Export(context.Background(), &collectormetricsv1.ExportMetricsServiceRequest{})
@@ -281,7 +281,7 @@ func TestOTLPMetrics_EmptyRequest(t *testing.T) {
 
 func TestOTLPTraces_HappyPath(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.traces.Export(context.Background(), sampleTracesReq())
@@ -291,7 +291,7 @@ func TestOTLPTraces_HappyPath(t *testing.T) {
 
 func TestOTLPTraces_EmptyRequest(t *testing.T) {
 	spy := &spyIngestor{}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.traces.Export(context.Background(), &collectortracesv1.ExportTraceServiceRequest{})
@@ -303,7 +303,7 @@ func TestOTLPTraces_EmptyRequest(t *testing.T) {
 
 func TestOTLPLogs_IngestRecordFields(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
@@ -323,11 +323,10 @@ func TestOTLPLogs_IngestRecordFields(t *testing.T) {
 	require.NotNil(t, rec.ContentType)
 	assert.Equal(t, "application/json", rec.ContentType)
 	assert.NotEmpty(t, rec.Payload)
-	// Payload must be a JSON object with "resource" and "logRecord" keys.
-	var envelope map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(rec.Payload, &envelope))
-	assert.Contains(t, envelope, "resource")
-	assert.Contains(t, envelope, "logRecord")
+	// Payload is the log record JSON directly (no envelope wrapper).
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Payload, &fields))
+	assert.Contains(t, fields, "body")
 }
 
 // ── error paths ───────────────────────────────────────────────────────────────
@@ -349,7 +348,7 @@ func TestOTLPLogs_DefaultSchemaError(t *testing.T) {
 
 func TestOTLPLogs_IngestorError(t *testing.T) {
 	spy := &spyIngestor{retErr: ingest.ErrOverloaded}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
@@ -362,7 +361,7 @@ func TestOTLPLogs_IngestorError(t *testing.T) {
 
 func TestOTLPLogs_ContextCancelled(t *testing.T) {
 	spy := &spyIngestor{}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -377,7 +376,7 @@ func TestOTLPLogs_ContextCancelled(t *testing.T) {
 
 func TestOTLPLogs_AllRejected(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 0, Rejected: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
@@ -401,7 +400,7 @@ func TestOTLPLogs_SchemaHeader_EmptyString(t *testing.T) {
 
 func TestOTLPLogs_SchemaHeader_PartialOverride(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
@@ -433,7 +432,7 @@ func TestOTLPLogs_DefaultResolvedOnce(t *testing.T) {
 
 func TestOTLPLogs_ConcurrentExport(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	const n = 50
@@ -456,7 +455,7 @@ func TestOTLPLogs_ConcurrentExport(t *testing.T) {
 
 func TestOTLP_ConcurrentMixedSignalTypes(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	const n = 20
@@ -489,7 +488,7 @@ func TestOTLP_ConcurrentMixedSignalTypes(t *testing.T) {
 
 func TestOTLP_EndToEnd_Logs(t *testing.T) {
 	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
-	clients, cleanup := newOTLPBufconn(t, spy, &grpcserver.NoopSchemaRegistryClient{})
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
 	_, err := clients.logs.Export(context.Background(), sampleLogsReq())

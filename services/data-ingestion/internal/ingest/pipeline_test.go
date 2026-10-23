@@ -59,7 +59,7 @@ func normalized() ingest.IngestRecord {
 func stubAcceptPath(reg *SchemaRegistry, eng *Normalizer, sch ingest.Schema) {
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(sch, nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
-	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(normalized(), nil)
+	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return([]ingest.IngestRecord{normalized()}, nil)
 	reg.EXPECT().TargetStore(mock.Anything, canonKey).Return(ingest.StoreID("telemetry"), nil)
 }
 
@@ -262,7 +262,7 @@ func TestPipeline_Ingest_NormalizationError(t *testing.T) {
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
-	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(ingest.IngestRecord{}, errors.New("cannot map"))
+	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("cannot map"))
 
 	p := ingest.NewPipeline(reg, eng, out)
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming()})
@@ -278,7 +278,7 @@ func TestPipeline_Ingest_TargetStoreNotFound(t *testing.T) {
 	out := NewOutboxWriter(t)
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
-	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(normalized(), nil)
+	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return([]ingest.IngestRecord{normalized()}, nil)
 	reg.EXPECT().TargetStore(mock.Anything, canonKey).Return(ingest.StoreID(""), ingest.ErrNotFound)
 
 	p := ingest.NewPipeline(reg, eng, out)
@@ -296,7 +296,7 @@ func TestPipeline_Ingest_TargetStoreUnavailable(t *testing.T) {
 	boom := errors.New("registry timeout")
 	reg.EXPECT().Schema(mock.Anything, srcKey).Return(mustSchema(t), nil)
 	reg.EXPECT().SourceMappings(mock.Anything, srcKey).Return(ingest.SourceMapping{}, nil)
-	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return(normalized(), nil)
+	eng.EXPECT().Normalize(mock.Anything, mock.Anything, mock.Anything).Return([]ingest.IngestRecord{normalized()}, nil)
 	reg.EXPECT().TargetStore(mock.Anything, canonKey).Return(ingest.StoreID(""), boom)
 
 	p := ingest.NewPipeline(reg, eng, out)

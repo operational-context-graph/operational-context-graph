@@ -80,17 +80,13 @@ func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.Resour
 
 	var payloads [][]byte
 	for _, resourceLogs := range rls {
-		resJSON, merr := marshalResourceJSON(resourceLogs.GetResource())
-		if merr != nil {
-			return merr
-		}
 		for _, scopeLogs := range resourceLogs.GetScopeLogs() {
 			for _, logRecord := range scopeLogs.GetLogRecords() {
-				payload, merr := marshalEnvelope(resJSON, "logRecord", logRecord)
+				recordJSON, merr := pjsonOpts.Marshal(logRecord)
 				if merr != nil {
-					return merr
+					return status.Errorf(codes.Internal, "marshal OTLP log record: %v", merr)
 				}
-				payloads = append(payloads, payload)
+				payloads = append(payloads, recordJSON)
 			}
 		}
 	}
@@ -169,7 +165,7 @@ func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.Res
 	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
 
-func (handler *OTLPHandler) ingest(ctx context.Context, key SchemaKey, batch []ingest.IngestRecord) error {
+func (handler *OTLPHandler) ingest(ctx context.Context, key ingest.SchemaKey, batch []ingest.IngestRecord) error {
 	result, err := handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -188,7 +184,7 @@ func (handler *OTLPHandler) ingest(ctx context.Context, key SchemaKey, batch []i
 		slog.Warn("otlp export: pipeline rejected records",
 			"accepted", result.Accepted,
 			"rejected", result.Rejected,
-			"schema", key.LogicalArtifactID+"@"+key.Version,
+			"schema", key.LogicalArtifactType+"@"+key.Version,
 		)
 	}
 	return nil
@@ -286,15 +282,12 @@ func marshalEnvelope(resourceJSON json.RawMessage, recordKey string, record prot
 	return out, nil
 }
 
-func payloadsToRecords(key SchemaKey, payloads [][]byte) []ingest.IngestRecord {
+func payloadsToRecords(key ingest.SchemaKey, payloads [][]byte) []ingest.IngestRecord {
 	ct := otlpContentType
 	records := make([]ingest.IngestRecord, len(payloads))
 	for i, payload := range payloads {
 		records[i] = ingest.IngestRecord{
-			Schema: ingest.SchemaKey{
-				LogicalArtifactType: key.LogicalArtifactID,
-				Version:             key.Version,
-			},
+			Schema:      key,
 			Payload:     payload,
 			ContentType: ct,
 		}
@@ -315,30 +308,30 @@ func ctxStatusError(err error) error {
 // or empty. defaultFn is called at most once per invocation.
 func schemaFromMetadata(
 	ctx context.Context,
-	defaultFn func(context.Context) (SchemaKey, error),
-) (SchemaKey, error) {
+	defaultFn func(context.Context) (ingest.SchemaKey, error),
+) (ingest.SchemaKey, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	artifactType := firstNonEmpty(md.Get(metaArtifactType))
 	schemaVersion := firstNonEmpty(md.Get(metaSchemaVersion))
 
 	if artifactType != "" && schemaVersion != "" {
-		return SchemaKey{LogicalArtifactID: artifactType, Version: schemaVersion}, nil
+		return ingest.SchemaKey{LogicalArtifactType: artifactType, Version: schemaVersion}, nil
 	}
 
 	// At least one field needs the default — call defaultFn exactly once.
 	def, err := defaultFn(ctx)
 	if err != nil {
-		return SchemaKey{}, err
+		return ingest.SchemaKey{}, err
 	}
 
 	if artifactType == "" {
-		artifactType = def.LogicalArtifactID
+		artifactType = def.LogicalArtifactType
 	}
 	if schemaVersion == "" {
 		schemaVersion = def.Version
 	}
-	return SchemaKey{LogicalArtifactID: artifactType, Version: schemaVersion}, nil
+	return ingest.SchemaKey{LogicalArtifactType: artifactType, Version: schemaVersion}, nil
 }
 
 // firstNonEmpty returns the first non-empty string in vs, or "".
