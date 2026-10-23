@@ -16,7 +16,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
-const canonicalVersion = "1.0.0"
+const canonicalVersion = "0.1.0"
 
 // Stub implements ingest.Normalizer with mapping logic hardcoded from the
 // netbox_canonical.yaml and octobus_logs.yaml mapping definitions.
