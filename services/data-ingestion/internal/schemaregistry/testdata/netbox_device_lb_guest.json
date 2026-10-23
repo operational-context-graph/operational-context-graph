@@ -1,0 +1,205 @@
+{
+  "id": 42655,
+  "url": "https://netbox.global.cloud.sap/api/dcim/devices/42655/",
+  "display_url": "https://netbox.global.cloud.sap/dcim/devices/42655/",
+  "display": "ap-jp-1-lb013a-01",
+  "name": "ap-jp-1-lb013a-01",
+  "device_type": {
+    "id": 266,
+    "url": "https://netbox.global.cloud.sap/api/dcim/device-types/266/",
+    "display": "F5-TENANT",
+    "manufacturer": {
+      "id": 14,
+      "url": "https://netbox.global.cloud.sap/api/dcim/manufacturers/14/",
+      "display": "F5",
+      "name": "F5",
+      "slug": "f5",
+      "description": ""
+    },
+    "model": "F5-TENANT",
+    "slug": "f5-tenant",
+    "description": ""
+  },
+  "role": {
+    "id": 12,
+    "url": "https://netbox.global.cloud.sap/api/dcim/device-roles/12/",
+    "display": "Loadbalancer",
+    "name": "Loadbalancer",
+    "slug": "loadbalancer",
+    "description": ""
+  },
+  "tenant": {
+    "id": 1,
+    "url": "https://netbox.global.cloud.sap/api/tenancy/tenants/1/",
+    "display": "SAP Cloud Infrastructure",
+    "name": "SAP Cloud Infrastructure",
+    "slug": "sap-cloud-infrastructure",
+    "description": "fka Converged Cloud CCloud"
+  },
+  "platform": {
+    "id": 8,
+    "url": "https://netbox.global.cloud.sap/api/dcim/platforms/8/",
+    "display": "F5 TMOS",
+    "name": "F5 TMOS",
+    "slug": "f5-tmos",
+    "description": ""
+  },
+  "serial": "",
+  "asset_tag": null,
+  "site": {
+    "id": 13,
+    "url": "https://netbox.global.cloud.sap/api/dcim/sites/13/",
+    "display": "AP-JP-1a",
+    "name": "AP-JP-1a",
+    "slug": "ap-jp-1a",
+    "description": ""
+  },
+  "location": {
+    "id": 63,
+    "url": "https://netbox.global.cloud.sap/api/dcim/locations/63/",
+    "display": "Cage 5 (K4B_2)",
+    "name": "Cage 5 (K4B_2)",
+    "slug": "cage-5-k4b_2",
+    "description": "",
+    "rack_count": 0,
+    "_depth": 1
+  },
+  "rack": {
+    "id": 1328,
+    "url": "https://netbox.global.cloud.sap/api/dcim/racks/1328/",
+    "display": "NP013-02 (APJ-Japan-Tokyo 1 (TK6)-Cage 5 (K4B_2)-K4B-190)",
+    "name": "NP013-02",
+    "description": "netPod 2021A"
+  },
+  "position": null,
+  "face": null,
+  "latitude": null,
+  "longitude": null,
+  "parent_device": {
+    "id": 41821,
+    "url": "https://netbox.global.cloud.sap/api/dcim/devices/41821/",
+    "display_url": "https://netbox.global.cloud.sap/dcim/devices/41821/",
+    "display": "ap-jp-1-lb013a (35367772)",
+    "name": "ap-jp-1-lb013a",
+    "device_bay": {
+      "id": 9733,
+      "url": "https://netbox.global.cloud.sap/api/dcim/device-bays/9733/",
+      "display_url": "https://netbox.global.cloud.sap/dcim/device-bays/9733/",
+      "display": "tenant1",
+      "device": {
+        "id": 41821,
+        "url": "https://netbox.global.cloud.sap/api/dcim/devices/41821/",
+        "display_url": "https://netbox.global.cloud.sap/dcim/devices/41821/",
+        "display": "ap-jp-1-lb013a (35367772)",
+        "name": "ap-jp-1-lb013a"
+      },
+      "name": "tenant1"
+    }
+  },
+  "status": {
+    "value": "active",
+    "label": "Active"
+  },
+  "airflow": null,
+  "primary_ip": {
+    "id": 140888,
+    "url": "https://netbox.global.cloud.sap/api/ipam/ip-addresses/140888/",
+    "display": "10.46.32.134/25",
+    "family": {
+      "value": 4,
+      "label": "IPv4"
+    },
+    "address": "10.46.32.134/25",
+    "description": "ap-jp-1-lb013a-01"
+  },
+  "primary_ip4": {
+    "id": 140888,
+    "url": "https://netbox.global.cloud.sap/api/ipam/ip-addresses/140888/",
+    "display": "10.46.32.134/25",
+    "family": {
+      "value": 4,
+      "label": "IPv4"
+    },
+    "address": "10.46.32.134/25",
+    "description": "ap-jp-1-lb013a-01"
+  },
+  "primary_ip6": null,
+  "oob_ip": null,
+  "cluster": {
+    "id": 3132,
+    "url": "https://netbox.global.cloud.sap/api/virtualization/clusters/3132/",
+    "display": "ap-jp-1-lb013-cluster-01",
+    "name": "ap-jp-1-lb013-cluster-01",
+    "description": "Logical Cluster Object representing the ap-jp-1-lb013-01 f5-vcmp, f5-tenant"
+  },
+  "virtual_chassis": null,
+  "vc_position": null,
+  "vc_priority": null,
+  "description": "",
+  "comments": "",
+  "config_template": null,
+  "config_context": {
+    "compute": {
+      "ad_path": "/CCloud/Resources/JP",
+      "advanced_settings": {
+        "Config.HostAgent.plugins.hostsvc.esxAdminsGroup": "CP_CONV_VC_JP_RUN"
+      },
+      "vcenter_backup_schedule": {
+        "days": [],
+        "hour": 15,
+        "name": "default",
+        "parts": ["common"],
+        "minute": 0,
+        "enabled": true,
+        "schedule_name": "default",
+        "retention_policy": 1
+      }
+    },
+    "nw-monitoring": {
+      "snmp-profile": "snmp_v3_profile_4"
+    }
+  },
+  "local_context_data": {
+    "nw-monitoring": {
+      "snmp-profile": "snmp_v3_profile_4"
+    }
+  },
+  "tags": [
+    {
+      "id": 66,
+      "url": "https://netbox.global.cloud.sap/api/extras/tags/66/",
+      "display_url": "https://netbox.global.cloud.sap/extras/tags/66/",
+      "display": "CC-NET-F5-GUEST-LBAAS",
+      "name": "CC-NET-F5-GUEST-LBAAS",
+      "slug": "cc-net-f5-guest-lbaas",
+      "color": "aa1409"
+    },
+    {
+      "id": 1048,
+      "url": "https://netbox.global.cloud.sap/api/extras/tags/1048/",
+      "display_url": "https://netbox.global.cloud.sap/extras/tags/1048/",
+      "display": "CC-OPSAREA-NETWORK",
+      "name": "CC-OPSAREA-NETWORK",
+      "slug": "cc-opsarea-network",
+      "color": "607d8b"
+    }
+  ],
+  "custom_fields": {
+    "CCIR_ID": "00205495930662406513",
+    "DC Label": null,
+    "SalesQuotation": null,
+    "DCAM_UID": null
+  },
+  "created": "2024-11-19T10:55:12.261646Z",
+  "last_updated": "2026-02-24T18:02:53.232747Z",
+  "console_port_count": 0,
+  "console_server_port_count": 0,
+  "power_port_count": 0,
+  "power_outlet_count": 0,
+  "interface_count": 4,
+  "front_port_count": 0,
+  "rear_port_count": 0,
+  "device_bay_count": 0,
+  "module_bay_count": 0,
+  "inventory_item_count": 0
+}

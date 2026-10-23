@@ -11,5 +11,5 @@ import "context"
 // holds the canonical SchemaKey the mapping targets.
 // Implementations MUST be safe for concurrent use.
 type Normalizer interface {
-	Normalize(ctx context.Context, mapping SourceMapping, record IngestRecord) (IngestRecord, error)
+	Normalize(ctx context.Context, mapping SourceMapping, record IngestRecord) ([]IngestRecord, error)
 }

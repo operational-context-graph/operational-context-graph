@@ -49,6 +49,18 @@ data-ingestion:
     passwordSecret:
       name: postgres-secret
       key: password
+  telemetryStore:
+    baseURL: "http://ocg-telemetry-store:8080"
+  inventoryStore:
+    baseURL: "http://ocg-inventory-store:8080"
+
+
+telemetry-store:
+  enabled: true
+  replicaCount: 3
+  env:
+    # Set to "1" in values.local.yaml for a single-BE dev cluster.
+    DORIS_REPLICATION_NUM: "3"
 
 doris:
   enabled: true
@@ -139,12 +151,13 @@ inventory-connector:
     tag: "0.1.0"
     pullPolicy: IfNotPresent
   netbox:
-    baseURL: ""
+    # Required: no default. Must be provided per environment, e.g. in values.local.yaml.
+    # baseURL: "http://your-netbox"
     tokenSecret:
-      name: ""
+      name: "netbox-token"
       key: token
   grpc:
-    endpoint: ""
+    endpoint: "ocg-data-ingestion:9090"
     connectorID: "ocg-inventory-connector"
   connector:
     schemaVersion: "0.1.0"

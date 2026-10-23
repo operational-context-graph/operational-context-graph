@@ -1,0 +1,18 @@
+{
+  "iri": "urn:ocg:dc/ap-jp-1a/ap-jp-1-lb013a/ap-jp-1-lb013a-01",
+  "artifact_type": "LBGuest",
+  "source_system": "netbox",
+  "extensions": {
+    "model": "F5-TENANT",
+    "platform": "F5 TMOS",
+    "primary_ip4": "10.46.32.134",
+    "site_id": "ap-jp-1a",
+    "status": "active",
+    "netbox_id": 42655,
+    "parent_netbox_id": 41821
+  },
+  "name": "ap-jp-1-lb013a-01",
+  "source_id": "42655",
+  "created_at_source": "2024-11-19T10:55:12.261646Z",
+  "last_updated_at_source": "2026-02-24T18:02:53.232747Z"
+}

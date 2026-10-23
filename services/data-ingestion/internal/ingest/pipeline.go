@@ -57,7 +57,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 			result.Rejected++
 			continue
 		}
-		accepted = append(accepted, row)
+		accepted = append(accepted, row...)
 	}
 
 	if len(accepted) > 0 {
@@ -74,21 +74,21 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 // It returns (row, true, nil) when the record is accepted, (_, false, nil) when
 // the record is rejected (record-level), and (_, false, err) on a request-level
 // failure that must abort the batch.
-func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord, bool, error) {
+func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecord, bool, error) {
 	// 1. Fetch schema and validate the payload.
 	schema, err := p.registry.Schema(ctx, rec.Schema)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			slog.WarnContext(ctx, "ingest: unregistered schema, record rejected",
 				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
-			return OutboxRecord{}, false, nil
+			return []OutboxRecord{}, false, nil
 		}
-		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (schema %s/%s): %w",
+		return []OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (schema %s/%s): %w",
 			ErrUnavailable, rec.Schema.LogicalArtifactType, rec.Schema.Version, err)
 	}
 
 	if !p.validate(ctx, schema, rec) {
-		return OutboxRecord{}, false, nil
+		return []OutboxRecord{}, false, nil
 	}
 
 	// 2. Fetch the source mapping and normalize to canonical shape.
@@ -97,38 +97,43 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) (OutboxRecord,
 		if errors.Is(err, ErrNotFound) {
 			slog.WarnContext(ctx, "ingest: no source mapping, record rejected",
 				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
-			return OutboxRecord{}, false, nil
+			return []OutboxRecord{}, false, nil
 		}
-		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (source mappings %s/%s): %w",
+		return []OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (source mappings %s/%s): %w",
 			ErrUnavailable, rec.Schema.LogicalArtifactType, rec.Schema.Version, err)
 	}
 
-	normalized, err := p.normalizer.Normalize(ctx, mapping, rec)
+	// The normalization step might return multiple records (e.g. the entity iteself and an edge to a different entity)
+	normalized_records, err := p.normalizer.Normalize(ctx, mapping, rec)
 	if err != nil {
 		slog.WarnContext(ctx, "ingest: normalization failed, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
-		return OutboxRecord{}, false, nil
+		return []OutboxRecord{}, false, nil
 	}
 
-	// 3. Resolve the target store from the canonical (normalized) schema key.
-	store, err := p.registry.TargetStore(ctx, normalized.Schema)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			slog.WarnContext(ctx, "ingest: no target store, record rejected",
-				"logical_artifact_type", normalized.Schema.LogicalArtifactType, "schema_version", normalized.Schema.Version)
-			return OutboxRecord{}, false, nil
+	// 3. Resolve the target store for each normalized record.
+	var rows []OutboxRecord
+	for _, normalized := range normalized_records {
+		store, err := p.registry.TargetStore(ctx, normalized.Schema)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				slog.WarnContext(ctx, "ingest: no target store, record rejected",
+					"logical_artifact_type", normalized.Schema.LogicalArtifactType, "schema_version", normalized.Schema.Version)
+				continue
+			}
+			return []OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (target store %s/%s): %w",
+				ErrUnavailable, normalized.Schema.LogicalArtifactType, normalized.Schema.Version, err)
 		}
-		return OutboxRecord{}, false, fmt.Errorf("%w: schema registry unavailable (target store %s/%s): %w",
-			ErrUnavailable, normalized.Schema.LogicalArtifactType, normalized.Schema.Version, err)
+		rows = append(rows, OutboxRecord{
+			TargetStore:         store,
+			LogicalArtifactType: normalized.Schema.LogicalArtifactType,
+			SchemaVersion:       normalized.Schema.Version,
+			Payload:             normalized.Payload,
+			ContentType:         normalized.ContentType,
+		})
 	}
 
-	return OutboxRecord{
-		TargetStore:         store,
-		LogicalArtifactType: normalized.Schema.LogicalArtifactType,
-		SchemaVersion:       normalized.Schema.Version,
-		Payload:             normalized.Payload,
-		ContentType:         normalized.ContentType,
-	}, true, nil
+	return rows, len(rows) > 0, nil
 }
 
 // validate reports whether the record's payload is non-empty, valid JSON, and
