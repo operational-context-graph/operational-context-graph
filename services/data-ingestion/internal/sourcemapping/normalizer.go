@@ -261,7 +261,7 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 		"artifact_type":      "LogRecord",
 		"source_system":      "octobus",
 		"ingested_at":        time.Now().UTC().Format(time.RFC3339Nano),
-		"timestamp":          tsNanos,
+		"timestamp":          time.Unix(0, tsNanos).UTC().Format(time.RFC3339),
 		"observed_timestamp": rawTS,
 		"signal_type":        "LogRecord",
 		"record_id":          recordID,
