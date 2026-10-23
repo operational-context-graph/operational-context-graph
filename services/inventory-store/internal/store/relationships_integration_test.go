@@ -29,12 +29,10 @@ func TestUpsertRelationship_Idempotent(t *testing.T) {
 
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := store.RelationshipInput{
-		IRI:                 "urn:ocg:rel/cmdb/src-rel-001_connects_tgt-rel-001",
 		SourceAssetID:       aSrc.ID,
 		TargetAssetID:       aTgt.ID,
 		ArtifactType:        "connects",
 		SourceSystem:        "cmdb",
-		SourceID:            "src-rel-001_connects_tgt-rel-001",
 		SourceKey:           "cmdb:src-rel-001",
 		TargetKey:           "cmdb:tgt-rel-001",
 		LastUpdatedAtSource: &ts,
@@ -69,12 +67,10 @@ func TestUpsertRelationshipBatch_HappyPath(t *testing.T) {
 
 	rels, err := s.UpsertRelationshipBatch(ctx, []store.RelationshipInput{
 		{
-			IRI:           "urn:ocg:rel/cmdb/relb-src-001_connects_relb-tgt-001",
 			SourceAssetID: aSrc.ID,
 			TargetAssetID: aTgt.ID,
 			ArtifactType:  "connects",
 			SourceSystem:  "cmdb",
-			SourceID:      "relb-src-001_connects_relb-tgt-001",
 			SourceKey:     "cmdb:relb-src-001",
 			TargetKey:     "cmdb:relb-tgt-001",
 		},
@@ -99,12 +95,10 @@ func TestUpsertRelationshipBatch_Idempotent(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := []store.RelationshipInput{
 		{
-			IRI:                 "urn:ocg:rel/cmdb/relb-idem-src_connects_relb-idem-tgt",
 			SourceAssetID:       aSrc.ID,
 			TargetAssetID:       aTgt.ID,
 			ArtifactType:        "connects",
 			SourceSystem:        "cmdb",
-			SourceID:            "relb-idem-src_connects_relb-idem-tgt",
 			SourceKey:           "cmdb:relb-idem-src",
 			TargetKey:           "cmdb:relb-idem-tgt",
 			LastUpdatedAtSource: &ts,
@@ -140,18 +134,14 @@ func TestFilterRelationships_ByType(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/src-filter-001_connects_tgt-filter-001",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
 		ArtifactType: "connects", SourceSystem: "cmdb",
-		SourceID:  "src-filter-001_connects_tgt-filter-001",
 		SourceKey: "cmdb:src-filter-001", TargetKey: "cmdb:tgt-filter-001",
 	})
 	require.NoError(t, err)
 	_, _, err = s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/src-filter-001_depends_on_tgt-filter-001",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
 		ArtifactType: "depends_on", SourceSystem: "cmdb",
-		SourceID:  "src-filter-001_depends_on_tgt-filter-001",
 		SourceKey: "cmdb:src-filter-001", TargetKey: "cmdb:tgt-filter-001",
 	})
 	require.NoError(t, err)
@@ -163,7 +153,7 @@ func TestFilterRelationships_ByType(t *testing.T) {
 	assert.Equal(t, "connects", results[0].ArtifactType)
 }
 
-func TestUpsertRelationship_IRIAndSourceID_RoundTrip(t *testing.T) {
+func TestUpsertRelationship_IngestedAtRoundTrip(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
 	ctx := t.Context()
@@ -175,12 +165,10 @@ func TestUpsertRelationship_IRIAndSourceID_RoundTrip(t *testing.T) {
 
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/iri-rel-src_connects_iri-rel-tgt",
 		SourceAssetID: aSrc.ID,
 		TargetAssetID: aTgt.ID,
 		ArtifactType:  "connects",
 		SourceSystem:  "cmdb",
-		SourceID:      "iri-rel-src_connects_iri-rel-tgt",
 		SourceKey:     "cmdb:iri-rel-src",
 		TargetKey:     "cmdb:iri-rel-tgt",
 		IngestedAt:    &ts,
@@ -192,10 +180,6 @@ func TestUpsertRelationship_IRIAndSourceID_RoundTrip(t *testing.T) {
 	got, err := s.GetRelationshipByID(ctx, r.ID)
 	require.NoError(t, err)
 
-	require.NotNil(t, got.IRI)
-	assert.Equal(t, "urn:ocg:rel/cmdb/iri-rel-src_connects_iri-rel-tgt", *got.IRI)
-	require.NotNil(t, got.SourceID)
-	assert.Equal(t, "iri-rel-src_connects_iri-rel-tgt", *got.SourceID)
 	require.NotNil(t, got.SourceKey)
 	assert.Equal(t, "cmdb:iri-rel-src", *got.SourceKey)
 	require.NotNil(t, got.TargetKey)
@@ -217,12 +201,10 @@ func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
 	require.NoError(t, err)
 
 	in := store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/ext-rel-src_connects_ext-rel-tgt",
 		SourceAssetID: aSrc.ID,
 		TargetAssetID: aTgt.ID,
 		ArtifactType:  "connects",
 		SourceSystem:  "cmdb",
-		SourceID:      "ext-rel-src_connects_ext-rel-tgt",
 		SourceKey:     "cmdb:ext-rel-src",
 		TargetKey:     "cmdb:ext-rel-tgt",
 		// Extensions deliberately omitted
@@ -253,12 +235,10 @@ func TestUpsertRelationship_NewVersionOnSourceChange(t *testing.T) {
 
 	ts1 := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	r1, created1, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:                 "urn:ocg:rel/cmdb/ver-src_connects_ver-tgt",
 		SourceAssetID:       aSrc.ID,
 		TargetAssetID:       aTgt.ID,
 		ArtifactType:        "connects",
 		SourceSystem:        "cmdb",
-		SourceID:            "ver-src_connects_ver-tgt",
 		SourceKey:           "cmdb:ver-src",
 		TargetKey:           "cmdb:ver-tgt",
 		LastUpdatedAtSource: &ts1,
@@ -269,12 +249,10 @@ func TestUpsertRelationship_NewVersionOnSourceChange(t *testing.T) {
 	// Advance last_updated_at_source — must produce a new version.
 	ts2 := time.Now().UTC().Truncate(time.Microsecond)
 	r2, created2, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:                 "urn:ocg:rel/cmdb/ver-src_connects_ver-tgt",
 		SourceAssetID:       aSrc.ID,
 		TargetAssetID:       aTgt.ID,
 		ArtifactType:        "connects",
 		SourceSystem:        "cmdb",
-		SourceID:            "ver-src_connects_ver-tgt",
 		SourceKey:           "cmdb:ver-src",
 		TargetKey:           "cmdb:ver-tgt",
 		LastUpdatedAtSource: &ts2,
@@ -329,12 +307,10 @@ func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T)
 
 	relTs := time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Microsecond)
 	r1, created1, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:                 "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
 		SourceAssetID:       aSrc.ID,
 		TargetAssetID:       aTgt.ID,
 		ArtifactType:        "connects",
 		SourceSystem:        "cmdb",
-		SourceID:            "reversion-src_connects_reversion-tgt",
 		SourceKey:           "cmdb:reversion-src",
 		TargetKey:           "cmdb:reversion-tgt",
 		LastUpdatedAtSource: &relTs,
@@ -357,12 +333,10 @@ func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T)
 	// Re-send the edge with the new asset UUID but the same relationship last_updated_at_source.
 	// Temporal dedup fires — same row returned, no new version created.
 	r2, created2, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:                 "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
 		SourceAssetID:       aSrc2.ID,
 		TargetAssetID:       aTgt.ID,
 		ArtifactType:        "connects",
 		SourceSystem:        "cmdb",
-		SourceID:            "reversion-src_connects_reversion-tgt",
 		SourceKey:           "cmdb:reversion-src",
 		TargetKey:           "cmdb:reversion-tgt",
 		LastUpdatedAtSource: &relTs, // same relationship timestamp
@@ -393,20 +367,16 @@ func TestFilterRelationships_OnlyReturnsCurrentEdges(t *testing.T) {
 
 	// Open edge: src → tgt.
 	openEdge, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/curr-src_connects_curr-tgt",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
 		ArtifactType: "connects", SourceSystem: "cmdb",
-		SourceID:  "curr-src_connects_curr-tgt",
 		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt",
 	})
 	require.NoError(t, err)
 
 	// Insert and immediately close edge: src → tgt2.
 	closedEdge, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/curr-src_connects_curr-tgt2",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt2.ID,
 		ArtifactType: "connects", SourceSystem: "cmdb",
-		SourceID:  "curr-src_connects_curr-tgt2",
 		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt2",
 	})
 	require.NoError(t, err)

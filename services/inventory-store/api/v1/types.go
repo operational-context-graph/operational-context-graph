@@ -58,12 +58,10 @@ type BatchResult struct {
 
 // UpsertRelationshipRequest is the body for POST /v1/relationships.
 type UpsertRelationshipRequest struct {
-	IRI                 string    `json:"iri"                    validate:"required"`
 	SourceAssetID       uuid.UUID `json:"source_asset_id"        validate:"required"`
 	TargetAssetID       uuid.UUID `json:"target_asset_id"        validate:"required"`
 	ArtifactType        string    `json:"artifact_type"          validate:"required"`
 	SourceSystem        string    `json:"source_system"          validate:"required"`
-	SourceID            string    `json:"source_id"              validate:"required"`
 	SourceKey           string    `json:"source_key"             validate:"required"`
 	TargetKey           string    `json:"target_key"             validate:"required"`
 	Extensions          []byte    `json:"extensions,omitempty"`
@@ -75,12 +73,10 @@ type UpsertRelationshipRequest struct {
 // RelationshipResponse is the body returned for a single relationship.
 type RelationshipResponse struct {
 	ID                  uuid.UUID `json:"id"`
-	IRI                 string    `json:"iri"`
 	SourceAssetID       uuid.UUID `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID `json:"target_asset_id"`
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
-	SourceID            string    `json:"source_id"`
 	SourceKey           string    `json:"source_key"`
 	TargetKey           string    `json:"target_key"`
 	Extensions          []byte    `json:"extensions,omitempty"`
