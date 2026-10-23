@@ -103,22 +103,6 @@ RETURNING ` + relColumns
 	return r, true, nil
 }
 
-// CloseRelationship soft-deletes an open relationship by setting valid_to = NOW().
-// Returns ErrRelationshipNotFound when no open row with that ID exists.
-func (s *Store) CloseRelationship(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE relationships SET valid_to = NOW() WHERE id = $1 AND valid_to IS NULL`,
-		id,
-	)
-	if err != nil {
-		return fmt.Errorf("close relationship: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrRelationshipNotFound
-	}
-	return nil
-}
-
 // ListRelationships returns at most limit open relationships for an asset (as source or target).
 // limit <= 0 defaults to 200; maximum 1000.
 func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit int) ([]Relationship, error) {

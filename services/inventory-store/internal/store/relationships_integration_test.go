@@ -236,42 +236,6 @@ func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
 	assert.Empty(t, m, "extensions must default to {} when not provided")
 }
 
-func TestCloseRelationship_SetsValidTo(t *testing.T) {
-	cleanTables(t)
-	s := newStore(t)
-	ctx := t.Context()
-
-	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-src"})
-	require.NoError(t, err)
-	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-tgt"})
-	require.NoError(t, err)
-
-	r, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/close-src_connects_close-tgt",
-		SourceAssetID: aSrc.ID,
-		TargetAssetID: aTgt.ID,
-		ArtifactType:  "connects",
-		SourceSystem:  "cmdb",
-		SourceID:      "close-src_connects_close-tgt",
-		SourceKey:     "cmdb:close-src",
-		TargetKey:     "cmdb:close-tgt",
-	})
-	require.NoError(t, err)
-	assert.Nil(t, r.ValidTo, "newly inserted edge must be open")
-
-	err = s.CloseRelationship(ctx, r.ID)
-	require.NoError(t, err)
-
-	// Row should now be closed.
-	closed, err := s.GetRelationshipByID(ctx, r.ID)
-	require.NoError(t, err)
-	require.NotNil(t, closed.ValidTo, "valid_to must be set after close")
-
-	// Second close returns ErrRelationshipNotFound (no open row with that ID).
-	err = s.CloseRelationship(ctx, r.ID)
-	require.ErrorIs(t, err, store.ErrRelationshipNotFound)
-}
-
 func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
@@ -377,7 +341,8 @@ func TestFilterRelationships_OnlyReturnsCurrentEdges(t *testing.T) {
 		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt2",
 	})
 	require.NoError(t, err)
-	err = s.CloseRelationship(ctx, closedEdge.ID)
+	// Close the edge directly via SQL (CloseRelationship is not yet exposed).
+	_, err = testPool.Exec(ctx, `UPDATE relationships SET valid_to = NOW() WHERE id = $1`, closedEdge.ID)
 	require.NoError(t, err)
 
 	results, err := s.FilterRelationships(ctx, nil, nil, nil, "connects", 100)
