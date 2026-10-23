@@ -8,7 +8,7 @@
     "artifact_type": { "type": "string", "const": "LogRecord" },
     "source_system": { "type": "string" },
     "ingested_at": { "type": ["string", "null"], "format": "date-time" },
-    "timestamp": { "type": "integer", "description": "epoch nanoseconds UTC (OTel TimeUnixNano)" },
+    "timestamp": { "type": "string", "format": "date-time", "description": "RFC 3339 timestamp from @timestamp" },
     "observed_timestamp": { "type": "string", "format": "date-time" },
     "signal_type": { "type": "string" },
     "record_id": { "type": "string" },
