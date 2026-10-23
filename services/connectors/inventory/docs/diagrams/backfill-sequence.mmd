@@ -1,0 +1,33 @@
+---
+title: OCG Inventory Connector — Run Sequence
+---
+sequenceDiagram
+    participant K8s as k8s Job
+    participant Main as main.go
+    participant Runner as Connector (runner)
+    participant NB as HTTPClient (NetBox)
+    participant Pub as GRPCPublisher
+    participant DI as Data Ingestion (IngestionService)
+
+    K8s->>Main: start (cert+key mounted, config loaded)
+
+    loop for each endpoint
+        Main->>Runner: ProcessEndpoint(ctx, endpoint)
+
+        Runner->>NB: Paginate(ctx, endpoint)
+        NB-->>Runner: []json.RawMessage
+
+        note over Runner: Build(raw) to MessageEnvelope with raw payload, artifact id, watermark
+
+        Runner->>Pub: Publish(ctx, []Message)
+        Pub->>DI: IngestionService.Ingest(up to 1000 msgs / 4 MiB)
+        DI-->>Pub: IngestResponse
+
+        alt UNAVAILABLE
+            Pub-->>Runner: back-pressure error
+            Runner-->>Main: error
+            Main->>K8s: exit 1
+        end
+    end
+
+    Main->>K8s: exit 0 + summary log

@@ -18,3 +18,16 @@ dependencies:
   - name: pgadmin
     version: 0.1.0
     condition: pgadmin.enabled
+  - name: telemetry-store
+    version: 0.1.0
+    condition: telemetry-store.enabled
+  - name: inventory-connector
+    version: 0.1.0
+    condition: inventory-connector.enabled
+  - name: doris-operator
+    version: 25.8.0
+    repository: https://charts.selectdb.com
+    condition: doris.enabled
+  - name: doris
+    version: 0.1.0
+    condition: doris.enabled

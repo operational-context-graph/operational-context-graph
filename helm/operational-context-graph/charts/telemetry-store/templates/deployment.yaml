@@ -1,0 +1,85 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "telemetry-store.fullname" . }}
+  labels:
+    {{- include "telemetry-store.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "telemetry-store.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "telemetry-store.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      # This migration approach (mysql:8 init container + raw SQL) is a temporary
+      # workaround until a proper Doris migration solution is in place.
+      initContainers:
+        - name: migrate
+          image: mysql:8
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              MYSQL_PASS_ARG=""
+              if [ -n "${DORIS_MIGRATE_PASSWORD}" ]; then
+                MYSQL_PASS_ARG="-p${DORIS_MIGRATE_PASSWORD}"
+              fi
+              until mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} -e "SHOW FRONTENDS;" 2>/dev/null; do
+                echo "waiting for Doris FE..."; sleep 5;
+              done
+              mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} < /migrations/migrations.sql
+          env:
+            - name: DORIS_MIGRATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dorisMigratorSecretName }}
+                  key: DORIS_MIGRATE_PASSWORD
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          envFrom:
+            - secretRef:
+                name: {{ .Values.dorisSecretName }}
+            - secretRef:
+                name: {{ .Values.dorisReadSecretName }}
+          env:
+            - name: HTTP_PORT
+              value: {{ .Values.env.HTTP_PORT | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: migrations
+          configMap:
+            name: {{ include "telemetry-store.fullname" . }}-migrations

@@ -8,5 +8,17 @@ dependencies:
 - name: pgadmin
   repository: ""
   version: 0.1.0
+- name: telemetry-store
+  repository: ""
+  version: 0.1.0
+- name: inventory-connector
+  repository: ""
+  version: 0.1.0
+- name: doris-operator
+  repository: https://charts.selectdb.com
+  version: 25.8.0
+- name: doris
+  repository: ""
+  version: 0.1.0
 digest: sha256:a5842ce5fc7331b06fb4477c803fcc6dcfc7a785ec0b6bc66efd8e6995b13394
 generated: "2026-10-22T10:52:13.233683+02:00"
