@@ -8,6 +8,9 @@ dependencies:
 - name: pgadmin
   repository: ""
   version: 0.1.0
+- name: inventory-store
+  repository: ""
+  version: 0.1.0
 - name: telemetry-store
   repository: ""
   version: 0.1.0
@@ -20,5 +23,8 @@ dependencies:
 - name: doris
   repository: ""
   version: 0.1.0
-digest: sha256:056c429ba2f37839bd60051a17e16ff2c23bf69d95913ef4f98cb55e9852ec14
-generated: "2026-10-22T18:22:11.394677+02:00"
+- name: otelcol
+  repository: ""
+  version: 0.1.0
+digest: sha256:c2ae2a5a8afcf19364f861fe50d4b37a73621600ca53e5761a14be40efa349e1
+generated: "2026-10-23T13:57:29.418276+02:00"
