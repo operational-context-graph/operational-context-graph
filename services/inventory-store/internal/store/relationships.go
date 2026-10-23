@@ -12,7 +12,34 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// UpsertRelationship inserts a relationship; silently drops duplicate natural key.
+// relColumns is the canonical SELECT column list for the relationships table.
+const relColumns = `id, iri, source_asset_id, target_asset_id, artifact_type,
+	source_system, source_id, source_key, target_key, extensions, ingested_at,
+	created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
+
+func scanRelationship(row pgx.Row, r *Relationship) error {
+	return row.Scan(
+		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceID, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
+	)
+}
+
+func scanRelationshipRows(rows pgx.Rows, r *Relationship) error {
+	return rows.Scan(
+		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceID, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
+	)
+}
+
+// UpsertRelationship inserts a relationship; silently drops duplicate logical-key edge.
+//
+// Duplicate detection uses a partial unique index on (source_key, target_key, artifact_type)
+// WHERE valid_to IS NULL. source_key and target_key are stable "{source_system}:{source_id}"
+// strings that do not change when an asset is re-versioned to a new UUID, so the conflict
+// guard survives asset version bumps without creating false topology churn.
+//
 // Returns (relationship, created, error). created=false when the edge already existed.
 func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (Relationship, bool, error) {
 	ids := []uuid.UUID{in.SourceAssetID, in.TargetAssetID}
@@ -41,38 +68,30 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 
 	const q = `
 INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
-                           source_system, source_id, extensions, ingested_at,
-                           created_at_source, last_updated_at_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (source_asset_id, target_asset_id, artifact_type) DO NOTHING
-RETURNING id, iri, source_asset_id, target_asset_id, artifact_type,
-          source_system, source_id, extensions, ingested_at,
-          created_at, created_at_source, last_updated_at_source`
+                           source_system, source_id, source_key, target_key,
+                           extensions, ingested_at,
+                           created_at_source, last_updated_at_source,
+                           valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
+ON CONFLICT (source_key, target_key, artifact_type) WHERE valid_to IS NULL DO NOTHING
+RETURNING ` + relColumns
 
 	row := s.pool.QueryRow(ctx, q,
 		nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-		in.SourceSystem, nullStr(in.SourceID), nullJSON(in.Extensions), in.IngestedAt,
+		in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
+		nullJSON(in.Extensions), in.IngestedAt,
 		in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var r Relationship
-	err = row.Scan(
-		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-	)
+	err = scanRelationship(row, &r)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// DO NOTHING path — fetch the existing row and return 200.
-		err2 := s.pool.QueryRow(ctx,
-			`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-             source_system, source_id, extensions, ingested_at,
-             created_at, created_at_source, last_updated_at_source
-             FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`,
-			in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-		).Scan(
-			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-		)
+		// DO NOTHING path — fetch the existing open row by logical key.
+		err2 := scanRelationship(s.pool.QueryRow(ctx,
+			`SELECT `+relColumns+`
+             FROM relationships
+             WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL`,
+			nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
+		), &r)
 		if err2 != nil {
 			return Relationship{}, false, fmt.Errorf("fetch existing relationship: %w", err2)
 		}
@@ -84,16 +103,31 @@ RETURNING id, iri, source_asset_id, target_asset_id, artifact_type,
 	return r, true, nil
 }
 
-// ListRelationships returns at most limit relationships for an asset (as source or target).
+// CloseRelationship soft-deletes an open relationship by setting valid_to = NOW().
+// Returns ErrRelationshipNotFound when no open row with that ID exists.
+func (s *Store) CloseRelationship(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE relationships SET valid_to = NOW() WHERE id = $1 AND valid_to IS NULL`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("close relationship: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRelationshipNotFound
+	}
+	return nil
+}
+
+// ListRelationships returns at most limit open relationships for an asset (as source or target).
 // limit <= 0 defaults to 200; maximum 1000.
 func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit int) ([]Relationship, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-               source_system, source_id, extensions, ingested_at,
-               created_at, created_at_source, last_updated_at_source
-               FROM relationships WHERE source_asset_id=$1 OR target_asset_id=$1
+	q := `SELECT ` + relColumns + `
+               FROM relationships
+               WHERE (source_asset_id=$1 OR target_asset_id=$1) AND valid_to IS NULL
                ORDER BY created_at LIMIT $2`
 	rows, err := s.pool.Query(ctx, q, assetID, limit)
 	if err != nil {
@@ -104,11 +138,7 @@ func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit 
 	var rels []Relationship
 	for rows.Next() {
 		var r Relationship
-		if err := rows.Scan(
-			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-		); err != nil {
+		if err := scanRelationshipRows(rows, &r); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)
@@ -119,18 +149,11 @@ func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit 
 	return rels, nil
 }
 
-// GetRelationshipByID fetches a specific relationship by its primary-key UUID.
+// GetRelationshipByID fetches a specific relationship by primary-key UUID (any version, open or closed).
 func (s *Store) GetRelationshipByID(ctx context.Context, id uuid.UUID) (Relationship, error) {
-	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-               source_system, source_id, extensions, ingested_at,
-               created_at, created_at_source, last_updated_at_source
-               FROM relationships WHERE id=$1`
+	q := `SELECT ` + relColumns + ` FROM relationships WHERE id=$1`
 	var r Relationship
-	err := s.pool.QueryRow(ctx, q, id).Scan(
-		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-	)
+	err := scanRelationship(s.pool.QueryRow(ctx, q, id), &r)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Relationship{}, ErrRelationshipNotFound
 	}
@@ -140,16 +163,16 @@ func (s *Store) GetRelationshipByID(ctx context.Context, id uuid.UUID) (Relation
 	return r, nil
 }
 
-// FilterRelationships returns relationships matching any combination of asset_id, source_asset_id,
-// target_asset_id, and artifact_type.
-// Omitting all filters returns all rows. limit <= 0 defaults to 200; maximum 1000.
+// FilterRelationships returns open relationships matching any combination of asset_id,
+// source_asset_id, target_asset_id, and artifact_type.
+// Omitting all filters returns all open rows. limit <= 0 defaults to 200; maximum 1000.
 func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID, targetAssetID *uuid.UUID, artifactType string, limit int) ([]Relationship, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
 
 	args := []any{}
-	where := "WHERE 1=1"
+	where := "WHERE valid_to IS NULL"
 	i := 1
 
 	if assetID != nil {
@@ -174,9 +197,7 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	}
 
 	args = append(args, limit)
-	q := fmt.Sprintf(`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-               source_system, source_id, extensions, ingested_at,
-               created_at, created_at_source, last_updated_at_source
+	q := fmt.Sprintf(`SELECT `+relColumns+`
                FROM relationships %s ORDER BY created_at LIMIT $%d`, where, i)
 
 	rows, err := s.pool.Query(ctx, q, args...)
@@ -188,11 +209,7 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	var rels []Relationship
 	for rows.Next() {
 		var r Relationship
-		if err := rows.Scan(
-			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-		); err != nil {
+		if err := scanRelationshipRows(rows, &r); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)
@@ -203,18 +220,13 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	return rels, nil
 }
 
-// GetRelationship fetches a specific edge by the natural key triple.
+// GetRelationship fetches the current open edge by natural key triple.
 func (s *Store) GetRelationship(ctx context.Context, srcID, tgtID uuid.UUID, artifactType string) (Relationship, error) {
-	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-               source_system, source_id, extensions, ingested_at,
-               created_at, created_at_source, last_updated_at_source
-               FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`
+	q := `SELECT ` + relColumns + `
+               FROM relationships
+               WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3 AND valid_to IS NULL`
 	var r Relationship
-	err := s.pool.QueryRow(ctx, q, srcID, tgtID, artifactType).Scan(
-		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-	)
+	err := scanRelationship(s.pool.QueryRow(ctx, q, srcID, tgtID, artifactType), &r)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Relationship{}, ErrRelationshipNotFound
 	}
@@ -268,39 +280,31 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 
 	const q = `
 INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
-                           source_system, source_id, extensions, ingested_at,
-                           created_at_source, last_updated_at_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (source_asset_id, target_asset_id, artifact_type) DO NOTHING
-RETURNING id, iri, source_asset_id, target_asset_id, artifact_type,
-          source_system, source_id, extensions, ingested_at,
-          created_at, created_at_source, last_updated_at_source`
+                           source_system, source_id, source_key, target_key,
+                           extensions, ingested_at,
+                           created_at_source, last_updated_at_source,
+                           valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
+ON CONFLICT (source_key, target_key, artifact_type) WHERE valid_to IS NULL DO NOTHING
+RETURNING ` + relColumns
 
 	rels := make([]Relationship, 0, len(inputs))
 	for _, in := range inputs {
 		var r Relationship
-		err := tx.QueryRow(ctx, q,
+		err := scanRelationship(tx.QueryRow(ctx, q,
 			nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-			in.SourceSystem, nullStr(in.SourceID), nullJSON(in.Extensions), in.IngestedAt,
+			in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
+			nullJSON(in.Extensions), in.IngestedAt,
 			in.CreatedAtSource, in.LastUpdatedAtSource,
-		).Scan(
-			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-		)
+		), &r)
 		if errors.Is(err, pgx.ErrNoRows) {
-			// DO NOTHING path — fetch existing row
-			err2 := tx.QueryRow(ctx,
-				`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
-				 source_system, source_id, extensions, ingested_at,
-				 created_at, created_at_source, last_updated_at_source
-				 FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`,
-				in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-			).Scan(
-				&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-				&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
-				&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
-			)
+			// DO NOTHING path — fetch existing open row by logical key.
+			err2 := scanRelationship(tx.QueryRow(ctx,
+				`SELECT `+relColumns+`
+				 FROM relationships
+				 WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL`,
+				nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
+			), &r)
 			if err2 != nil {
 				return nil, fmt.Errorf("fetch existing relationship in batch: %w", err2)
 			}
