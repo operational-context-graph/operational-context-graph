@@ -27,7 +27,7 @@ func TestSchema_knownKeys(t *testing.T) {
 		{"canonical_lb_guest", "0.1.0"},
 		{"canonical_relation", "0.1.0"},
 		{"canonical_octobus_logs", "0.1.0"},
-		{"netbox.device", "0.1.0"},
+		{"netbox.Device", "0.1.0"},
 		{"generic.log", "0.1.0"},
 	} {
 		key := ingest.SchemaKey{LogicalArtifactType: tc.lat, Version: tc.version}
@@ -78,7 +78,7 @@ func TestTargetStore(t *testing.T) {
 func TestTargetStore_nonCanonicalErrors(t *testing.T) {
 	ctx := context.Background()
 	s := newStub()
-	for _, lat := range []string{"netbox.device", "generic.log", "unknown.type"} {
+	for _, lat := range []string{"netbox.Device", "generic.log", "unknown.type"} {
 		_, err := s.TargetStore(ctx, ingest.SchemaKey{LogicalArtifactType: lat, Version: "0.1.0"})
 		if !errors.Is(err, ingest.ErrNotFound) {
 			t.Errorf("TargetStore(%q): want ErrNotFound, got %v", lat, err)

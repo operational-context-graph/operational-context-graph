@@ -1,0 +1,18 @@
+{
+  "iri": "urn:ocg:asset/netbox/serial-f5-sfzu-ftlo",
+  "artifact_type": "NetworkDevice",
+  "source_system": "netbox",
+  "extensions": {
+    "model": "F5-R5900",
+    "serial": "f5-sfzu-ftlo",
+    "platform": "F5OS",
+    "primary_ip4": "10.46.32.132",
+    "site_id": "ap-jp-1a",
+    "status": "active",
+    "netbox_id": 41821
+  },
+  "name": "ap-jp-1-lb013a",
+  "source_id": "41821",
+  "created_at_source": "2024-10-21T12:24:58.763974Z",
+  "last_updated_at_source": "2025-09-19T20:08:01.774850Z"
+}

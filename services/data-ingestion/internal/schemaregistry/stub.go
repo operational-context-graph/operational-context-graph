@@ -37,7 +37,7 @@ var registeredSchemas = []schemaEntry{
 	{"schemas/canonical_lb_guest.json", "canonical_lb_guest", "0.1.0"},
 	{"schemas/canonical_relation.json", "canonical_relation", "0.1.0"},
 	{"schemas/canonical_octobus_log.json", "canonical_octobus_logs", "0.1.0"},
-	{"schemas/device.json", "netbox.device", "0.1.0"},
+	{"schemas/device.json", "netbox.Device", "0.1.0"},
 	{"schemas/log.json", "generic.log", "0.1.0"},
 }
 

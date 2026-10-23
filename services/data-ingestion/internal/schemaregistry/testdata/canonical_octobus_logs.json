@@ -1,0 +1,37 @@
+{
+  "iri": "urn:ocg:log/octobus/ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap:1782838801:5e1af1b5-cf4d-486b-bace-a54301f13833",
+  "artifact_type": "LogRecord",
+  "source_system": "octobus",
+  "extensions": {
+    "event_hash": "5e1af1b5-cf4d-486b-bace-a54301f13833",
+    "fqdn": "ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap"
+  },
+  "timestamp": 1782838801397921024,
+  "observed_timestamp": "2026-06-30T17:00:01.397921449Z",
+  "signal_type": "LogRecord",
+  "record_id": "5e1af1b5-cf4d-486b-bace-a54301f13833",
+  "host_name": "ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap",
+  "resource_attributes": {
+    "host.name": "ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap",
+    "cluster.name": "cca-apjp1-ocb",
+    "tenant.id": "c0002"
+  },
+  "attributes": {
+    "syslog_facility": "security/authorization",
+    "syslog_pri": "85",
+    "syslog_severity_code": 5,
+    "tags": [
+      "sap.ocb.message_json_skipped",
+      "sap.ocb.ccloud",
+      "sap.ocb.tenant_id",
+      "sap.ocb.syslog_pri",
+      "sap.ocb.timestamps",
+      "sap.ocb.pipeline_version",
+      "sap.ocb.fqdn",
+      "sap.ocb.cnd-hostname"
+    ]
+  },
+  "source_object_id": "ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap",
+  "severity": "INFO",
+  "body": "<85>2026-06-30T17:00:01.393344+00:00 ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap audit-service[12]: priority=\"Notice\" version=1.0 msgid=0x1f03000000000002 msg=\"audit\" user=\"cc-snmpcollector/359398572\" cmd=\"terminated session (reason: normal)\"."
+}
