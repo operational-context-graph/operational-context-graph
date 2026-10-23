@@ -31,3 +31,6 @@ dependencies:
   - name: doris
     version: 0.1.0
     condition: doris.enabled
+  - name: otelcol
+    version: 0.1.0
+    condition: otelcol.enabled
