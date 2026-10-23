@@ -4,9 +4,7 @@
 
 module github.com/operational-context-graph/operational-context-graph/gen/go
 
-go 1.27.2
-
-toolchain go1.27.2
+go 1.26.0
 
 require (
 	google.golang.org/grpc v1.84.0

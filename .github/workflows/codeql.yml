@@ -26,8 +26,8 @@ jobs:
       matrix:
         include:
           - language: go
-            # `build-mode: autobuild` fails because the workspace root has no
-            # go.mod. We build each module ourselves (see the build step below).
+            # `build-mode: autobuild` fails in this go.work monorepo because it has no go.mod.
+            # We build each module ourselves (see the build step below).
             build-mode: manual
           # TODO: enable when JavaScript/TypeScript support is needed
           # - language: javascript-typescript
