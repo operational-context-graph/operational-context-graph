@@ -16,7 +16,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
-const canonicalVersion = "1.0.0"
+const canonicalVersion = "0.1.0"
 
 // Stub implements ingest.Normalizer with mapping logic hardcoded from the
 // netbox_canonical.yaml and octobus_logs.yaml mapping definitions.
@@ -66,18 +66,20 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"iri":                    "urn:ocg:asset/netbox/chassis-" + serial,
 			"artifact_type":          "Chassis",
 			"source_system":          "netbox",
+			"ingested_at":            time.Now().UTC().Format(time.RFC3339Nano),
 			"name":                   name,
 			"source_id":              idStr + ":chassis",
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_chassis", chassis)
@@ -89,6 +91,7 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 		edge := map[string]any{
 			"artifact_type": "RESIDES_IN",
 			"source_system": "netbox",
+			"ingested_at":   time.Now().UTC().Format(time.RFC3339Nano),
 			"source_iri":    "urn:ocg:asset/netbox/serial-" + serial,
 			"target_iri":    "urn:ocg:asset/netbox/chassis-" + serial,
 			"source_key":    []string{"netbox", idStr},
@@ -114,18 +117,20 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"iri":                    iri,
 			"artifact_type":          "NetworkDevice",
 			"source_system":          "netbox",
+			"ingested_at":            time.Now().UTC().Format(time.RFC3339Nano),
 			"name":                   name,
 			"source_id":              idStr,
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_network_device", nd)
@@ -148,6 +153,7 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"iri":                    guestIRI,
 			"artifact_type":          "LBGuest",
 			"source_system":          "netbox",
+			"ingested_at":            time.Now().UTC().Format(time.RFC3339Nano),
 			"name":                   name,
 			"source_id":              idStr,
 			"created_at_source":      created,
@@ -175,6 +181,7 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 		edge := map[string]any{
 			"artifact_type": "HOSTS",
 			"source_system": "netbox",
+			"ingested_at":   time.Now().UTC().Format(time.RFC3339Nano),
 			"source_iri":    sourceIRI,
 			"target_iri":    guestIRI,
 			"source_key":    []string{"netbox", parentIDStr},
@@ -253,6 +260,7 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 		"iri":                iri,
 		"artifact_type":      "LogRecord",
 		"source_system":      "octobus",
+		"ingested_at":        time.Now().UTC().Format(time.RFC3339Nano),
 		"timestamp":          tsNanos,
 		"observed_timestamp": rawTS,
 		"signal_type":        "LogRecord",

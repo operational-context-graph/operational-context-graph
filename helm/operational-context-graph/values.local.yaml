@@ -23,6 +23,14 @@ inventory-store:
       name: postgres-secret
       key: password
 
+telemetry-store:
+  image:
+    repository: localhost:5001/telemetry-store
+    tag: local
+    pullPolicy: Always
+  env:
+    DORIS_REPLICATION_NUM: "1"
+
 data-ingestion:
   image:
     repository: localhost:5001/data-ingestion
@@ -30,21 +38,24 @@ data-ingestion:
     pullPolicy: Always
   database:
     host: ocg-postgresql
+    name: data_ingestion
     sslmode: disable
     passwordSecret:
       name: postgres-secret
       key: password
   inventoryStore:
     baseURL: "http://ocg-inventory-store:8080"
+  telemetryStore:
+    baseURL: "http://ocg-telemetry-store:8080"
 
 inventory-connector:
   enabled: true
   image:
-    repository: inventory-connector
-    tag: dev
-    pullPolicy: Never
+    repository: localhost:5001/inventory-connector
+    tag: local
+    pullPolicy: Always
   netbox:
-    baseURL: "http://mockreplay-netbox:8081"
+    baseURL: "http://host.docker.internal:8081"
     pageSize: 1000
     tokenSecret:
       name: netbox-token
@@ -61,3 +72,19 @@ otelcol:
   enabled: true
   fullnameOverride: otelcol
   dataIngestionEndpoint: "ocg-data-ingestion:9090"
+
+doris:
+  feSpec:
+    requests:
+      cpu: "1"
+      memory: 3Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  beSpec:
+    requests:
+      cpu: "1"
+      memory: 3Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi

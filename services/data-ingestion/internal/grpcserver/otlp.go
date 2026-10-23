@@ -140,19 +140,11 @@ func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.Res
 
 	var payloads [][]byte
 	for _, resourceSpans := range rss {
-		resJSON, merr := marshalResourceJSON(resourceSpans.GetResource())
+		resourceSpansJSON, merr := pjsonOpts.Marshal(resourceSpans)
 		if merr != nil {
-			return merr
+			return status.Errorf(codes.Internal, "marshal OTLP resource spans: %v", merr)
 		}
-		for _, scopeSpans := range resourceSpans.GetScopeSpans() {
-			for _, span := range scopeSpans.GetSpans() {
-				payload, merr := marshalEnvelope(resJSON, "span", span)
-				if merr != nil {
-					return merr
-				}
-				payloads = append(payloads, payload)
-			}
-		}
+		payloads = append(payloads, resourceSpansJSON)
 	}
 	if len(payloads) == 0 {
 		return nil
