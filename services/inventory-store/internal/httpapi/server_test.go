@@ -24,8 +24,9 @@ import (
 
 // stubDB is a hand-written stub that satisfies the httpapi db interface.
 type stubDB struct {
-	upsertAssetFn func(ctx context.Context, in store.AssetInput) (store.Asset, bool, error)
-	getAssetFn    func(ctx context.Context, id uuid.UUID) (store.Asset, error)
+	upsertAssetFn        func(ctx context.Context, in store.AssetInput) (store.Asset, bool, error)
+	getAssetFn           func(ctx context.Context, id uuid.UUID) (store.Asset, error)
+	closeRelationshipFn  func(ctx context.Context, id uuid.UUID) error
 }
 
 func (s *stubDB) UpsertAsset(ctx context.Context, in store.AssetInput) (store.Asset, bool, error) {
@@ -48,6 +49,12 @@ func (s *stubDB) UpsertAssetBatch(_ context.Context, _ []store.AssetInput) ([]st
 }
 func (s *stubDB) UpsertRelationship(_ context.Context, _ store.RelationshipInput) (store.Relationship, bool, error) {
 	return store.Relationship{}, false, nil
+}
+func (s *stubDB) CloseRelationship(ctx context.Context, id uuid.UUID) error {
+	if s.closeRelationshipFn != nil {
+		return s.closeRelationshipFn(ctx, id)
+	}
+	return nil
 }
 func (s *stubDB) ListRelationships(_ context.Context, _ uuid.UUID, _ int) ([]store.Relationship, error) {
 	return nil, nil
@@ -307,6 +314,31 @@ func TestHandleUpsertAssetBatch_EmptySlice_Returns400(t *testing.T) {
 func TestHandleUpsertRelationshipBatch_EmptySlice_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
 	rr := test.PostJSON(t, srv.Handler, httpapi.PathRelationshipsBatch, map[string]any{"relationships": []any{}})
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleCloseRelationship_NoContent(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.DeleteRequest(t, srv.Handler, strings.Replace(httpapi.PathRelationshipByID, ":id", uuid.New().String(), 1))
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+func TestHandleCloseRelationship_NotFound(t *testing.T) {
+	stub := &stubDB{
+		closeRelationshipFn: func(_ context.Context, _ uuid.UUID) error {
+			return apperr.ErrNotFound
+		},
+	}
+	srv := httpapi.NewServer(stub, ":0")
+	rr := test.DeleteRequest(t, srv.Handler, strings.Replace(httpapi.PathRelationshipByID, ":id", uuid.New().String(), 1))
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+}
+
+func TestHandleCloseRelationship_InvalidUUID(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	rr := test.DeleteRequest(t, srv.Handler, strings.Replace(httpapi.PathRelationshipByID, ":id", "not-a-uuid", 1))
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
 }

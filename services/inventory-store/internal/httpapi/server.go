@@ -27,6 +27,7 @@ type db interface {
 	ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *store.Cursor) ([]store.Asset, *store.Cursor, error)
 	UpsertAssetBatch(ctx context.Context, inputs []store.AssetInput) ([]store.BatchResult, error)
 	UpsertRelationship(ctx context.Context, in store.RelationshipInput) (store.Relationship, bool, error)
+	CloseRelationship(ctx context.Context, id uuid.UUID) error
 	ListRelationships(ctx context.Context, assetID uuid.UUID, limit int) ([]store.Relationship, error)
 	FilterRelationships(ctx context.Context, assetID, sourceAssetID, targetAssetID *uuid.UUID, artifactType string, limit int) ([]store.Relationship, error)
 	GetRelationshipByID(ctx context.Context, id uuid.UUID) (store.Relationship, error)

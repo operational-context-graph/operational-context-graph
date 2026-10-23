@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -320,6 +321,65 @@ func TestUpsertRelationship_RePoint_AssetReversion(t *testing.T) {
 		"cmdb:rp-src", "cmdb:rp-tgt", "connects").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "re-point must not create a second row")
+}
+
+func TestCloseRelationship_SetsValidTo(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-src"})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-tgt"})
+	require.NoError(t, err)
+
+	r, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
+		ArtifactType: "connects", SourceSystem: "cmdb",
+		SourceKey: "cmdb:close-src", TargetKey: "cmdb:close-tgt",
+	})
+	require.NoError(t, err)
+	assert.Nil(t, r.ValidTo)
+
+	err = s.CloseRelationship(ctx, r.ID)
+	require.NoError(t, err)
+
+	closed, err := s.GetRelationshipByID(ctx, r.ID)
+	require.NoError(t, err)
+	require.NotNil(t, closed.ValidTo, "valid_to must be set after close")
+}
+
+func TestCloseRelationship_NotFound(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	err := s.CloseRelationship(ctx, uuid.New())
+	require.ErrorIs(t, err, store.ErrRelationshipNotFound)
+}
+
+func TestCloseRelationship_AlreadyClosed(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/already-close-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "already-close-src"})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/already-close-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "already-close-tgt"})
+	require.NoError(t, err)
+
+	r, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
+		ArtifactType: "connects", SourceSystem: "cmdb",
+		SourceKey: "cmdb:already-close-src", TargetKey: "cmdb:already-close-tgt",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, s.CloseRelationship(ctx, r.ID))
+
+	// Second close on the same row must return not-found (valid_to IS NULL check fails).
+	err = s.CloseRelationship(ctx, r.ID)
+	require.ErrorIs(t, err, store.ErrRelationshipNotFound)
 }
 
 func TestFilterRelationships_OnlyReturnsCurrentEdges(t *testing.T) {
