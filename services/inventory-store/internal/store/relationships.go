@@ -259,6 +259,21 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	return rels, nil
 }
 
+// CloseRelationship sets valid_to = NOW() on an open relationship, recording when the edge
+// disappeared from the source system. Returns ErrRelationshipNotFound if the row does not
+// exist or is already closed.
+func (s *Store) CloseRelationship(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE relationships SET valid_to = NOW() WHERE id = $1 AND valid_to IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("close relationship: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRelationshipNotFound
+	}
+	return nil
+}
+
 // GetRelationship fetches the current open edge by natural key triple.
 func (s *Store) GetRelationship(ctx context.Context, srcID, tgtID uuid.UUID, artifactType string) (Relationship, error) {
 	q := `SELECT ` + relColumns + `

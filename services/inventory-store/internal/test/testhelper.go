@@ -50,3 +50,12 @@ func PostRaw(t *testing.T, handler http.Handler, path, contentType, body string)
 	handler.ServeHTTP(rr, req)
 	return rr
 }
+
+// DeleteRequest records an HTTP DELETE against the given handler.
+func DeleteRequest(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
