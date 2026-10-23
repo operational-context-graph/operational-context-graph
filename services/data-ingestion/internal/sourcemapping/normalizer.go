@@ -72,13 +72,14 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_chassis", chassis)
@@ -122,13 +123,14 @@ func normalizeNetboxDevice(record ingest.IngestRecord) ([]ingest.IngestRecord, e
 			"created_at_source":      created,
 			"last_updated_at_source": lastUpdated,
 			"extensions": map[string]any{
-				"model":       model,
-				"serial":      serial,
-				"platform":    platform,
-				"primary_ip4": ip4,
-				"site_id":     siteSlug,
-				"status":      status,
-				"netbox_id":   idRaw,
+				"model":            model,
+				"serial":           serial,
+				"platform":         platform,
+				"primary_ip4":      ip4,
+				"site_id":          siteSlug,
+				"status":           status,
+				"netbox_id":        idRaw,
+				"network_function": "load_balancer",
 			},
 		}
 		rec, err := toRecord("canonical_network_device", nd)

@@ -9,7 +9,8 @@
     "primary_ip4": "10.46.32.132",
     "site_id": "ap-jp-1a",
     "status": "active",
-    "netbox_id": 41821
+    "netbox_id": 41821,
+    "network_function": "load_balancer"
   },
   "name": "ap-jp-1-lb013a",
   "source_id": "41821",
