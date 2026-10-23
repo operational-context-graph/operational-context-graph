@@ -12,6 +12,10 @@ postgresql:
       size: 1Gi
 
 inventory-store:
+  image:
+    repository: localhost:5001/inventory-store
+    tag: local
+    pullPolicy: Always
   database:
     host: ocg-postgresql
     sslmode: disable
@@ -21,15 +25,17 @@ inventory-store:
 
 data-ingestion:
   image:
-    repository: data-ingestion
-    tag: dev
-    pullPolicy: Never
+    repository: localhost:5001/data-ingestion
+    tag: local
+    pullPolicy: Always
   database:
     host: ocg-postgresql
     sslmode: disable
     passwordSecret:
       name: postgres-secret
       key: password
+  inventoryStore:
+    baseURL: "http://ocg-inventory-store:8080"
 
 inventory-connector:
   enabled: true
