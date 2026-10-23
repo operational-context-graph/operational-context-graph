@@ -47,7 +47,7 @@ func New(cfg Config) *Writer {
 		cfg.MaxRecords = 1000
 	}
 	if cfg.MaxLinger <= 0 {
-		cfg.MaxLinger = 5 * time.Minute
+		cfg.MaxLinger = 30 * time.Second
 	}
 	return &Writer{
 		cfg:    cfg,

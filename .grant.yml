@@ -85,6 +85,10 @@ ignore-packages:
   # Pulled in transitively by github.com/go-mysql-org/go-mysql.
   - github.com/coreos/go-semver
 
+  # github.com/quic-go/quic-go is MIT; Syft also detects a secondary NOTICE/AUTHORS
+  # file that produces a LicenseRef-* hash which grant cannot resolve.
+  - github.com/quic-go/quic-go
+
   # github.com/pingcap/log is Apache-2.0; Syft also emits a LicenseRef-* hash
   # from a bundled license file, which grant cannot resolve to a known SPDX ID.
   # Pulled in transitively by github.com/go-mysql-org/go-mysql via pingcap/tidb.
