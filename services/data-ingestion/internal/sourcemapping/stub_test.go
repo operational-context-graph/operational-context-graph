@@ -7,22 +7,13 @@ package sourcemapping_test
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
 )
-
-var update = flag.Bool("update", false, "regenerate golden files in testdata/")
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	os.Exit(m.Run())
-}
 
 const inputBase = "../schemaregistry/testdata/"
 
@@ -44,44 +35,36 @@ func normalize(t *testing.T, schemaType, file string) []ingest.IngestRecord {
 	return records
 }
 
-// assertGolden compares actual JSON payload against a golden file.
-// Run with -update to regenerate the golden file from current output.
-func assertGolden(t *testing.T, actual []byte, goldenPath string) {
+// assertSnapshot compares actual JSON payload against a snapshot file.
+func assertSnapshot(t *testing.T, actual []byte, snapshotPath string) {
 	t.Helper()
 
-	// Normalise: unmarshal then re-marshal with sorted keys and indent.
 	var anyVal any
 	if err := json.Unmarshal(actual, &anyVal); err != nil {
 		t.Fatalf("unmarshal actual: %v", err)
 	}
-	normalised, err := json.MarshalIndent(anyVal, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal actual: %v", err)
-	}
-	normalised = append(normalised, '\n')
 
-	if *update {
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0755); err != nil {
-			t.Fatalf("mkdir %s: %v", filepath.Dir(goldenPath), err)
+	// Verify ingested_at is present then remove it before snapshot comparison.
+	if m, ok := anyVal.(map[string]any); ok {
+		if _, has := m["ingested_at"]; !has {
+			t.Error("ingested_at missing from output")
 		}
-		if err := os.WriteFile(goldenPath, normalised, 0644); err != nil {
-			t.Fatalf("write golden %s: %v", goldenPath, err)
-		}
-		return
+		delete(m, "ingested_at")
 	}
 
-	expected, err := os.ReadFile(goldenPath)
+	expected, err := os.ReadFile(snapshotPath)
 	if err != nil {
-		t.Fatalf("read golden %s: %v — run with -update to create it", goldenPath, err)
+		t.Fatalf("read snapshot %s: %v", snapshotPath, err)
 	}
 
 	var wantVal any
 	if err := json.Unmarshal(expected, &wantVal); err != nil {
-		t.Fatalf("unmarshal golden %s: %v", goldenPath, err)
+		t.Fatalf("unmarshal snapshot %s: %v", snapshotPath, err)
 	}
 
 	if !reflect.DeepEqual(anyVal, wantVal) {
-		t.Errorf("golden mismatch: %s\ngot:\n%s\nwant:\n%s", goldenPath, normalised, expected)
+		normalised, _ := json.MarshalIndent(anyVal, "", "  ")
+		t.Errorf("snapshot mismatch: %s\ngot:\n%s\nwant:\n%s", snapshotPath, normalised, expected)
 	}
 }
 
@@ -106,19 +89,19 @@ func TestNormalizeNetboxChassis(t *testing.T) {
 	if !ok {
 		t.Fatal("missing canonical_chassis record")
 	}
-	assertGolden(t, chassis.Payload, td("canonical_chassis"))
+	assertSnapshot(t, chassis.Payload, td("canonical_chassis"))
 
 	nd, ok := byType["canonical_network_device"]
 	if !ok {
 		t.Fatal("missing canonical_network_device record")
 	}
-	assertGolden(t, nd.Payload, td("canonical_network_device"))
+	assertSnapshot(t, nd.Payload, td("canonical_network_device"))
 
 	edge, ok := byType["canonical_relation"]
 	if !ok {
 		t.Fatal("missing canonical_relation record")
 	}
-	assertGolden(t, edge.Payload, td("canonical_relation_resides_in"))
+	assertSnapshot(t, edge.Payload, td("canonical_relation_resides_in"))
 }
 
 // TestNormalizeNetboxLBGuest: F5-TENANT → LBGuest + HOSTS edge.
@@ -138,13 +121,13 @@ func TestNormalizeNetboxLBGuest(t *testing.T) {
 	if !ok {
 		t.Fatal("missing canonical_lb_guest record")
 	}
-	assertGolden(t, guest.Payload, td("canonical_lb_guest"))
+	assertSnapshot(t, guest.Payload, td("canonical_lb_guest"))
 
 	edge, ok := byType["canonical_relation"]
 	if !ok {
 		t.Fatal("missing canonical_relation record")
 	}
-	assertGolden(t, edge.Payload, td("canonical_relation_hosts"))
+	assertSnapshot(t, edge.Payload, td("canonical_relation_hosts"))
 }
 
 // TestNormalizeOctobusLog: OTLP-wrapped syslog → canonical LogRecord.
@@ -154,7 +137,7 @@ func TestNormalizeOctobusLog(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("want 1 record, got %d", len(records))
 	}
-	assertGolden(t, records[0].Payload, td("canonical_octobus_logs"))
+	assertSnapshot(t, records[0].Payload, td("canonical_octobus_logs"))
 }
 
 func TestNormalizeUnknownSchema(t *testing.T) {
