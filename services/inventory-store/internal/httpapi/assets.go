@@ -53,6 +53,7 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 		}
 		in := store.AssetInput{
 			IRI:          req.IRI,
+			Name:         req.Name,
 			ArtifactType: req.ArtifactType,
 			SourceSystem: req.SourceSystem,
 			SourceID:     req.SourceID,
@@ -170,6 +171,7 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 			}
 			in := store.AssetInput{
 				IRI:          a.IRI,
+				Name:         a.Name,
 				ArtifactType: a.ArtifactType,
 				SourceSystem: a.SourceSystem,
 				SourceID:     a.SourceID,
@@ -218,6 +220,7 @@ func toAssetResponse(a store.Asset) v1.AssetResponse {
 	r := v1.AssetResponse{
 		ID:           a.ID,
 		IRI:          derefStr(a.IRI),
+		Name:         a.Name,
 		ArtifactType: a.ArtifactType,
 		SourceSystem: a.SourceSystem,
 		SourceID:     a.SourceID,

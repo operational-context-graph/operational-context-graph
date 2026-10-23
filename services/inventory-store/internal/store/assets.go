@@ -31,7 +31,7 @@ func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, er
 	// Check for existing current row and compare last_updated_at_source.
 	// FOR UPDATE serialises concurrent upserts on the same natural key.
 	const checkCurrent = `
-SELECT id, iri, artifact_type, source_system, source_id, extensions,
+SELECT id, iri, name, artifact_type, source_system, source_id, extensions,
        ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 FROM assets
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
@@ -39,7 +39,7 @@ FOR UPDATE`
 
 	var cur Asset
 	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(
-		&cur.ID, &cur.IRI, &cur.ArtifactType, &cur.SourceSystem, &cur.SourceID,
+		&cur.ID, &cur.IRI, &cur.Name, &cur.ArtifactType, &cur.SourceSystem, &cur.SourceID,
 		&cur.Extensions, &cur.IngestedAt, &cur.CreatedAt,
 		&cur.CreatedAtSource, &cur.LastUpdatedAtSource, &cur.ValidFrom, &cur.ValidTo,
 	)
@@ -80,21 +80,21 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 	created := tag.RowsAffected() == 0
 
 	const insert = `
-INSERT INTO assets (iri, artifact_type, source_system, source_id, extensions,
+INSERT INTO assets (iri, name, artifact_type, source_system, source_id, extensions,
                     ingested_at, created_at_source, last_updated_at_source,
                     valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($8, NOW()), NULL)
-RETURNING id, iri, artifact_type, source_system, source_id, extensions,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($9, NOW()), NULL)
+RETURNING id, iri, name, artifact_type, source_system, source_id, extensions,
           ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
 	row := tx.QueryRow(ctx, insert,
-		nullStr(in.IRI), in.ArtifactType, in.SourceSystem, in.SourceID,
+		nullStr(in.IRI), nullStr(in.Name), in.ArtifactType, in.SourceSystem, in.SourceID,
 		nullJSON(in.Extensions),
 		in.IngestedAt, in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var a Asset
 	err = row.Scan(
-		&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.ID, &a.IRI, &a.Name, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
 		&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo,
 	)
@@ -110,12 +110,12 @@ RETURNING id, iri, artifact_type, source_system, source_id, extensions,
 
 // GetAsset fetches the current version of an asset by internal UUID.
 func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
-	const q = `SELECT id, iri, artifact_type, source_system, source_id, extensions,
+	const q = `SELECT id, iri, name, artifact_type, source_system, source_id, extensions,
                ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
                FROM assets WHERE id = $1 AND valid_to IS NULL`
 	row := s.pool.QueryRow(ctx, q, id)
 	var a Asset
-	err := row.Scan(&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+	err := row.Scan(&a.ID, &a.IRI, &a.Name, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
 		&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -159,7 +159,7 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem, sour
 	}
 
 	args = append(args, limit+1)
-	q := fmt.Sprintf(`SELECT id, iri, artifact_type, source_system, source_id, extensions,
+	q := fmt.Sprintf(`SELECT id, iri, name, artifact_type, source_system, source_id, extensions,
 		ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 		FROM assets %s ORDER BY created_at, id LIMIT $%d`, where, i)
 
@@ -172,7 +172,7 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem, sour
 	var assets []Asset
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		if err := rows.Scan(&a.ID, &a.IRI, &a.Name, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
 			&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 			&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo); err != nil {
 			return nil, nil, fmt.Errorf("scan asset: %w", err)
@@ -211,10 +211,10 @@ UPDATE assets SET valid_to = COALESCE($3, NOW())
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	const insert = `
-INSERT INTO assets (iri, artifact_type, source_system, source_id, extensions,
+INSERT INTO assets (iri, name, artifact_type, source_system, source_id, extensions,
                     ingested_at, created_at_source, last_updated_at_source,
                     valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($8, NOW()), NULL)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($9, NOW()), NULL)
 RETURNING id`
 
 	results := make([]BatchResult, 0, len(inputs))
@@ -250,7 +250,7 @@ RETURNING id`
 
 		var id uuid.UUID
 		if err := tx.QueryRow(ctx, insert,
-			nullStr(in.IRI), in.ArtifactType, in.SourceSystem, in.SourceID,
+			nullStr(in.IRI), nullStr(in.Name), in.ArtifactType, in.SourceSystem, in.SourceID,
 			nullJSON(in.Extensions),
 			in.IngestedAt, in.CreatedAtSource, in.LastUpdatedAtSource,
 		).Scan(&id); err != nil {
