@@ -6,7 +6,7 @@
     "event_hash": "5e1af1b5-cf4d-486b-bace-a54301f13833",
     "fqdn": "ap-jp-1-lb215b.cc.ap-jp-1.cloud.sap"
   },
-  "timestamp": "2026-06-30T17:00:01Z",
+  "timestamp": 1782838801397921024,
   "observed_timestamp": "2026-06-30T17:00:01.397921449Z",
   "signal_type": "LogRecord",
   "record_id": "5e1af1b5-cf4d-486b-bace-a54301f13833",
