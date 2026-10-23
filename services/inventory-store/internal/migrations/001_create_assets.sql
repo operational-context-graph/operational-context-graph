@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS assets (
     id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     iri                    TEXT,
+    name                   TEXT,
     artifact_type          VARCHAR(64)  NOT NULL,
     source_system          VARCHAR(128) NOT NULL,
     source_id              VARCHAR(256) NOT NULL,
