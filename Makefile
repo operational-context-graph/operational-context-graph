@@ -5,6 +5,7 @@
 SHELL := /usr/bin/env bash
 
 SERVICE_DI := services/data-ingestion
+SERVICE_IS := services/inventory-store
 SERVICE_TS := services/telemetry-store
 CONNECTOR_INVENTORY := services/connectors/inventory
 COVERAGE_DIR := $(CURDIR)/coverage
@@ -12,14 +13,15 @@ COVERAGE_DIR := $(CURDIR)/coverage
 .PHONY: build run test lint vet tidy mocks \
 	proto-lint proto-format proto-generate go-work-init
 
-go-work-init: ## Initialize Go workspace (idempotent)
+go-work-init: ## Initialize local Go workspace (not committed; run once after checkout)
 	@if [ ! -f go.work ]; then \
-		go work init gen/go $(SERVICE_DI) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
+		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
 	fi
 	go work sync
 
-build: proto-generate go-work-init ## Build all services
+build: proto-generate ## Build all services
 	$(MAKE) -C $(SERVICE_DI) build
+	$(MAKE) -C $(SERVICE_IS) build
 	$(MAKE) -C $(CONNECTOR_INVENTORY) build
 	go build ./$(SERVICE_TS)/...
 
@@ -28,6 +30,7 @@ run: ## Run the data-ingestion service (dev)
 
 vet: ## Vet all services and connectors
 	$(MAKE) -C $(SERVICE_DI) vet
+	$(MAKE) -C $(SERVICE_IS) vet
 	$(MAKE) -C $(CONNECTOR_INVENTORY) vet
 	go vet ./$(SERVICE_TS)/...
 
@@ -57,3 +60,4 @@ proto-format:
 
 proto-generate:
 	buf generate
+
