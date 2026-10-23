@@ -34,5 +34,9 @@ inventory-connector:
   connector:
     schemaVersion: "0.1.0"
     endpoints:
-      - "dcim/sites/"
-      - "dcim/device-types/"
+      - "dcim/devices/"
+
+otelcol:
+  enabled: true
+  fullnameOverride: otelcol
+  dataIngestionEndpoint: "ocg-data-ingestion:9090"

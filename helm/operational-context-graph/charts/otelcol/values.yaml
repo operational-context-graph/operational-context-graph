@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the otelcol subchart.
+enabled: true
+replicaCount: 1
+
+image:
+  repository: otel/opentelemetry-collector
+  tag: "0.115.0"
+  pullPolicy: IfNotPresent
+
+# Port the collector listens on for OTLP/HTTP.
+containerPort: 4318
+
+service:
+  type: ClusterIP
+  port: 4318
+
+# Endpoint of the data-ingestion gRPC receiver (OTLP/gRPC, no TLS).
+dataIngestionEndpoint: "ocg-data-ingestion:9090"
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""
