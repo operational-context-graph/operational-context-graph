@@ -27,6 +27,7 @@ type db interface {
 	ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *store.Cursor) ([]store.Asset, *store.Cursor, error)
 	UpsertAssetBatch(ctx context.Context, inputs []store.AssetInput) ([]store.BatchResult, error)
 	UpsertRelationship(ctx context.Context, in store.RelationshipInput) (store.Relationship, bool, error)
+	CloseRelationship(ctx context.Context, id uuid.UUID) error
 	ListRelationships(ctx context.Context, assetID uuid.UUID, limit int) ([]store.Relationship, error)
 	FilterRelationships(ctx context.Context, assetID, sourceAssetID, targetAssetID *uuid.UUID, artifactType string, limit int) ([]store.Relationship, error)
 	GetRelationshipByID(ctx context.Context, id uuid.UUID) (store.Relationship, error)
@@ -113,11 +114,12 @@ func setRoute(name string) gin.HandlerFunc {
 	}
 }
 
-// jsonBodyMiddleware enforces Content-Type: application/json (→ 415) on non-GET/HEAD requests
+// jsonBodyMiddleware enforces Content-Type: application/json (→ 415) on non-GET/HEAD/DELETE requests
 // and caps the request body to maxBytes (→ 413).
 func jsonBodyMiddleware(maxBytes int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
+		m := c.Request.Method
+		if m == http.MethodGet || m == http.MethodHead || m == http.MethodDelete {
 			c.Next()
 			return
 		}

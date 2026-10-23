@@ -54,11 +54,15 @@ type Relationship struct {
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            *string         `json:"source_id,omitempty"`
+	SourceKey           *string         `json:"source_key,omitempty"`
+	TargetKey           *string         `json:"target_key,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
+	ValidFrom           time.Time       `json:"valid_from"`
+	ValidTo             *time.Time      `json:"valid_to,omitempty"`
 }
 
 // RelationshipInput is the request body for POST /relationships.
@@ -69,6 +73,8 @@ type RelationshipInput struct {
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            string          `json:"source_id"`
+	SourceKey           string          `json:"source_key"`
+	TargetKey           string          `json:"target_key"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`

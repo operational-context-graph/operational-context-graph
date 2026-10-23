@@ -49,6 +49,7 @@ func (s *stubDB) UpsertAssetBatch(_ context.Context, _ []store.AssetInput) ([]st
 func (s *stubDB) UpsertRelationship(_ context.Context, _ store.RelationshipInput) (store.Relationship, bool, error) {
 	return store.Relationship{}, false, nil
 }
+func (s *stubDB) CloseRelationship(_ context.Context, _ uuid.UUID) error { return nil }
 func (s *stubDB) ListRelationships(_ context.Context, _ uuid.UUID, _ int) ([]store.Relationship, error) {
 	return nil, nil
 }
@@ -282,6 +283,35 @@ func TestHandleUpsertRelationship_MissingRequiredFields_Returns400(t *testing.T)
 	}
 	assert.Contains(t, got, "artifact_type")
 	assert.Contains(t, got, "source_system")
+	assert.Contains(t, got, "source_key")
+	assert.Contains(t, got, "target_key")
+}
+
+func TestHandleCloseRelationship_NoContent(t *testing.T) {
+	srv := httpapi.NewServer(&stubDB{}, ":0")
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, strings.Replace(httpapi.PathRelationshipByID, ":id", id.String(), 1), nil)
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+func TestHandleCloseRelationship_NotFound(t *testing.T) {
+	stub := &stubDB{}
+	stub2 := &struct{ *stubDB }{stub}
+	_ = stub2 // use a custom close that returns not found
+	srvCustom := httpapi.NewServer(&closeNotFoundStub{stubDB: stub}, ":0")
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, strings.Replace(httpapi.PathRelationshipByID, ":id", id.String(), 1), nil)
+	rr := httptest.NewRecorder()
+	srvCustom.Handler.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+type closeNotFoundStub struct{ *stubDB }
+
+func (s *closeNotFoundStub) CloseRelationship(_ context.Context, _ uuid.UUID) error {
+	return apperr.ErrNotFound
 }
 
 func TestHandleUpsertRelationship_NilUUIDs_Returns400(t *testing.T) {

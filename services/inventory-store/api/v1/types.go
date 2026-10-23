@@ -64,6 +64,8 @@ type UpsertRelationshipRequest struct {
 	ArtifactType        string    `json:"artifact_type"          validate:"required"`
 	SourceSystem        string    `json:"source_system"          validate:"required"`
 	SourceID            string    `json:"source_id"              validate:"required"`
+	SourceKey           string    `json:"source_key"             validate:"required"`
+	TargetKey           string    `json:"target_key"             validate:"required"`
 	Extensions          []byte    `json:"extensions,omitempty"`
 	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
@@ -79,11 +81,15 @@ type RelationshipResponse struct {
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
 	SourceID            string    `json:"source_id"`
+	SourceKey           string    `json:"source_key"`
+	TargetKey           string    `json:"target_key"`
 	Extensions          []byte    `json:"extensions,omitempty"`
 	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
+	ValidFrom           string    `json:"valid_from"`
+	ValidTo             *string   `json:"valid_to,omitempty"`
 }
 
 // UpsertRelationshipResponse wraps RelationshipResponse with a created flag.

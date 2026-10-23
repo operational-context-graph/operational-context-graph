@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+
 func TestUpsertRelationship_Idempotent(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
@@ -34,12 +35,14 @@ func TestUpsertRelationship_Idempotent(t *testing.T) {
 		ArtifactType:  "connects",
 		SourceSystem:  "cmdb",
 		SourceID:      "src-rel-001_connects_tgt-rel-001",
+		SourceKey:     "cmdb:src-rel-001",
+		TargetKey:     "cmdb:tgt-rel-001",
 	}
 	r1, created1, err := s.UpsertRelationship(ctx, in)
 	require.NoError(t, err)
 	assert.True(t, created1)
 
-	// Second call with same natural key must return 200 OK — silently drop, return existing row.
+	// Second call with same logical key — silently drop, return existing row.
 	r2, created2, err := s.UpsertRelationship(ctx, in)
 	require.NoError(t, err)
 	assert.False(t, created2)
@@ -47,8 +50,8 @@ func TestUpsertRelationship_Idempotent(t *testing.T) {
 
 	var count int
 	err = testPool.QueryRow(ctx,
-		"SELECT COUNT(*) FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3",
-		aSrc.ID, aTgt.ID, "connects").Scan(&count)
+		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
+		"cmdb:src-rel-001", "cmdb:tgt-rel-001", "connects").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
@@ -71,6 +74,8 @@ func TestUpsertRelationshipBatch_HappyPath(t *testing.T) {
 			ArtifactType:  "connects",
 			SourceSystem:  "cmdb",
 			SourceID:      "relb-src-001_connects_relb-tgt-001",
+			SourceKey:     "cmdb:relb-src-001",
+			TargetKey:     "cmdb:relb-tgt-001",
 		},
 	})
 	require.NoError(t, err)
@@ -98,6 +103,8 @@ func TestUpsertRelationshipBatch_Idempotent(t *testing.T) {
 			ArtifactType:  "connects",
 			SourceSystem:  "cmdb",
 			SourceID:      "relb-idem-src_connects_relb-idem-tgt",
+			SourceKey:     "cmdb:relb-idem-src",
+			TargetKey:     "cmdb:relb-idem-tgt",
 		},
 	}
 	rels1, err := s.UpsertRelationshipBatch(ctx, in)
@@ -111,8 +118,8 @@ func TestUpsertRelationshipBatch_Idempotent(t *testing.T) {
 
 	var count int
 	err = testPool.QueryRow(ctx,
-		"SELECT COUNT(*) FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3",
-		aSrc.ID, aTgt.ID, "connects").Scan(&count)
+		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
+		"cmdb:relb-idem-src", "cmdb:relb-idem-tgt", "connects").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "ON CONFLICT must not insert a duplicate row")
 }
@@ -133,14 +140,16 @@ func TestFilterRelationships_ByType(t *testing.T) {
 		IRI:           "urn:ocg:rel/cmdb/src-filter-001_connects_tgt-filter-001",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
 		ArtifactType: "connects", SourceSystem: "cmdb",
-		SourceID: "src-filter-001_connects_tgt-filter-001",
+		SourceID:  "src-filter-001_connects_tgt-filter-001",
+		SourceKey: "cmdb:src-filter-001", TargetKey: "cmdb:tgt-filter-001",
 	})
 	require.NoError(t, err)
 	_, _, err = s.UpsertRelationship(ctx, store.RelationshipInput{
 		IRI:           "urn:ocg:rel/cmdb/src-filter-001_depends_on_tgt-filter-001",
 		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
 		ArtifactType: "depends_on", SourceSystem: "cmdb",
-		SourceID: "src-filter-001_depends_on_tgt-filter-001",
+		SourceID:  "src-filter-001_depends_on_tgt-filter-001",
+		SourceKey: "cmdb:src-filter-001", TargetKey: "cmdb:tgt-filter-001",
 	})
 	require.NoError(t, err)
 
@@ -169,6 +178,8 @@ func TestUpsertRelationship_IRIAndSourceID_RoundTrip(t *testing.T) {
 		ArtifactType:  "connects",
 		SourceSystem:  "cmdb",
 		SourceID:      "iri-rel-src_connects_iri-rel-tgt",
+		SourceKey:     "cmdb:iri-rel-src",
+		TargetKey:     "cmdb:iri-rel-tgt",
 		IngestedAt:    &ts,
 	}
 	r, created, err := s.UpsertRelationship(ctx, in)
@@ -182,8 +193,14 @@ func TestUpsertRelationship_IRIAndSourceID_RoundTrip(t *testing.T) {
 	assert.Equal(t, "urn:ocg:rel/cmdb/iri-rel-src_connects_iri-rel-tgt", *got.IRI)
 	require.NotNil(t, got.SourceID)
 	assert.Equal(t, "iri-rel-src_connects_iri-rel-tgt", *got.SourceID)
+	require.NotNil(t, got.SourceKey)
+	assert.Equal(t, "cmdb:iri-rel-src", *got.SourceKey)
+	require.NotNil(t, got.TargetKey)
+	assert.Equal(t, "cmdb:iri-rel-tgt", *got.TargetKey)
 	require.NotNil(t, got.IngestedAt)
 	assert.True(t, ts.Equal(*got.IngestedAt), "ingested_at must survive insert unchanged")
+	assert.False(t, got.ValidFrom.IsZero(), "valid_from must be set")
+	assert.Nil(t, got.ValidTo, "newly inserted edge must be open (valid_to IS NULL)")
 }
 
 func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
@@ -203,6 +220,8 @@ func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
 		ArtifactType:  "connects",
 		SourceSystem:  "cmdb",
 		SourceID:      "ext-rel-src_connects_ext-rel-tgt",
+		SourceKey:     "cmdb:ext-rel-src",
+		TargetKey:     "cmdb:ext-rel-tgt",
 		// Extensions deliberately omitted
 	}
 	r, _, err := s.UpsertRelationship(ctx, in)
@@ -215,4 +234,154 @@ func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
 	err = json.Unmarshal(got.Extensions, &m)
 	require.NoError(t, err, "extensions must be valid JSON")
 	assert.Empty(t, m, "extensions must default to {} when not provided")
+}
+
+func TestCloseRelationship_SetsValidTo(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-src"})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/close-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "close-tgt"})
+	require.NoError(t, err)
+
+	r, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:           "urn:ocg:rel/cmdb/close-src_connects_close-tgt",
+		SourceAssetID: aSrc.ID,
+		TargetAssetID: aTgt.ID,
+		ArtifactType:  "connects",
+		SourceSystem:  "cmdb",
+		SourceID:      "close-src_connects_close-tgt",
+		SourceKey:     "cmdb:close-src",
+		TargetKey:     "cmdb:close-tgt",
+	})
+	require.NoError(t, err)
+	assert.Nil(t, r.ValidTo, "newly inserted edge must be open")
+
+	err = s.CloseRelationship(ctx, r.ID)
+	require.NoError(t, err)
+
+	// Row should now be closed.
+	closed, err := s.GetRelationshipByID(ctx, r.ID)
+	require.NoError(t, err)
+	require.NotNil(t, closed.ValidTo, "valid_to must be set after close")
+
+	// Second close returns ErrRelationshipNotFound (no open row with that ID).
+	err = s.CloseRelationship(ctx, r.ID)
+	require.ErrorIs(t, err, store.ErrRelationshipNotFound)
+}
+
+func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	// Insert initial asset versions.
+	ts1 := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/reversion-src",
+		ArtifactType:        "server",
+		SourceSystem:        "cmdb",
+		SourceID:            "reversion-src",
+		LastUpdatedAtSource: &ts1,
+	})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/reversion-tgt",
+		ArtifactType: "server",
+		SourceSystem: "cmdb",
+		SourceID:     "reversion-tgt",
+	})
+	require.NoError(t, err)
+
+	// Create edge with stable logical keys.
+	r1, created1, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:           "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
+		SourceAssetID: aSrc.ID,
+		TargetAssetID: aTgt.ID,
+		ArtifactType:  "connects",
+		SourceSystem:  "cmdb",
+		SourceID:      "reversion-src_connects_reversion-tgt",
+		SourceKey:     "cmdb:reversion-src",
+		TargetKey:     "cmdb:reversion-tgt",
+	})
+	require.NoError(t, err)
+	assert.True(t, created1)
+
+	// Re-version the source asset (new UUID, same source_system:source_id).
+	ts2 := time.Now().UTC().Truncate(time.Microsecond)
+	aSrc2, _, err := s.UpsertAsset(ctx, store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/reversion-src",
+		ArtifactType:        "server",
+		SourceSystem:        "cmdb",
+		SourceID:            "reversion-src",
+		LastUpdatedAtSource: &ts2,
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, aSrc.ID, aSrc2.ID, "new version must have a different UUID")
+
+	// Upsert same logical edge with the new source UUID. Because source_key + target_key
+	// still match the open row, ON CONFLICT fires and the edge is NOT duplicated.
+	r2, created2, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:           "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
+		SourceAssetID: aSrc2.ID, // new UUID
+		TargetAssetID: aTgt.ID,
+		ArtifactType:  "connects",
+		SourceSystem:  "cmdb",
+		SourceID:      "reversion-src_connects_reversion-tgt",
+		SourceKey:     "cmdb:reversion-src", // same logical key
+		TargetKey:     "cmdb:reversion-tgt",
+	})
+	require.NoError(t, err)
+	assert.False(t, created2, "same logical key must not create a new edge after asset re-version")
+	assert.Equal(t, r1.ID, r2.ID, "returned edge ID must be the existing one")
+
+	// Exactly one open edge in the database.
+	var count int
+	err = testPool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
+		"cmdb:reversion-src", "cmdb:reversion-tgt", "connects").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+func TestFilterRelationships_OnlyReturnsCurrentEdges(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/curr-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "curr-src"})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/curr-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "curr-tgt"})
+	require.NoError(t, err)
+	aTgt2, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/curr-tgt2", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "curr-tgt2"})
+	require.NoError(t, err)
+
+	// Open edge: src → tgt.
+	openEdge, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:           "urn:ocg:rel/cmdb/curr-src_connects_curr-tgt",
+		SourceAssetID: aSrc.ID, TargetAssetID: aTgt.ID,
+		ArtifactType: "connects", SourceSystem: "cmdb",
+		SourceID:  "curr-src_connects_curr-tgt",
+		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt",
+	})
+	require.NoError(t, err)
+
+	// Insert and immediately close edge: src → tgt2.
+	closedEdge, _, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:           "urn:ocg:rel/cmdb/curr-src_connects_curr-tgt2",
+		SourceAssetID: aSrc.ID, TargetAssetID: aTgt2.ID,
+		ArtifactType: "connects", SourceSystem: "cmdb",
+		SourceID:  "curr-src_connects_curr-tgt2",
+		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt2",
+	})
+	require.NoError(t, err)
+	err = s.CloseRelationship(ctx, closedEdge.ID)
+	require.NoError(t, err)
+
+	results, err := s.FilterRelationships(ctx, nil, nil, nil, "connects", 100)
+	require.NoError(t, err)
+	require.Len(t, results, 1, "filter must return only open edges")
+	assert.Equal(t, openEdge.ID, results[0].ID)
 }

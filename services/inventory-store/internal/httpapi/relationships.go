@@ -21,6 +21,7 @@ const (
 	RouteUpsertRelationship      = "upsert-relationship"
 	RouteUpsertRelationshipBatch = "upsert-relationship-batch"
 	RouteGetRelationship         = "get-relationship"
+	RouteCloseRelationship       = "close-relationship"
 	RouteListRelationships       = "list-relationships"
 	RouteFilterRelationships     = "filter-relationships"
 
@@ -34,6 +35,7 @@ func registerRelationshipRoutes(rg *gin.RouterGroup, d db) {
 	rg.POST("/relationships", setRoute(RouteUpsertRelationship), handleUpsertRelationship(d))
 	rg.POST("/relationships/batch", setRoute(RouteUpsertRelationshipBatch), handleUpsertRelationshipBatch(d))
 	rg.GET("/relationships/:id", setRoute(RouteGetRelationship), handleGetRelationship(d))
+	rg.DELETE("/relationships/:id", setRoute(RouteCloseRelationship), handleCloseRelationship(d))
 	rg.GET("/relationships", setRoute(RouteFilterRelationships), handleFilterRelationships(d))
 	rg.GET("/assets/:id/relationships", setRoute(RouteListRelationships), handleListRelationships(d))
 }
@@ -50,6 +52,8 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			requiredField{"artifact_type", req.ArtifactType},
 			requiredField{"source_system", req.SourceSystem},
 			requiredField{"source_id", req.SourceID},
+			requiredField{"source_key", req.SourceKey},
+			requiredField{"target_key", req.TargetKey},
 		); err != nil {
 			renderError(c, err)
 			return
@@ -72,6 +76,8 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			ArtifactType:  req.ArtifactType,
 			SourceSystem:  req.SourceSystem,
 			SourceID:      req.SourceID,
+			SourceKey:     req.SourceKey,
+			TargetKey:     req.TargetKey,
 			Extensions:    json.RawMessage(req.Extensions),
 		}
 		if req.IngestedAt != nil {
@@ -209,6 +215,8 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				requiredField{"artifact_type", r.ArtifactType},
 				requiredField{"source_system", r.SourceSystem},
 				requiredField{"source_id", r.SourceID},
+				requiredField{"source_key", r.SourceKey},
+				requiredField{"target_key", r.TargetKey},
 			); err != nil {
 				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
 				return
@@ -224,6 +232,8 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				ArtifactType:  r.ArtifactType,
 				SourceSystem:  r.SourceSystem,
 				SourceID:      r.SourceID,
+				SourceKey:     r.SourceKey,
+				TargetKey:     r.TargetKey,
 				Extensions:    json.RawMessage(r.Extensions),
 			}
 			if r.IngestedAt != nil {
@@ -274,8 +284,15 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		ArtifactType:  r.ArtifactType,
 		SourceSystem:  r.SourceSystem,
 		SourceID:      derefStr(r.SourceID),
+		SourceKey:     derefStr(r.SourceKey),
+		TargetKey:     derefStr(r.TargetKey),
 		Extensions:    []byte(r.Extensions),
 		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
+		ValidFrom:     r.ValidFrom.UTC().Format(time.RFC3339),
+	}
+	if r.ValidTo != nil {
+		s := r.ValidTo.UTC().Format(time.RFC3339)
+		resp.ValidTo = &s
 	}
 	if r.IngestedAt != nil {
 		s := r.IngestedAt.UTC().Format(time.RFC3339)
@@ -290,4 +307,19 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		resp.LastUpdatedAtSource = &s
 	}
 	return resp
+}
+
+func handleCloseRelationship(d db) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			renderError(c, fmt.Errorf("%w: invalid uuid", apperr.ErrInvalidInput))
+			return
+		}
+		if err := d.CloseRelationship(c.Request.Context(), id); err != nil {
+			renderError(c, err)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
 }
