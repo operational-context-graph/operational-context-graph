@@ -1,6 +1,6 @@
 module github.com/operational-context-graph/telemetry-store
 
-go 1.27
+go 1.27.3
 
 require (
 	github.com/gin-gonic/gin v1.12.0
