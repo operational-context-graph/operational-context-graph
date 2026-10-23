@@ -15,6 +15,7 @@ import (
 type Asset struct {
 	ID                  uuid.UUID       `json:"id"`
 	IRI                 *string         `json:"iri,omitempty"`
+	Name                *string         `json:"name,omitempty"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            string          `json:"source_id"`
@@ -30,6 +31,7 @@ type Asset struct {
 // AssetInput is the request body for POST /assets.
 type AssetInput struct {
 	IRI                 string          `json:"iri"`
+	Name                string          `json:"name,omitempty"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            string          `json:"source_id"`
