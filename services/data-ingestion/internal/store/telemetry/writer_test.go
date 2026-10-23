@@ -25,10 +25,9 @@ import (
 )
 
 type storeResp struct {
-	Status             string `json:"Status"`
-	NumberLoadedRows   int64  `json:"NumberLoadedRows"`
-	NumberFilteredRows int64  `json:"NumberFilteredRows"`
-	ErrorURL           string `json:"ErrorURL"`
+	LoadedRows   int64  `json:"loaded_rows"`
+	FilteredRows int64  `json:"filtered_rows,omitempty"`
+	ErrorURL     string `json:"error_url,omitempty"`
 }
 
 func logRecord(payload string) store.Record {
@@ -75,7 +74,7 @@ func respondJSON(w http.ResponseWriter, resp storeResp) {
 
 func TestWriter_Write_Success(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Success", NumberLoadedRows: 1})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`)))
@@ -97,7 +96,7 @@ func TestWriter_Write_EmptyBatchIsNoOp(t *testing.T) {
 
 func TestWriter_Write_LabelAlreadyExists_IsSuccess(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Label Already Exists"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`)))
@@ -106,7 +105,7 @@ func TestWriter_Write_LabelAlreadyExists_IsSuccess(t *testing.T) {
 
 func TestWriter_Write_PublishTimeout_IsSuccess(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Publish Timeout"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`)))
@@ -117,7 +116,7 @@ func TestWriter_Write_LabelDerivedFromBatchID(t *testing.T) {
 	var labels []string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		labels = append(labels, r.Header.Get("X-OCG-Label"))
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	// Same batch ID → same label on every retry.
@@ -133,7 +132,7 @@ func TestWriter_Write_DifferentBatchIDs_DifferentLabels(t *testing.T) {
 	var labels []string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		labels = append(labels, r.Header.Get("X-OCG-Label"))
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`))))
@@ -147,7 +146,7 @@ func TestWriter_Write_LabelHeaderPresent(t *testing.T) {
 	var gotLabel string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		gotLabel = r.Header.Get("X-OCG-Label")
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`))))
@@ -158,7 +157,7 @@ func TestWriter_Write_LabelFormat(t *testing.T) {
 	var gotLabel string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		gotLabel = r.Header.Get("X-OCG-Label")
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(7, logRecord(`{"iri":"urn:1"}`))))
@@ -169,7 +168,7 @@ func TestWriter_Write_LabelFormat(t *testing.T) {
 
 func TestWriter_Write_StoreFail_IsPermanentError(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Fail"})
+		rw.WriteHeader(http.StatusBadRequest)
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`)))
@@ -181,7 +180,7 @@ func TestWriter_Write_StoreFail_IsPermanentError(t *testing.T) {
 
 func TestWriter_Write_UnknownSignalType_IsPermanentError(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	unknown := store.Record{
@@ -235,7 +234,7 @@ func TestWriter_Write_HTTP500_IsOverloaded(t *testing.T) {
 
 func TestWriter_Write_FilteredRows_ReturnsNil(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
-		respondJSON(rw, storeResp{Status: "Success", NumberLoadedRows: 1, NumberFilteredRows: 2})
+		respondJSON(rw, storeResp{LoadedRows: 1, FilteredRows: 2})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`)))
@@ -249,7 +248,7 @@ func TestWriter_Write_NDJSONFormat(t *testing.T) {
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		body = string(raw)
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`), logRecord(`{"iri":"urn:2"}`)))
@@ -265,7 +264,7 @@ func TestWriter_Write_ContentTypeIsNDJSON(t *testing.T) {
 	var gotCT string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		gotCT = r.Header.Get("Content-Type")
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`))))
@@ -278,7 +277,7 @@ func TestWriter_Write_RoutesLogsToLogsEndpoint(t *testing.T) {
 	var path string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`))))
@@ -289,7 +288,7 @@ func TestWriter_Write_RoutesMetricsToMetricsEndpoint(t *testing.T) {
 	var path string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, metricRecord(`{"iri":"urn:1"}`))))
@@ -300,7 +299,7 @@ func TestWriter_Write_RoutesTracesToTracesEndpoint(t *testing.T) {
 	var path string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	require.NoError(t, w.Write(context.Background(), batch(1, traceRecord(`{"iri":"urn:1"}`))))
@@ -311,7 +310,7 @@ func TestWriter_Write_MixedSignals_SendsTwoRequests(t *testing.T) {
 	var paths []string
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(1, logRecord(`{"iri":"urn:1"}`), metricRecord(`{"iri":"urn:2"}`)))
@@ -342,7 +341,7 @@ func TestWriter_Write_MixedSignals_DistinctLabelsPerSignal(t *testing.T) {
 	labels := map[string]string{}
 	w := fakeServer(t, func(rw http.ResponseWriter, r *http.Request) {
 		labels[r.URL.Path] = r.Header.Get("X-OCG-Label")
-		respondJSON(rw, storeResp{Status: "Success"})
+		respondJSON(rw, storeResp{LoadedRows: 1})
 	})
 
 	err := w.Write(context.Background(), batch(5, logRecord(`{"iri":"urn:1"}`), metricRecord(`{"iri":"urn:2"}`)))
