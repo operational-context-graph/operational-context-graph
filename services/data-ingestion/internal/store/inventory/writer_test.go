@@ -215,5 +215,5 @@ func TestWriter_Limits(t *testing.T) {
 	limits := w.Limits()
 	assert.Equal(t, 1000, limits.MaxRecords)
 	assert.Equal(t, int64(0), limits.MaxBytes)
-	assert.Equal(t, 5*time.Minute, limits.MaxLinger)
+	assert.Equal(t, 30*time.Second, limits.MaxLinger)
 }
