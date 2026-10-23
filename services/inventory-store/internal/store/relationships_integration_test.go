@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 func TestUpsertRelationship_Idempotent(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
@@ -28,21 +27,23 @@ func TestUpsertRelationship_Idempotent(t *testing.T) {
 	aTgt, _, err := s.UpsertAsset(ctx, tgt)
 	require.NoError(t, err)
 
+	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/src-rel-001_connects_tgt-rel-001",
-		SourceAssetID: aSrc.ID,
-		TargetAssetID: aTgt.ID,
-		ArtifactType:  "connects",
-		SourceSystem:  "cmdb",
-		SourceID:      "src-rel-001_connects_tgt-rel-001",
-		SourceKey:     "cmdb:src-rel-001",
-		TargetKey:     "cmdb:tgt-rel-001",
+		IRI:                 "urn:ocg:rel/cmdb/src-rel-001_connects_tgt-rel-001",
+		SourceAssetID:       aSrc.ID,
+		TargetAssetID:       aTgt.ID,
+		ArtifactType:        "connects",
+		SourceSystem:        "cmdb",
+		SourceID:            "src-rel-001_connects_tgt-rel-001",
+		SourceKey:           "cmdb:src-rel-001",
+		TargetKey:           "cmdb:tgt-rel-001",
+		LastUpdatedAtSource: &ts,
 	}
 	r1, created1, err := s.UpsertRelationship(ctx, in)
 	require.NoError(t, err)
 	assert.True(t, created1)
 
-	// Second call with same logical key — silently drop, return existing row.
+	// Re-delivery with same last_updated_at_source — must return the same row unchanged.
 	r2, created2, err := s.UpsertRelationship(ctx, in)
 	require.NoError(t, err)
 	assert.False(t, created2)
@@ -95,16 +96,18 @@ func TestUpsertRelationshipBatch_Idempotent(t *testing.T) {
 	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/relb-idem-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "relb-idem-tgt"})
 	require.NoError(t, err)
 
+	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := []store.RelationshipInput{
 		{
-			IRI:           "urn:ocg:rel/cmdb/relb-idem-src_connects_relb-idem-tgt",
-			SourceAssetID: aSrc.ID,
-			TargetAssetID: aTgt.ID,
-			ArtifactType:  "connects",
-			SourceSystem:  "cmdb",
-			SourceID:      "relb-idem-src_connects_relb-idem-tgt",
-			SourceKey:     "cmdb:relb-idem-src",
-			TargetKey:     "cmdb:relb-idem-tgt",
+			IRI:                 "urn:ocg:rel/cmdb/relb-idem-src_connects_relb-idem-tgt",
+			SourceAssetID:       aSrc.ID,
+			TargetAssetID:       aTgt.ID,
+			ArtifactType:        "connects",
+			SourceSystem:        "cmdb",
+			SourceID:            "relb-idem-src_connects_relb-idem-tgt",
+			SourceKey:           "cmdb:relb-idem-src",
+			TargetKey:           "cmdb:relb-idem-tgt",
+			LastUpdatedAtSource: &ts,
 		},
 	}
 	rels1, err := s.UpsertRelationshipBatch(ctx, in)
@@ -114,14 +117,14 @@ func TestUpsertRelationshipBatch_Idempotent(t *testing.T) {
 	rels2, err := s.UpsertRelationshipBatch(ctx, in)
 	require.NoError(t, err)
 	require.Len(t, rels2, 1)
-	assert.Equal(t, rels1[0].ID, rels2[0].ID, "duplicate batch must return existing relationship")
+	assert.Equal(t, rels1[0].ID, rels2[0].ID, "re-delivery must return existing relationship")
 
 	var count int
 	err = testPool.QueryRow(ctx,
 		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
 		"cmdb:relb-idem-src", "cmdb:relb-idem-tgt", "connects").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count, "ON CONFLICT must not insert a duplicate row")
+	assert.Equal(t, 1, count, "re-delivery must not insert a new row")
 }
 
 func TestFilterRelationships_ByType(t *testing.T) {
@@ -236,12 +239,77 @@ func TestUpsertRelationship_ExtensionsDefaultsToEmptyObject(t *testing.T) {
 	assert.Empty(t, m, "extensions must default to {} when not provided")
 }
 
+// TestUpsertRelationship_NewVersionOnSourceChange verifies that a relationship is versioned
+// (old row expired, new row inserted) when last_updated_at_source advances, mirroring asset behaviour.
+func TestUpsertRelationship_NewVersionOnSourceChange(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/ver-src", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "ver-src"})
+	require.NoError(t, err)
+	aTgt, _, err := s.UpsertAsset(ctx, store.AssetInput{IRI: "urn:ocg:asset/cmdb/ver-tgt", ArtifactType: "server", SourceSystem: "cmdb", SourceID: "ver-tgt"})
+	require.NoError(t, err)
+
+	ts1 := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
+	r1, created1, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:                 "urn:ocg:rel/cmdb/ver-src_connects_ver-tgt",
+		SourceAssetID:       aSrc.ID,
+		TargetAssetID:       aTgt.ID,
+		ArtifactType:        "connects",
+		SourceSystem:        "cmdb",
+		SourceID:            "ver-src_connects_ver-tgt",
+		SourceKey:           "cmdb:ver-src",
+		TargetKey:           "cmdb:ver-tgt",
+		LastUpdatedAtSource: &ts1,
+	})
+	require.NoError(t, err)
+	assert.True(t, created1)
+
+	// Advance last_updated_at_source — must produce a new version.
+	ts2 := time.Now().UTC().Truncate(time.Microsecond)
+	r2, created2, err := s.UpsertRelationship(ctx, store.RelationshipInput{
+		IRI:                 "urn:ocg:rel/cmdb/ver-src_connects_ver-tgt",
+		SourceAssetID:       aSrc.ID,
+		TargetAssetID:       aTgt.ID,
+		ArtifactType:        "connects",
+		SourceSystem:        "cmdb",
+		SourceID:            "ver-src_connects_ver-tgt",
+		SourceKey:           "cmdb:ver-src",
+		TargetKey:           "cmdb:ver-tgt",
+		LastUpdatedAtSource: &ts2,
+	})
+	require.NoError(t, err)
+	assert.False(t, created2, "versioning an existing edge is not a creation")
+	assert.NotEqual(t, r1.ID, r2.ID, "new version must have a different UUID")
+
+	// Old row must be closed with valid_to = ts2.
+	old, err := s.GetRelationshipByID(ctx, r1.ID)
+	require.NoError(t, err)
+	require.NotNil(t, old.ValidTo)
+	assert.True(t, ts2.Equal(*old.ValidTo), "valid_to of old version must equal valid_from of new version")
+
+	// New row must be open with valid_from = ts2.
+	assert.True(t, ts2.Equal(r2.ValidFrom))
+	assert.Nil(t, r2.ValidTo)
+
+	// Exactly one open edge in the database.
+	var count int
+	err = testPool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
+		"cmdb:ver-src", "cmdb:ver-tgt", "connects").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+// TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion verifies that re-sending the same
+// logical edge after an asset re-version (new UUID, same source_key) is treated as a re-delivery
+// when last_updated_at_source is unchanged, so no new edge row is created.
 func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
 	ctx := t.Context()
 
-	// Insert initial asset versions.
 	ts1 := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	aSrc, _, err := s.UpsertAsset(ctx, store.AssetInput{
 		IRI:                 "urn:ocg:asset/cmdb/reversion-src",
@@ -259,16 +327,17 @@ func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T)
 	})
 	require.NoError(t, err)
 
-	// Create edge with stable logical keys.
+	relTs := time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Microsecond)
 	r1, created1, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
-		SourceAssetID: aSrc.ID,
-		TargetAssetID: aTgt.ID,
-		ArtifactType:  "connects",
-		SourceSystem:  "cmdb",
-		SourceID:      "reversion-src_connects_reversion-tgt",
-		SourceKey:     "cmdb:reversion-src",
-		TargetKey:     "cmdb:reversion-tgt",
+		IRI:                 "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
+		SourceAssetID:       aSrc.ID,
+		TargetAssetID:       aTgt.ID,
+		ArtifactType:        "connects",
+		SourceSystem:        "cmdb",
+		SourceID:            "reversion-src_connects_reversion-tgt",
+		SourceKey:           "cmdb:reversion-src",
+		TargetKey:           "cmdb:reversion-tgt",
+		LastUpdatedAtSource: &relTs,
 	})
 	require.NoError(t, err)
 	assert.True(t, created1)
@@ -283,25 +352,25 @@ func TestUpsertRelationship_LogicalKeyDedup_SurvivesAssetReversion(t *testing.T)
 		LastUpdatedAtSource: &ts2,
 	})
 	require.NoError(t, err)
-	assert.NotEqual(t, aSrc.ID, aSrc2.ID, "new version must have a different UUID")
+	assert.NotEqual(t, aSrc.ID, aSrc2.ID, "new asset version must have a different UUID")
 
-	// Upsert same logical edge with the new source UUID. Because source_key + target_key
-	// still match the open row, ON CONFLICT fires and the edge is NOT duplicated.
+	// Re-send the edge with the new asset UUID but the same relationship last_updated_at_source.
+	// Temporal dedup fires — same row returned, no new version created.
 	r2, created2, err := s.UpsertRelationship(ctx, store.RelationshipInput{
-		IRI:           "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
-		SourceAssetID: aSrc2.ID, // new UUID
-		TargetAssetID: aTgt.ID,
-		ArtifactType:  "connects",
-		SourceSystem:  "cmdb",
-		SourceID:      "reversion-src_connects_reversion-tgt",
-		SourceKey:     "cmdb:reversion-src", // same logical key
-		TargetKey:     "cmdb:reversion-tgt",
+		IRI:                 "urn:ocg:rel/cmdb/reversion-src_connects_reversion-tgt",
+		SourceAssetID:       aSrc2.ID,
+		TargetAssetID:       aTgt.ID,
+		ArtifactType:        "connects",
+		SourceSystem:        "cmdb",
+		SourceID:            "reversion-src_connects_reversion-tgt",
+		SourceKey:           "cmdb:reversion-src",
+		TargetKey:           "cmdb:reversion-tgt",
+		LastUpdatedAtSource: &relTs, // same relationship timestamp
 	})
 	require.NoError(t, err)
-	assert.False(t, created2, "same logical key must not create a new edge after asset re-version")
-	assert.Equal(t, r1.ID, r2.ID, "returned edge ID must be the existing one")
+	assert.False(t, created2)
+	assert.Equal(t, r1.ID, r2.ID, "re-delivery after asset re-version must return the existing edge")
 
-	// Exactly one open edge in the database.
 	var count int
 	err = testPool.QueryRow(ctx,
 		"SELECT COUNT(*) FROM relationships WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL",
@@ -341,7 +410,6 @@ func TestFilterRelationships_OnlyReturnsCurrentEdges(t *testing.T) {
 		SourceKey: "cmdb:curr-src", TargetKey: "cmdb:curr-tgt2",
 	})
 	require.NoError(t, err)
-	// Close the edge directly via SQL (CloseRelationship is not yet exposed).
 	_, err = testPool.Exec(ctx, `UPDATE relationships SET valid_to = NOW() WHERE id = $1`, closedEdge.ID)
 	require.NoError(t, err)
 

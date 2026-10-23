@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -33,14 +34,85 @@ func scanRelationshipRows(rows pgx.Rows, r *Relationship) error {
 	)
 }
 
-// UpsertRelationship inserts a relationship; silently drops duplicate logical-key edge.
+// upsertRelationshipTx performs the expire-then-insert reconcile for one relationship inside tx.
 //
-// Duplicate detection uses a partial unique index on (source_key, target_key, artifact_type)
-// WHERE valid_to IS NULL. source_key and target_key are stable "{source_system}:{source_id}"
-// strings that do not change when an asset is re-versioned to a new UUID, so the conflict
-// guard survives asset version bumps without creating false topology churn.
+// Temporal dedup: if the open row has the same last_updated_at_source as the incoming record,
+// the row is returned unchanged (idempotent re-delivery). Otherwise the open row is expired
+// and a new row is inserted so topology history is preserved.
+func upsertRelationshipTx(ctx context.Context, tx pgx.Tx, in RelationshipInput) (Relationship, bool, error) {
+	const checkCurrent = `
+SELECT ` + relColumns + `
+FROM relationships
+WHERE source_key = $1 AND target_key = $2 AND artifact_type = $3 AND valid_to IS NULL
+FOR UPDATE`
+
+	var cur Relationship
+	err := scanRelationship(tx.QueryRow(ctx, checkCurrent,
+		nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
+	), &cur)
+	rowExists := true
+	if errors.Is(err, pgx.ErrNoRows) {
+		rowExists = false
+	} else if err != nil {
+		return Relationship{}, false, fmt.Errorf("check current relationship: %w", err)
+	}
+
+	// Temporal dedup: skip new version if last_updated_at_source unchanged.
+	if rowExists && in.LastUpdatedAtSource != nil && cur.LastUpdatedAtSource != nil {
+		if cur.LastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
+			return cur, false, nil
+		}
+	}
+
+	// Use last_updated_at_source as the temporal boundary when present.
+	var validFrom *time.Time
+	if in.LastUpdatedAtSource != nil {
+		validFrom = in.LastUpdatedAtSource
+	}
+
+	// Expire the current open row. valid_to matches the new valid_from for a contiguous timeline.
+	const expire = `
+UPDATE relationships SET valid_to = COALESCE($4, NOW())
+WHERE source_key = $1 AND target_key = $2 AND artifact_type = $3 AND valid_to IS NULL`
+	tag, err := tx.Exec(ctx, expire,
+		nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType, validFrom,
+	)
+	if err != nil {
+		return Relationship{}, false, fmt.Errorf("expire relationship: %w", err)
+	}
+	created := tag.RowsAffected() == 0
+
+	const insert = `
+INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
+                           source_system, source_id, source_key, target_key,
+                           extensions, ingested_at,
+                           created_at_source, last_updated_at_source,
+                           valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
+RETURNING ` + relColumns
+
+	var r Relationship
+	err = scanRelationship(tx.QueryRow(ctx, insert,
+		nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
+		in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
+		nullJSON(in.Extensions), in.IngestedAt,
+		in.CreatedAtSource, in.LastUpdatedAtSource,
+	), &r)
+	if err != nil {
+		return Relationship{}, false, fmt.Errorf("insert relationship: %w", err)
+	}
+	return r, created, nil
+}
+
+// UpsertRelationship reconciles a relationship using expire-then-insert versioning.
 //
-// Returns (relationship, created, error). created=false when the edge already existed.
+// The logical key is (source_key, target_key, artifact_type). source_key and target_key
+// are stable "{source_system}:{source_id}" strings that survive asset re-versioning.
+//
+// Behaviour:
+//   - Re-delivery (same last_updated_at_source): returns existing row unchanged, created=false.
+//   - Changed data (different last_updated_at_source): expires current row, inserts new version.
+//   - No existing row: inserts new row, created=true.
 func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (Relationship, bool, error) {
 	ids := []uuid.UUID{in.SourceAssetID, in.TargetAssetID}
 	rows, err := s.pool.Query(ctx, `SELECT id FROM assets WHERE id = ANY($1) AND valid_to IS NULL`, ids)
@@ -66,41 +138,21 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 		}
 	}
 
-	const q = `
-INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
-                           source_system, source_id, source_key, target_key,
-                           extensions, ingested_at,
-                           created_at_source, last_updated_at_source,
-                           valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
-ON CONFLICT (source_key, target_key, artifact_type) WHERE valid_to IS NULL DO NOTHING
-RETURNING ` + relColumns
-
-	row := s.pool.QueryRow(ctx, q,
-		nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-		in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
-		nullJSON(in.Extensions), in.IngestedAt,
-		in.CreatedAtSource, in.LastUpdatedAtSource,
-	)
-	var r Relationship
-	err = scanRelationship(row, &r)
-	if errors.Is(err, pgx.ErrNoRows) {
-		// DO NOTHING path — fetch the existing open row by logical key.
-		err2 := scanRelationship(s.pool.QueryRow(ctx,
-			`SELECT `+relColumns+`
-             FROM relationships
-             WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL`,
-			nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
-		), &r)
-		if err2 != nil {
-			return Relationship{}, false, fmt.Errorf("fetch existing relationship: %w", err2)
-		}
-		return r, false, nil
-	}
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Relationship{}, false, fmt.Errorf("upsert relationship: %w", err)
+		return Relationship{}, false, fmt.Errorf("begin tx: %w", err)
 	}
-	return r, true, nil
+	defer tx.Rollback(ctx)
+
+	r, created, err := upsertRelationshipTx(ctx, tx, in)
+	if err != nil {
+		return Relationship{}, false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Relationship{}, false, fmt.Errorf("commit upsert relationship: %w", err)
+	}
+	return r, created, nil
 }
 
 // ListRelationships returns at most limit open relationships for an asset (as source or target).
@@ -220,10 +272,9 @@ func (s *Store) GetRelationship(ctx context.Context, srcID, tgtID uuid.UUID, art
 	return r, nil
 }
 
-// UpsertRelationshipBatch inserts multiple relationships in a single transaction.
+// UpsertRelationshipBatch reconciles multiple relationships in a single transaction.
 // Returns 404 if any referenced current asset is missing.
 func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []RelationshipInput) ([]Relationship, error) {
-	// Collect unique asset IDs and verify all exist (current version only) in one round-trip.
 	seen := make(map[uuid.UUID]struct{}, len(inputs)*2)
 	for _, in := range inputs {
 		seen[in.SourceAssetID] = struct{}{}
@@ -262,37 +313,10 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	}
 	defer tx.Rollback(ctx)
 
-	const q = `
-INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
-                           source_system, source_id, source_key, target_key,
-                           extensions, ingested_at,
-                           created_at_source, last_updated_at_source,
-                           valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
-ON CONFLICT (source_key, target_key, artifact_type) WHERE valid_to IS NULL DO NOTHING
-RETURNING ` + relColumns
-
 	rels := make([]Relationship, 0, len(inputs))
 	for _, in := range inputs {
-		var r Relationship
-		err := scanRelationship(tx.QueryRow(ctx, q,
-			nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-			in.SourceSystem, nullStr(in.SourceID), nullStr(in.SourceKey), nullStr(in.TargetKey),
-			nullJSON(in.Extensions), in.IngestedAt,
-			in.CreatedAtSource, in.LastUpdatedAtSource,
-		), &r)
-		if errors.Is(err, pgx.ErrNoRows) {
-			// DO NOTHING path — fetch existing open row by logical key.
-			err2 := scanRelationship(tx.QueryRow(ctx,
-				`SELECT `+relColumns+`
-				 FROM relationships
-				 WHERE source_key=$1 AND target_key=$2 AND artifact_type=$3 AND valid_to IS NULL`,
-				nullStr(in.SourceKey), nullStr(in.TargetKey), in.ArtifactType,
-			), &r)
-			if err2 != nil {
-				return nil, fmt.Errorf("fetch existing relationship in batch: %w", err2)
-			}
-		} else if err != nil {
+		r, _, err := upsertRelationshipTx(ctx, tx, in)
+		if err != nil {
 			return nil, fmt.Errorf("upsert relationship batch row: %w", err)
 		}
 		rels = append(rels, r)
