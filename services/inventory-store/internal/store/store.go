@@ -56,3 +56,11 @@ func nullJSON(b json.RawMessage) any {
 	}
 	return b
 }
+
+// nullStr converts an empty string to nil so pgx stores NULL instead of "".
+func nullStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}

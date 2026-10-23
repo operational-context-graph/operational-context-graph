@@ -43,6 +43,7 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 			return
 		}
 		if err := validateRequired(
+			requiredField{"iri", req.IRI},
 			requiredField{"artifact_type", req.ArtifactType},
 			requiredField{"source_system", req.SourceSystem},
 			requiredField{"source_id", req.SourceID},
@@ -51,10 +52,19 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 			return
 		}
 		in := store.AssetInput{
+			IRI:          req.IRI,
 			ArtifactType: req.ArtifactType,
 			SourceSystem: req.SourceSystem,
 			SourceID:     req.SourceID,
 			Extensions:   json.RawMessage(req.Extensions),
+		}
+		if req.IngestedAt != nil {
+			t, err := time.Parse(time.RFC3339, *req.IngestedAt)
+			if err != nil {
+				renderError(c, fmt.Errorf("%w: invalid ingested_at: %s", apperr.ErrInvalidInput, err.Error()))
+				return
+			}
+			in.IngestedAt = &t
 		}
 		if req.CreatedAtSource != nil {
 			t, err := time.Parse(time.RFC3339, *req.CreatedAtSource)
@@ -150,6 +160,7 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 		inputs := make([]store.AssetInput, len(req.Assets))
 		for i, a := range req.Assets {
 			if err := validateRequired(
+				requiredField{"iri", a.IRI},
 				requiredField{"artifact_type", a.ArtifactType},
 				requiredField{"source_system", a.SourceSystem},
 				requiredField{"source_id", a.SourceID},
@@ -158,10 +169,19 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 				return
 			}
 			in := store.AssetInput{
+				IRI:          a.IRI,
 				ArtifactType: a.ArtifactType,
 				SourceSystem: a.SourceSystem,
 				SourceID:     a.SourceID,
 				Extensions:   json.RawMessage(a.Extensions),
+			}
+			if a.IngestedAt != nil {
+				t, err := time.Parse(time.RFC3339, *a.IngestedAt)
+				if err != nil {
+					renderError(c, fmt.Errorf("%w: item %d invalid ingested_at: %s", apperr.ErrInvalidInput, i, err.Error()))
+					return
+				}
+				in.IngestedAt = &t
 			}
 			if a.CreatedAtSource != nil {
 				t, err := time.Parse(time.RFC3339, *a.CreatedAtSource)
@@ -197,12 +217,17 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 func toAssetResponse(a store.Asset) v1.AssetResponse {
 	r := v1.AssetResponse{
 		ID:           a.ID,
+		IRI:          derefStr(a.IRI),
 		ArtifactType: a.ArtifactType,
 		SourceSystem: a.SourceSystem,
 		SourceID:     a.SourceID,
 		Extensions:   []byte(a.Extensions),
 		CreatedAt:    a.CreatedAt.UTC().Format(time.RFC3339),
 		ValidFrom:    a.ValidFrom.UTC().Format(time.RFC3339),
+	}
+	if a.IngestedAt != nil {
+		s := a.IngestedAt.UTC().Format(time.RFC3339)
+		r.IngestedAt = &s
 	}
 	if a.CreatedAtSource != nil {
 		s := a.CreatedAtSource.UTC().Format(time.RFC3339)
@@ -217,4 +242,11 @@ func toAssetResponse(a store.Asset) v1.AssetResponse {
 		r.ValidTo = &s
 	}
 	return r
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

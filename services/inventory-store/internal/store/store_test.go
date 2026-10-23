@@ -56,6 +56,11 @@ func TestTimestampDedup_SameInstantDifferentZone(t *testing.T) {
 	assert.False(t, utc.Equal(utc.Add(time.Nanosecond)), "distinct instants must not be equal")
 }
 
+func TestNullStr(t *testing.T) {
+	assert.Nil(t, nullStr(""))
+	assert.Equal(t, "hello", nullStr("hello"))
+}
+
 func TestBatchOutcomeStrings(t *testing.T) {
 	// Outcome strings are part of the API contract — verify they stay stable.
 	assert.Equal(t, "created", BatchResult{Outcome: "created"}.Outcome)

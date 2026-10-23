@@ -7,10 +7,12 @@ import "github.com/google/uuid"
 
 // UpsertAssetRequest is the body for POST /v1/assets.
 type UpsertAssetRequest struct {
+	IRI                 string  `json:"iri"                    validate:"required"`
 	ArtifactType        string  `json:"artifact_type"          validate:"required"`
 	SourceSystem        string  `json:"source_system"          validate:"required"`
 	SourceID            string  `json:"source_id"              validate:"required"`
 	Extensions          []byte  `json:"extensions,omitempty"`
+	IngestedAt          *string `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string `json:"last_updated_at_source,omitempty"`
 }
@@ -18,10 +20,12 @@ type UpsertAssetRequest struct {
 // AssetResponse is the body returned for a single asset.
 type AssetResponse struct {
 	ID                  uuid.UUID `json:"id"`
+	IRI                 string    `json:"iri"`
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
 	SourceID            string    `json:"source_id"`
 	Extensions          []byte    `json:"extensions,omitempty"`
+	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
@@ -54,11 +58,14 @@ type BatchResult struct {
 
 // UpsertRelationshipRequest is the body for POST /v1/relationships.
 type UpsertRelationshipRequest struct {
+	IRI                 string    `json:"iri"                    validate:"required"`
 	SourceAssetID       uuid.UUID `json:"source_asset_id"        validate:"required"`
 	TargetAssetID       uuid.UUID `json:"target_asset_id"        validate:"required"`
 	ArtifactType        string    `json:"artifact_type"          validate:"required"`
 	SourceSystem        string    `json:"source_system"          validate:"required"`
+	SourceID            string    `json:"source_id"              validate:"required"`
 	Extensions          []byte    `json:"extensions,omitempty"`
+	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
 }
@@ -66,11 +73,14 @@ type UpsertRelationshipRequest struct {
 // RelationshipResponse is the body returned for a single relationship.
 type RelationshipResponse struct {
 	ID                  uuid.UUID `json:"id"`
+	IRI                 string    `json:"iri"`
 	SourceAssetID       uuid.UUID `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID `json:"target_asset_id"`
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
+	SourceID            string    `json:"source_id"`
 	Extensions          []byte    `json:"extensions,omitempty"`
+	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`

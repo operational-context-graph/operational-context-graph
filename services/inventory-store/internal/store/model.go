@@ -14,10 +14,12 @@ import (
 // Asset mirrors the assets table.
 type Asset struct {
 	ID                  uuid.UUID       `json:"id"`
+	IRI                 *string         `json:"iri,omitempty"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            string          `json:"source_id"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
@@ -27,10 +29,12 @@ type Asset struct {
 
 // AssetInput is the request body for POST /assets.
 type AssetInput struct {
+	IRI                 string          `json:"iri"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	SourceID            string          `json:"source_id"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
 }
@@ -44,11 +48,14 @@ type BatchResult struct {
 // Relationship mirrors the relationships table.
 type Relationship struct {
 	ID                  uuid.UUID       `json:"id"`
+	IRI                 *string         `json:"iri,omitempty"`
 	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
+	SourceID            *string         `json:"source_id,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
@@ -56,11 +63,14 @@ type Relationship struct {
 
 // RelationshipInput is the request body for POST /relationships.
 type RelationshipInput struct {
+	IRI                 string          `json:"iri"`
 	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
+	SourceID            string          `json:"source_id"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
 }
