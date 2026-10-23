@@ -4,11 +4,14 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS relationships (
     id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_asset_id        UUID         NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    target_asset_id        UUID         NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    iri                    TEXT,
+    source_asset_id        UUID         NOT NULL REFERENCES assets(id),
+    target_asset_id        UUID         NOT NULL REFERENCES assets(id),
     artifact_type          VARCHAR(64)  NOT NULL,
     source_system          VARCHAR(128) NOT NULL,
-    extensions             JSONB,
+    source_id              TEXT,
+    extensions             JSONB        NOT NULL DEFAULT '{}',
+    ingested_at            TIMESTAMPTZ,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     created_at_source      TIMESTAMPTZ,
     last_updated_at_source TIMESTAMPTZ,

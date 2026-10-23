@@ -40,29 +40,39 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 	}
 
 	const q = `
-INSERT INTO relationships (source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
+                           source_system, source_id, extensions, ingested_at,
                            created_at_source, last_updated_at_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (source_asset_id, target_asset_id, artifact_type) DO NOTHING
-RETURNING id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+RETURNING id, iri, source_asset_id, target_asset_id, artifact_type,
+          source_system, source_id, extensions, ingested_at,
           created_at, created_at_source, last_updated_at_source`
 
 	row := s.pool.QueryRow(ctx, q,
-		in.SourceAssetID, in.TargetAssetID, in.ArtifactType, in.SourceSystem,
-		nullJSON(in.Extensions), in.CreatedAtSource, in.LastUpdatedAtSource,
+		nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
+		in.SourceSystem, nullStr(in.SourceID), nullJSON(in.Extensions), in.IngestedAt,
+		in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var r Relationship
-	err = row.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+	err = row.Scan(
+		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// DO NOTHING path — fetch the existing row and return 200.
 		err2 := s.pool.QueryRow(ctx,
-			`SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+			`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+             source_system, source_id, extensions, ingested_at,
              created_at, created_at_source, last_updated_at_source
              FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`,
 			in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-		).Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+		).Scan(
+			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+		)
 		if err2 != nil {
 			return Relationship{}, false, fmt.Errorf("fetch existing relationship: %w", err2)
 		}
@@ -80,7 +90,8 @@ func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit 
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	const q = `SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+               source_system, source_id, extensions, ingested_at,
                created_at, created_at_source, last_updated_at_source
                FROM relationships WHERE source_asset_id=$1 OR target_asset_id=$1
                ORDER BY created_at LIMIT $2`
@@ -93,8 +104,11 @@ func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit 
 	var rels []Relationship
 	for rows.Next() {
 		var r Relationship
-		if err := rows.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource); err != nil {
+		if err := rows.Scan(
+			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+		); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)
@@ -107,13 +121,16 @@ func (s *Store) ListRelationships(ctx context.Context, assetID uuid.UUID, limit 
 
 // GetRelationshipByID fetches a specific relationship by its primary-key UUID.
 func (s *Store) GetRelationshipByID(ctx context.Context, id uuid.UUID) (Relationship, error) {
-	const q = `SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+               source_system, source_id, extensions, ingested_at,
                created_at, created_at_source, last_updated_at_source
                FROM relationships WHERE id=$1`
 	var r Relationship
 	err := s.pool.QueryRow(ctx, q, id).Scan(
-		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Relationship{}, ErrRelationshipNotFound
 	}
@@ -157,7 +174,8 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	}
 
 	args = append(args, limit)
-	q := fmt.Sprintf(`SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+	q := fmt.Sprintf(`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+               source_system, source_id, extensions, ingested_at,
                created_at, created_at_source, last_updated_at_source
                FROM relationships %s ORDER BY created_at LIMIT $%d`, where, i)
 
@@ -170,8 +188,11 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 	var rels []Relationship
 	for rows.Next() {
 		var r Relationship
-		if err := rows.Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource); err != nil {
+		if err := rows.Scan(
+			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+		); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)
@@ -184,13 +205,16 @@ func (s *Store) FilterRelationships(ctx context.Context, assetID, sourceAssetID,
 
 // GetRelationship fetches a specific edge by the natural key triple.
 func (s *Store) GetRelationship(ctx context.Context, srcID, tgtID uuid.UUID, artifactType string) (Relationship, error) {
-	const q = `SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+	const q = `SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+               source_system, source_id, extensions, ingested_at,
                created_at, created_at_source, last_updated_at_source
                FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`
 	var r Relationship
 	err := s.pool.QueryRow(ctx, q, srcID, tgtID, artifactType).Scan(
-		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+		&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+		&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Relationship{}, ErrRelationshipNotFound
 	}
@@ -243,30 +267,40 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	defer tx.Rollback(ctx)
 
 	const q = `
-INSERT INTO relationships (source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+INSERT INTO relationships (iri, source_asset_id, target_asset_id, artifact_type,
+                           source_system, source_id, extensions, ingested_at,
                            created_at_source, last_updated_at_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (source_asset_id, target_asset_id, artifact_type) DO NOTHING
-RETURNING id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+RETURNING id, iri, source_asset_id, target_asset_id, artifact_type,
+          source_system, source_id, extensions, ingested_at,
           created_at, created_at_source, last_updated_at_source`
 
 	rels := make([]Relationship, 0, len(inputs))
 	for _, in := range inputs {
 		var r Relationship
 		err := tx.QueryRow(ctx, q,
-			in.SourceAssetID, in.TargetAssetID, in.ArtifactType, in.SourceSystem,
-			nullJSON(in.Extensions), in.CreatedAtSource, in.LastUpdatedAtSource,
-		).Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-			&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+			nullStr(in.IRI), in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
+			in.SourceSystem, nullStr(in.SourceID), nullJSON(in.Extensions), in.IngestedAt,
+			in.CreatedAtSource, in.LastUpdatedAtSource,
+		).Scan(
+			&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+			&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+			&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+		)
 		if errors.Is(err, pgx.ErrNoRows) {
 			// DO NOTHING path — fetch existing row
 			err2 := tx.QueryRow(ctx,
-				`SELECT id, source_asset_id, target_asset_id, artifact_type, source_system, extensions,
+				`SELECT id, iri, source_asset_id, target_asset_id, artifact_type,
+				 source_system, source_id, extensions, ingested_at,
 				 created_at, created_at_source, last_updated_at_source
 				 FROM relationships WHERE source_asset_id=$1 AND target_asset_id=$2 AND artifact_type=$3`,
 				in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
-			).Scan(&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-				&r.SourceSystem, &r.Extensions, &r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource)
+			).Scan(
+				&r.ID, &r.IRI, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
+				&r.SourceSystem, &r.SourceID, &r.Extensions, &r.IngestedAt,
+				&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource,
+			)
 			if err2 != nil {
 				return nil, fmt.Errorf("fetch existing relationship in batch: %w", err2)
 			}

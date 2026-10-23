@@ -17,6 +17,9 @@ import (
 //   - If the natural key exists and last_updated_at_source matches → re-delivery, no new version row.
 //   - If last_updated_at_source advances, or the asset is new → expire current row, insert new version.
 //
+// valid_from is set to last_updated_at_source when present (source-time bitemporality), otherwise NOW().
+// valid_to on the expiring row is set to the same timestamp for a consistent temporal boundary.
+//
 // Returns (asset, created, error). created=true when a new row was inserted.
 func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -28,16 +31,16 @@ func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, er
 	// Check for existing current row and compare last_updated_at_source.
 	// FOR UPDATE serialises concurrent upserts on the same natural key.
 	const checkCurrent = `
-SELECT id, artifact_type, source_system, source_id, extensions,
-       created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+SELECT id, iri, artifact_type, source_system, source_id, extensions,
+       ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 FROM assets
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
 FOR UPDATE`
 
 	var cur Asset
 	err = tx.QueryRow(ctx, checkCurrent, in.SourceSystem, in.SourceID).Scan(
-		&cur.ID, &cur.ArtifactType, &cur.SourceSystem, &cur.SourceID,
-		&cur.Extensions, &cur.CreatedAt,
+		&cur.ID, &cur.IRI, &cur.ArtifactType, &cur.SourceSystem, &cur.SourceID,
+		&cur.Extensions, &cur.IngestedAt, &cur.CreatedAt,
 		&cur.CreatedAtSource, &cur.LastUpdatedAtSource, &cur.ValidFrom, &cur.ValidTo,
 	)
 	rowExists := true
@@ -58,32 +61,41 @@ FOR UPDATE`
 		}
 	}
 
-	// Expire any current version with the same natural key.
+	// Compute the timestamp for valid_from on the new row and valid_to on the expiring row.
+	// Use last_updated_at_source when present so the temporal boundary reflects the source change time.
+	var validFrom *time.Time
+	if in.LastUpdatedAtSource != nil {
+		validFrom = in.LastUpdatedAtSource
+	}
+
+	// Expire any current version. valid_to is set to the same timestamp as the new valid_from
+	// so the temporal ranges are contiguous with no gap or overlap.
 	const expire = `
-UPDATE assets SET valid_to = NOW()
+UPDATE assets SET valid_to = COALESCE($3, NOW())
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
-	tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID)
+	tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID, validFrom)
 	if err != nil {
 		return Asset{}, false, fmt.Errorf("expire asset: %w", err)
 	}
 	created := tag.RowsAffected() == 0
 
 	const insert = `
-INSERT INTO assets (artifact_type, source_system, source_id, extensions,
-                    created_at_source, last_updated_at_source, valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
-RETURNING id, artifact_type, source_system, source_id, extensions,
-          created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
+INSERT INTO assets (iri, artifact_type, source_system, source_id, extensions,
+                    ingested_at, created_at_source, last_updated_at_source,
+                    valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($8, NOW()), NULL)
+RETURNING id, iri, artifact_type, source_system, source_id, extensions,
+          ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
 	row := tx.QueryRow(ctx, insert,
-		in.ArtifactType, in.SourceSystem, in.SourceID,
+		nullStr(in.IRI), in.ArtifactType, in.SourceSystem, in.SourceID,
 		nullJSON(in.Extensions),
-		in.CreatedAtSource, in.LastUpdatedAtSource,
+		in.IngestedAt, in.CreatedAtSource, in.LastUpdatedAtSource,
 	)
 	var a Asset
 	err = row.Scan(
-		&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
-		&a.Extensions, &a.CreatedAt,
+		&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo,
 	)
 	if err != nil {
@@ -98,13 +110,13 @@ RETURNING id, artifact_type, source_system, source_id, extensions,
 
 // GetAsset fetches the current version of an asset by internal UUID.
 func (s *Store) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
-	const q = `SELECT id, artifact_type, source_system, source_id, extensions,
-               created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+	const q = `SELECT id, iri, artifact_type, source_system, source_id, extensions,
+               ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
                FROM assets WHERE id = $1 AND valid_to IS NULL`
 	row := s.pool.QueryRow(ctx, q, id)
 	var a Asset
-	err := row.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
-		&a.Extensions, &a.CreatedAt,
+	err := row.Scan(&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+		&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 		&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, ErrAssetNotFound
@@ -147,8 +159,8 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem, sour
 	}
 
 	args = append(args, limit+1)
-	q := fmt.Sprintf(`SELECT id, artifact_type, source_system, source_id, extensions,
-		created_at, created_at_source, last_updated_at_source, valid_from, valid_to
+	q := fmt.Sprintf(`SELECT id, iri, artifact_type, source_system, source_id, extensions,
+		ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to
 		FROM assets %s ORDER BY created_at, id LIMIT $%d`, where, i)
 
 	rows, err := s.pool.Query(ctx, q, args...)
@@ -160,8 +172,8 @@ func (s *Store) ListAssets(ctx context.Context, artifactType, sourceSystem, sour
 	var assets []Asset
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
-			&a.Extensions, &a.CreatedAt,
+		if err := rows.Scan(&a.ID, &a.IRI, &a.ArtifactType, &a.SourceSystem, &a.SourceID,
+			&a.Extensions, &a.IngestedAt, &a.CreatedAt,
 			&a.CreatedAtSource, &a.LastUpdatedAtSource, &a.ValidFrom, &a.ValidTo); err != nil {
 			return nil, nil, fmt.Errorf("scan asset: %w", err)
 		}
@@ -195,13 +207,14 @@ WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
 FOR UPDATE`
 
 	const expire = `
-UPDATE assets SET valid_to = NOW()
+UPDATE assets SET valid_to = COALESCE($3, NOW())
 WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`
 
 	const insert = `
-INSERT INTO assets (artifact_type, source_system, source_id, extensions,
-                    created_at_source, last_updated_at_source, valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
+INSERT INTO assets (iri, artifact_type, source_system, source_id, extensions,
+                    ingested_at, created_at_source, last_updated_at_source,
+                    valid_from, valid_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($8, NOW()), NULL)
 RETURNING id`
 
 	results := make([]BatchResult, 0, len(inputs))
@@ -224,7 +237,12 @@ RETURNING id`
 			}
 		}
 
-		tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID)
+		var validFrom *time.Time
+		if in.LastUpdatedAtSource != nil {
+			validFrom = in.LastUpdatedAtSource
+		}
+
+		tag, err := tx.Exec(ctx, expire, in.SourceSystem, in.SourceID, validFrom)
 		if err != nil {
 			return nil, fmt.Errorf("expire asset batch row: %w", err)
 		}
@@ -232,9 +250,9 @@ RETURNING id`
 
 		var id uuid.UUID
 		if err := tx.QueryRow(ctx, insert,
-			in.ArtifactType, in.SourceSystem, in.SourceID,
+			nullStr(in.IRI), in.ArtifactType, in.SourceSystem, in.SourceID,
 			nullJSON(in.Extensions),
-			in.CreatedAtSource, in.LastUpdatedAtSource,
+			in.IngestedAt, in.CreatedAtSource, in.LastUpdatedAtSource,
 		).Scan(&id); err != nil {
 			return nil, fmt.Errorf("insert asset batch row: %w", err)
 		}

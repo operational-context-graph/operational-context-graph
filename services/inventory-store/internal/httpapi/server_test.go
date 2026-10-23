@@ -82,6 +82,7 @@ func TestHandleUpsertAsset_Created(t *testing.T) {
 	srv := httpapi.NewServer(stub, ":0")
 
 	rr := test.PostJSON(t, srv.Handler, httpapi.PathAssets, map[string]any{
+		"iri":           "urn:ocg:asset/cmdb/srv-001",
 		"artifact_type": "server",
 		"source_system": "cmdb",
 		"source_id":     "srv-001",
@@ -221,11 +222,11 @@ func TestHandleUpsertAsset_MissingRequiredFields_Returns400(t *testing.T) {
 		{
 			name:    "all empty",
 			body:    map[string]any{},
-			wantErr: []string{"artifact_type", "source_system", "source_id"},
+			wantErr: []string{"iri", "artifact_type", "source_system", "source_id"},
 		},
 		{
 			name:    "missing source_id",
-			body:    map[string]any{"artifact_type": "server", "source_system": "cmdb"},
+			body:    map[string]any{"iri": "urn:ocg:asset/cmdb/x", "artifact_type": "server", "source_system": "cmdb"},
 			wantErr: []string{"source_id"},
 		},
 	}

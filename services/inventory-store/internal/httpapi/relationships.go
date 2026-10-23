@@ -24,10 +24,10 @@ const (
 	RouteListRelationships       = "list-relationships"
 	RouteFilterRelationships     = "filter-relationships"
 
-	PathRelationships         = "/v1/relationships"
-	PathRelationshipByID      = "/v1/relationships/:id"
-	PathRelationshipsBatch    = "/v1/relationships/batch"
-	PathAssetRelationships    = "/v1/assets/:id/relationships"
+	PathRelationships      = "/v1/relationships"
+	PathRelationshipByID   = "/v1/relationships/:id"
+	PathRelationshipsBatch = "/v1/relationships/batch"
+	PathAssetRelationships = "/v1/assets/:id/relationships"
 )
 
 func registerRelationshipRoutes(rg *gin.RouterGroup, d db) {
@@ -46,8 +46,10 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			return
 		}
 		if err := validateRequired(
+			requiredField{"iri", req.IRI},
 			requiredField{"artifact_type", req.ArtifactType},
 			requiredField{"source_system", req.SourceSystem},
+			requiredField{"source_id", req.SourceID},
 		); err != nil {
 			renderError(c, err)
 			return
@@ -64,11 +66,21 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			return
 		}
 		in := store.RelationshipInput{
+			IRI:           req.IRI,
 			SourceAssetID: req.SourceAssetID,
 			TargetAssetID: req.TargetAssetID,
 			ArtifactType:  req.ArtifactType,
 			SourceSystem:  req.SourceSystem,
+			SourceID:      req.SourceID,
 			Extensions:    json.RawMessage(req.Extensions),
+		}
+		if req.IngestedAt != nil {
+			t, err := time.Parse(time.RFC3339, *req.IngestedAt)
+			if err != nil {
+				renderError(c, fmt.Errorf("%w: invalid ingested_at: %s", apperr.ErrInvalidInput, err.Error()))
+				return
+			}
+			in.IngestedAt = &t
 		}
 		if req.CreatedAtSource != nil {
 			t, err := time.Parse(time.RFC3339, *req.CreatedAtSource)
@@ -193,8 +205,10 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 		inputs := make([]store.RelationshipInput, len(req.Relationships))
 		for i, r := range req.Relationships {
 			if err := validateRequired(
+				requiredField{"iri", r.IRI},
 				requiredField{"artifact_type", r.ArtifactType},
 				requiredField{"source_system", r.SourceSystem},
+				requiredField{"source_id", r.SourceID},
 			); err != nil {
 				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
 				return
@@ -204,11 +218,21 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				return
 			}
 			in := store.RelationshipInput{
+				IRI:           r.IRI,
 				SourceAssetID: r.SourceAssetID,
 				TargetAssetID: r.TargetAssetID,
 				ArtifactType:  r.ArtifactType,
 				SourceSystem:  r.SourceSystem,
+				SourceID:      r.SourceID,
 				Extensions:    json.RawMessage(r.Extensions),
+			}
+			if r.IngestedAt != nil {
+				t, err := time.Parse(time.RFC3339, *r.IngestedAt)
+				if err != nil {
+					renderError(c, fmt.Errorf("%w: item %d invalid ingested_at: %s", apperr.ErrInvalidInput, i, err.Error()))
+					return
+				}
+				in.IngestedAt = &t
 			}
 			if r.CreatedAtSource != nil {
 				t, err := time.Parse(time.RFC3339, *r.CreatedAtSource)
@@ -244,12 +268,18 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 	resp := v1.RelationshipResponse{
 		ID:            r.ID,
+		IRI:           derefStr(r.IRI),
 		SourceAssetID: r.SourceAssetID,
 		TargetAssetID: r.TargetAssetID,
 		ArtifactType:  r.ArtifactType,
 		SourceSystem:  r.SourceSystem,
+		SourceID:      derefStr(r.SourceID),
 		Extensions:    []byte(r.Extensions),
 		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if r.IngestedAt != nil {
+		s := r.IngestedAt.UTC().Format(time.RFC3339)
+		resp.IngestedAt = &s
 	}
 	if r.CreatedAtSource != nil {
 		s := r.CreatedAtSource.UTC().Format(time.RFC3339)

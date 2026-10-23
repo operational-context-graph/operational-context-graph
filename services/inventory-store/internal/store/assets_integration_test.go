@@ -6,6 +6,7 @@
 package store_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ func TestUpsertAsset_Created(t *testing.T) {
 	cleanTables(t)
 	s := newStore(t)
 	in := store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/srv-001",
 		ArtifactType: "server",
 		SourceSystem: "cmdb",
 		SourceID:     "srv-001",
@@ -36,6 +38,7 @@ func TestUpsertAsset_Idempotent(t *testing.T) {
 	s := newStore(t)
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/srv-002",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "srv-002",
@@ -66,6 +69,7 @@ func TestUpsertAsset_ObservedAtGuard_ExactMatchIsIdempotent(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 
 	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/srv-003",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "srv-003",
@@ -95,6 +99,7 @@ func TestUpsertAsset_NewerTimestamp_CreatesNewVersion(t *testing.T) {
 	ts2 := time.Now().UTC().Truncate(time.Microsecond)
 
 	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/srv-004",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "srv-004",
@@ -130,7 +135,12 @@ func TestUpsertAsset_NilTimestamp_ReDeliveryReVersions(t *testing.T) {
 	// Both calls omit LastUpdatedAtSource (nil). The dedup guard requires both sides
 	// to be non-nil, so it is skipped. The second call expires the first row and
 	// inserts a new one — this test documents that behaviour explicitly.
-	in := store.AssetInput{ArtifactType: "server", SourceSystem: "cmdb", SourceID: "nil-ts-001"}
+	in := store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/nil-ts-001",
+		ArtifactType: "server",
+		SourceSystem: "cmdb",
+		SourceID:     "nil-ts-001",
+	}
 
 	a1, created1, err := s.UpsertAsset(ctx, in)
 	require.NoError(t, err)
@@ -153,6 +163,7 @@ func TestUpsertAssetBatch_ReDelivery(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 
 	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/batch-redelivery-001",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "batch-redelivery-001",
@@ -184,6 +195,7 @@ func TestUpsertAssetBatch_AdvancingTimestamp(t *testing.T) {
 	ts2 := time.Now().UTC().Truncate(time.Microsecond)
 
 	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/batch-advance-001",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "batch-advance-001",
@@ -214,6 +226,7 @@ func TestUpsertAssetBatch_Mixed(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Microsecond)
 
 	existing := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/batch-mixed-existing",
 		ArtifactType:        "server",
 		SourceSystem:        "cmdb",
 		SourceID:            "batch-mixed-existing",
@@ -224,6 +237,7 @@ func TestUpsertAssetBatch_Mixed(t *testing.T) {
 	existingID := results0[0].ID
 
 	newItem := store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/batch-mixed-new",
 		ArtifactType: "server",
 		SourceSystem: "cmdb",
 		SourceID:     "batch-mixed-new",
@@ -239,4 +253,102 @@ func TestUpsertAssetBatch_Mixed(t *testing.T) {
 	// Second item is brand-new.
 	assert.NotEqual(t, existingID, results[1].ID)
 	assert.Equal(t, "created", results[1].Outcome)
+}
+
+func TestUpsertAsset_IRIAndIngestedAt_RoundTrip(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	ts := time.Now().UTC().Truncate(time.Microsecond)
+	in := store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/iri-roundtrip-001",
+		ArtifactType: "server",
+		SourceSystem: "cmdb",
+		SourceID:     "iri-roundtrip-001",
+		IngestedAt:   &ts,
+	}
+	a, created, err := s.UpsertAsset(ctx, in)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	got, err := s.GetAsset(ctx, a.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.IRI)
+	assert.Equal(t, "urn:ocg:asset/cmdb/iri-roundtrip-001", *got.IRI)
+	require.NotNil(t, got.IngestedAt)
+	assert.True(t, ts.Equal(*got.IngestedAt), "ingested_at must survive insert unchanged")
+}
+
+func TestUpsertAsset_ValidFromEqualsLastUpdatedAtSource(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	ts := time.Now().UTC().Truncate(time.Microsecond)
+	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/valid-from-001",
+		ArtifactType:        "server",
+		SourceSystem:        "cmdb",
+		SourceID:            "valid-from-001",
+		LastUpdatedAtSource: &ts,
+	}
+	a, _, err := s.UpsertAsset(ctx, in)
+	require.NoError(t, err)
+	assert.True(t, ts.Equal(a.ValidFrom),
+		"valid_from must equal last_updated_at_source when present (got %v, want %v)", a.ValidFrom, ts)
+}
+
+func TestUpsertAsset_ExpiredValidToMatchesNewValidFrom(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	ts1 := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
+	ts2 := time.Now().UTC().Truncate(time.Microsecond)
+
+	in := store.AssetInput{
+		IRI:                 "urn:ocg:asset/cmdb/valid-boundary-001",
+		ArtifactType:        "server",
+		SourceSystem:        "cmdb",
+		SourceID:            "valid-boundary-001",
+		LastUpdatedAtSource: &ts1,
+	}
+	a1, _, err := s.UpsertAsset(ctx, in)
+	require.NoError(t, err)
+
+	in.LastUpdatedAtSource = &ts2
+	a2, _, err := s.UpsertAsset(ctx, in)
+	require.NoError(t, err)
+
+	var validTo *time.Time
+	err = testPool.QueryRow(ctx, "SELECT valid_to FROM assets WHERE id=$1", a1.ID).Scan(&validTo)
+	require.NoError(t, err)
+	require.NotNil(t, validTo, "old row must be expired")
+	assert.True(t, validTo.Equal(a2.ValidFrom),
+		"expired row valid_to must equal new row valid_from (got %v, want %v)", validTo, a2.ValidFrom)
+}
+
+func TestUpsertAsset_ExtensionsDefaultsToEmptyObject(t *testing.T) {
+	cleanTables(t)
+	s := newStore(t)
+	ctx := t.Context()
+
+	in := store.AssetInput{
+		IRI:          "urn:ocg:asset/cmdb/ext-default-001",
+		ArtifactType: "server",
+		SourceSystem: "cmdb",
+		SourceID:     "ext-default-001",
+		// Extensions deliberately omitted
+	}
+	a, _, err := s.UpsertAsset(ctx, in)
+	require.NoError(t, err)
+
+	got, err := s.GetAsset(ctx, a.ID)
+	require.NoError(t, err)
+
+	var m map[string]any
+	err = json.Unmarshal(got.Extensions, &m)
+	require.NoError(t, err, "extensions must be valid JSON")
+	assert.Empty(t, m, "extensions must default to {} when not provided")
 }
