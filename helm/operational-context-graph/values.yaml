@@ -151,9 +151,10 @@ inventory-connector:
     tag: "0.1.0"
     pullPolicy: IfNotPresent
   netbox:
-    baseURL: ""
+    # Required: no default. Must be provided per environment, e.g. in values.local.yaml.
+    # baseURL: "http://your-netbox"
     tokenSecret:
-      name: ""
+      name: "netbox-token"
       key: token
   grpc:
     endpoint: "ocg-data-ingestion:9090"
