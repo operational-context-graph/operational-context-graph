@@ -67,7 +67,7 @@ func run() error {
 
 	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, outbox.New(pool))
 
-	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline, &grpcserver.NoopSchemaRegistryClient{})
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline, &schemaRegistry)
 	if err != nil {
 		return err
 	}
