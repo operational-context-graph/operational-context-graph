@@ -1,0 +1,94 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inventory-store.fullname" . }}
+  labels:
+    {{- include "inventory-store.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "inventory-store.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "inventory-store.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/goose", "up"]
+          env:
+            - name: GOOSE_DRIVER
+              value: "postgres"
+            - name: GOOSE_MIGRATION_DIR
+              value: "/migrations"
+            - name: DB_HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: GOOSE_DBSTRING
+              value: "host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) user=$(DB_USER) password=$(DB_PASSWORD) sslmode=$(DB_SSLMODE)"
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          env:
+            - name: OCG_IS_SERVER__PORT
+              value: {{ .Values.containerPort | quote }}
+            - name: OCG_IS_LOGGING__LEVEL
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: OCG_IS_DATABASE__HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: OCG_IS_DATABASE__PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OCG_IS_DATABASE__NAME
+              value: {{ .Values.database.name | quote }}
+            - name: OCG_IS_DATABASE__USER
+              value: {{ .Values.database.user | quote }}
+            - name: OCG_IS_DATABASE__SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: OCG_IS_DATABASE__MAXCONNS
+              value: {{ .Values.database.maxconns | quote }}
+            - name: OCG_IS_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
