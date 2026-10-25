@@ -2,25 +2,68 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Local/dev overrides.
-# Create the secret before deploying:
-#   kubectl create secret generic postgres-secret --from-literal=password=<your-password>
+# Local/dev overrides. Adjust values to match your environment before deploying.
+#
+# Prerequisites:
+#
+# 1. Doris requires vm.max_map_count >= 2000000 on the node (may need to be set after
+#    each restart depending on your local Kubernetes setup):
+#      docker run --privileged --pid=host --rm alpine \
+#        nsenter -t 1 -m -u -n -i sh -c "sysctl -w vm.max_map_count=2000000"
+#
+# 2. After helm upgrade, patch the BE init container if swapoff -a fails on your node
+#    (e.g. when swap is disabled at the OS level — the operator injects swapoff -a
+#    which exits non-zero and blocks the pod):
+#      kubectl patch statefulset ocg-doris-be -n autonomous-operations \
+#        --type='json' -p='[{
+#          "op": "replace",
+#          "path": "/spec/template/spec/initContainers/0/args/1",
+#          "value": "sysctl -w vm.max_map_count=2000000 && swapoff -a || true"
+#        }]'
+#      kubectl delete pod ocg-doris-be-0 -n autonomous-operations
+#
+# 3. If doris-operator was previously installed as a standalone helm release,
+#    transfer ownership annotations before helm upgrade to avoid conflicts:
+#      for resource in \
+#        "serviceaccount/doris-operator" \
+#        "role/leader-election-role" \
+#        "rolebinding/leader-election-rolebinding" \
+#        "deployment/doris-operator" \
+#        "service/doris-service" \
+#        "secret/doris-operator-secret-cert"; do
+#        kubectl annotate $resource -n autonomous-operations \
+#          meta.helm.sh/release-name=ocg --overwrite
+#      done
+#      kubectl annotate clusterrole/doris-operator \
+#        meta.helm.sh/release-name=ocg --overwrite
+#      kubectl annotate clusterrolebinding/doris-operator-rolebinding \
+#        meta.helm.sh/release-name=ocg --overwrite
+#
+# 4. After Doris FE is Running and BE Alive=true, set the root password:
+#      kubectl exec -n autonomous-operations ocg-doris-fe-0 \
+#        -- mysql -h 127.0.0.1 -P 9030 -u root \
+#        -e "SET PASSWORD FOR 'root'@'%' = PASSWORD('<your-doris-password>');"
+#
+# 5. Create secrets:
+#   kubectl create secret generic postgres-secret --from-literal=password=<your-postgres-password> -n autonomous-operations --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl create secret generic netbox-token --from-literal=token=<your-netbox-token> -n autonomous-operations --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl create secret generic telemetry-store-doris-secret \
+#     --from-literal=DORIS_STREAM_LOAD_URL="http://ocg-doris-fe-service:8030" \
+#     --from-literal=DORIS_STREAM_LOAD_USER="root" \
+#     --from-literal=DORIS_STREAM_LOAD_PASSWORD="<your-doris-password>" \
+#     -n autonomous-operations --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl create secret generic telemetry-store-doris-read-secret \
+#     --from-literal=DORIS_DSN="root:<your-doris-password>@tcp(ocg-doris-fe-service:9030)/" \
+#     -n autonomous-operations --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl create secret generic telemetry-store-doris-ddl-secret \
+#     --from-literal=DORIS_MIGRATE_DSN="root:<your-doris-password>@tcp(ocg-doris-fe-service:9030)/" \
+#     -n autonomous-operations --dry-run=client -o yaml | kubectl apply -f -
+
 postgresql:
+  enabled: true
   primary:
     persistence:
       size: 1Gi
-
-inventory-store:
-  image:
-    repository: localhost:5001/inventory-store
-    tag: local
-    pullPolicy: Always
-  database:
-    host: ocg-postgresql
-    sslmode: disable
-    passwordSecret:
-      name: postgres-secret
-      key: password
 
 data-ingestion:
   image:
@@ -35,18 +78,99 @@ data-ingestion:
       key: password
   inventoryStore:
     baseURL: "http://ocg-inventory-store:8080"
+  telemetryStore:
+    baseURL: "http://ocg-telemetry-store:8080"
+
+inventory-store:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: localhost:5001/inventory-store
+    tag: local
+    pullPolicy: Always
+  database:
+    host: ocg-postgresql
+    sslmode: disable
+    passwordSecret:
+      name: postgres-secret
+      key: password
 
 telemetry-store:
+  enabled: true
   replicaCount: 1
+  image:
+    repository: localhost:5001/telemetry-store
+    tag: local
+    pullPolicy: Always
   env:
     DORIS_REPLICATION_NUM: "1"
 
 inventory-connector:
+  enabled: true
   image:
-    repository: inventory-connector
-    tag: dev
-    pullPolicy: Never
+    repository: localhost:5001/inventory-connector
+    tag: local
+    pullPolicy: Always
   netbox:
-    baseURL: "http://mockreplay-netbox:8081"
+    baseURL: "http://<your-mockreplay-host>:8081"
+    pageSize: 1000
     tokenSecret:
       name: netbox-token
+      key: token
+  grpc:
+    endpoint: "ocg-data-ingestion:9090"
+    connectorID: "ocg-inventory-connector"
+  connector:
+    schemaVersion: "0.1.0"
+    endpoints:
+      - "dcim/devices/"
+
+otelcol:
+  enabled: true
+  dataIngestionEndpoint: "ocg-data-ingestion:9090"
+
+doris:
+  enabled: true
+  feSpec:
+    replicas: 1
+    image: apache/doris:fe-4.1.4@sha256:3cbfc9b6293057a0b7f10c2e597f20f4a6bafed0729dfa9795db21eae2e136bb
+    requests:
+      cpu: "0.5"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+    config:
+      metaDir: /opt/apache-doris/fe/doris-meta
+      priorityNetworks: 10.0.0.0/8
+      httpPort: 8030
+      rpcPort: 9020
+      queryPort: 9030
+      editLogPort: 9010
+      # Heap must fit within the 2Gi container limit
+      javaOpts: "-Xmx1024m -Xms1024m"
+      queryTimeout: 300
+      streamLoadTimeout: 600
+  beSpec:
+    replicas: 1
+    image: apache/doris:be-4.1.4@sha256:08c139f3d0ec45090a5214fd76f19f84b871d05f1a2db83b5e35a85c193617b2
+    requests:
+      cpu: "0.5"
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+    config:
+      storageRootPath: /opt/apache-doris/be/storage
+      priorityNetworks: 10.0.0.0/8
+      bePort: 9060
+      webserverPort: 8040
+      heartbeatServicePort: 9050
+      brpcPort: 8060
+      memLimit: "70%"
+
+doris-operator:
+  enabled: false
+
+pgadmin:
+  enabled: true

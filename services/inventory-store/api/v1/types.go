@@ -3,7 +3,11 @@
 
 package v1
 
-import "github.com/google/uuid"
+import (
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
 
 // UpsertAssetRequest is the body for POST /v1/assets.
 type UpsertAssetRequest struct {
@@ -12,7 +16,7 @@ type UpsertAssetRequest struct {
 	ArtifactType        string  `json:"artifact_type"          validate:"required"`
 	SourceSystem        string  `json:"source_system"          validate:"required"`
 	SourceID            string  `json:"source_id"              validate:"required"`
-	Extensions          []byte  `json:"extensions,omitempty"`
+	Extensions          json.RawMessage  `json:"extensions,omitempty"`
 	IngestedAt          *string `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string `json:"last_updated_at_source,omitempty"`
@@ -26,7 +30,7 @@ type AssetResponse struct {
 	ArtifactType        string    `json:"artifact_type"`
 	SourceSystem        string    `json:"source_system"`
 	SourceID            string    `json:"source_id"`
-	Extensions          []byte    `json:"extensions,omitempty"`
+	Extensions          json.RawMessage    `json:"extensions,omitempty"`
 	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
@@ -66,7 +70,7 @@ type UpsertRelationshipRequest struct {
 	SourceSystem        string    `json:"source_system"          validate:"required"`
 	SourceKey           string    `json:"source_key"             validate:"required"`
 	TargetKey           string    `json:"target_key"             validate:"required"`
-	Extensions          []byte    `json:"extensions,omitempty"`
+	Extensions          json.RawMessage    `json:"extensions,omitempty"`
 	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
@@ -81,7 +85,7 @@ type RelationshipResponse struct {
 	SourceSystem        string    `json:"source_system"`
 	SourceKey           string    `json:"source_key"`
 	TargetKey           string    `json:"target_key"`
-	Extensions          []byte    `json:"extensions,omitempty"`
+	Extensions          json.RawMessage    `json:"extensions,omitempty"`
 	IngestedAt          *string   `json:"ingested_at,omitempty"`
 	CreatedAt           string    `json:"created_at"`
 	CreatedAtSource     *string   `json:"created_at_source,omitempty"`

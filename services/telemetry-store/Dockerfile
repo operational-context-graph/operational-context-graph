@@ -5,7 +5,7 @@
 
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker build -f services/telemetry-store/Dockerfile .
-FROM golang:1.27 AS build
+FROM golang:1.27.3 AS build
 WORKDIR /src
 
 COPY services/telemetry-store/go.mod services/telemetry-store/go.sum services/telemetry-store/

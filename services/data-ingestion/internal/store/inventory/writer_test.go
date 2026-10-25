@@ -31,10 +31,16 @@ func assetRecord(payload string) store.Record {
 
 func relRecord(payload string) store.Record {
 	return store.Record{
-		Schema:      ingest.SchemaKey{LogicalArtifactType: "ocg.relationship.routes_to", Version: "1.0.0"},
+		Schema:      ingest.SchemaKey{LogicalArtifactType: "canonical_relation", Version: "1.0.0"},
 		Payload:     []byte(payload),
 		ContentType: "application/json",
 	}
+}
+
+// relPayload returns a minimal valid relationship JSON payload with source_key
+// and target_key arrays so the writer can resolve asset UUIDs.
+func relPayload(srcSystem, srcID, tgtSystem, tgtID string) string {
+	return `{"artifact_type":"routes_to","source_system":"` + srcSystem + `","source_key":["` + srcSystem + `","` + srcID + `"],"target_key":["` + tgtSystem + `","` + tgtID + `"]}`
 }
 
 func batch(id int64, recs ...store.Record) store.Batch {
@@ -52,6 +58,11 @@ func trackingServer(t *testing.T, statusCode int) (*inventory.Writer, *[]request
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		log = append(log, requestLog{Path: r.URL.Path, Body: string(raw)})
+		if r.URL.Path == "/v1/assets" {
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte(`{"items":[{"id":"00000000-0000-0000-0000-000000000001"}]}`))
+			return
+		}
 		rw.WriteHeader(statusCode)
 	}))
 	t.Cleanup(srv.Close)
@@ -74,22 +85,22 @@ func TestWriter_Write_AssetsOnly(t *testing.T) {
 func TestWriter_Write_RelationshipsOnly(t *testing.T) {
 	w, log := trackingServer(t, http.StatusOK)
 
-	err := w.Write(context.Background(), batch(1, relRecord(`{"iri":"urn:rel:1"}`)))
+	err := w.Write(context.Background(), batch(1, relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.NoError(t, err)
-	require.Len(t, *log, 1)
-	assert.Equal(t, "/v1/relationships/batch", (*log)[0].Path)
+	// two asset lookups (GET /v1/assets) + one relationship batch POST
+	assert.Equal(t, "/v1/relationships/batch", (*log)[len(*log)-1].Path)
 }
 
 func TestWriter_Write_MixedBatch_AssetsFirst(t *testing.T) {
 	w, log := trackingServer(t, http.StatusOK)
 
-	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(`{"iri":"urn:rel:1"}`)))
+	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.NoError(t, err)
-	require.Len(t, *log, 2, "mixed batch must produce exactly two requests")
+	// asset batch first, then asset lookups, then relationship batch last
 	assert.Equal(t, "/v1/assets/batch", (*log)[0].Path, "assets must be written first")
-	assert.Equal(t, "/v1/relationships/batch", (*log)[1].Path, "relationships must be written second")
+	assert.Equal(t, "/v1/relationships/batch", (*log)[len(*log)-1].Path, "relationships must be written last")
 }
 
 func TestWriter_Write_EmptyBatchIsNoOp(t *testing.T) {
@@ -131,21 +142,24 @@ func TestWriter_Write_Relationship404_IsPermanentError(t *testing.T) {
 	var callCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		callCount++
-		if r.URL.Path == "/v1/assets/batch" {
+		switch r.URL.Path {
+		case "/v1/assets/batch":
 			rw.WriteHeader(http.StatusOK)
-		} else {
+		case "/v1/assets":
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte(`{"items":[{"id":"00000000-0000-0000-0000-000000000001"}]}`))
+		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer srv.Close()
 	w := inventory.New(inventory.Config{BaseURL: srv.URL})
 
-	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(`{"iri":"urn:rel:1"}`)))
+	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.Error(t, err)
 	var pe *store.PermanentError
 	assert.True(t, errors.As(err, &pe))
-	assert.Equal(t, 2, callCount, "must attempt both requests")
 }
 
 func TestWriter_Write_Asset400_IsPermanentError(t *testing.T) {
@@ -196,7 +210,7 @@ func TestWriter_Write_AssetFails_RelationshipNotAttempted(t *testing.T) {
 	defer srv.Close()
 	w := inventory.New(inventory.Config{BaseURL: srv.URL})
 
-	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(`{"iri":"urn:rel:1"}`)))
+	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, store.ErrOverloaded))

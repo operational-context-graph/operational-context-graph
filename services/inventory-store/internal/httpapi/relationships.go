@@ -4,7 +4,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -74,7 +73,7 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 			SourceSystem:  req.SourceSystem,
 			SourceKey:     req.SourceKey,
 			TargetKey:     req.TargetKey,
-			Extensions:    json.RawMessage(req.Extensions),
+			Extensions:    req.Extensions,
 		}
 		if req.IngestedAt != nil {
 			t, err := time.Parse(time.RFC3339, *req.IngestedAt)
@@ -226,7 +225,7 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 				SourceSystem:  r.SourceSystem,
 				SourceKey:     r.SourceKey,
 				TargetKey:     r.TargetKey,
-				Extensions:    json.RawMessage(r.Extensions),
+				Extensions:    r.Extensions,
 			}
 			if r.IngestedAt != nil {
 				t, err := time.Parse(time.RFC3339, *r.IngestedAt)
@@ -291,7 +290,7 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		SourceSystem:  r.SourceSystem,
 		SourceKey:     derefStr(r.SourceKey),
 		TargetKey:     derefStr(r.TargetKey),
-		Extensions:    []byte(r.Extensions),
+		Extensions:    r.Extensions,
 		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
 		ValidFrom:     r.ValidFrom.UTC().Format(time.RFC3339),
 	}
