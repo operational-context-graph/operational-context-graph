@@ -34,7 +34,6 @@ FROM golang:1.27.3 AS goose
 RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 FROM gcr.io/distroless/static-debian12
-LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 
 COPY --from=builder /out/inventory-store /inventory-store
 COPY --from=goose /go/bin/goose /usr/local/bin/goose
