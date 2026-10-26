@@ -97,7 +97,7 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 			return err
 		}
 		if len(resolved) > 0 {
-			if err := w.postRelationships(ctx, resolved); err != nil {
+			if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", resolved); err != nil {
 				return err
 			}
 		}
@@ -137,7 +137,7 @@ type resolvedRel struct {
 // resolveRelationships converts relationship records into resolvedRels by
 // looking up source and target asset UUIDs from the inventory store.
 // Results are cached within the batch to avoid duplicate requests.
-func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) ([]resolvedRel, error) {
+func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) ([]store.Record, error) {
 	cache := make(map[string]string)
 
 	lookup := func(key []string) (string, error) {
@@ -156,7 +156,7 @@ func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) 
 		return id, nil
 	}
 
-	var out []resolvedRel
+	var out []store.Record
 	for _, rec := range recs {
 		var p relPayload
 		if err := json.Unmarshal(rec.Payload, &p); err != nil {
@@ -172,7 +172,7 @@ func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) 
 			return nil, err
 		}
 
-		out = append(out, resolvedRel{
+		resolved := resolvedRel{
 			SourceAssetID:       srcID,
 			TargetAssetID:       tgtID,
 			ArtifactType:        p.ArtifactType,
@@ -183,6 +183,15 @@ func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) 
 			IngestedAt:          p.IngestedAt,
 			CreatedAtSource:     p.CreatedAtSource,
 			LastUpdatedAtSource: p.LastUpdatedAtSource,
+		}
+		b, err := json.Marshal(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("inventory writer: marshal resolved relationship: %w", err)
+		}
+		out = append(out, store.Record{
+			Schema:      rec.Schema,
+			Payload:     b,
+			ContentType: "application/json",
 		})
 	}
 	return out, nil
@@ -226,31 +235,6 @@ func (w *Writer) lookupAssetID(ctx context.Context, sourceSystem, sourceID strin
 	return result.Items[0].ID, nil
 }
 
-// postRelationships POSTs resolved relationships to /v1/relationships/batch.
-func (w *Writer) postRelationships(ctx context.Context, rels []resolvedRel) error {
-	body, err := json.Marshal(struct {
-		Relationships []resolvedRel `json:"relationships"`
-	}{Relationships: rels})
-	if err != nil {
-		return fmt.Errorf("inventory writer: marshal relationships: %w", err)
-	}
-
-	u := strings.TrimRight(w.cfg.BaseURL, "/") + "/v1/relationships/batch"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("inventory writer: build relationships request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%w: inventory writer relationships: %w", store.ErrOverloaded, err)
-	}
-	defer resp.Body.Close()
-
-	return w.handleResponse(resp, "/v1/relationships/batch")
-}
-
 func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.Record) error {
 	body := buildWrappedJSONArray(key, recs)
 
@@ -280,8 +264,6 @@ func (w *Writer) handleResponse(resp *http.Response, path string) error {
 		raw, _ := io.ReadAll(resp.Body)
 		return &store.PermanentError{Reason: fmt.Sprintf("validation error (%s): %s", path, string(raw))}
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return store.ErrOverloaded
-	case resp.StatusCode == http.StatusServiceUnavailable:
 		return store.ErrOverloaded
 	case resp.StatusCode >= 500:
 		return store.ErrOverloaded

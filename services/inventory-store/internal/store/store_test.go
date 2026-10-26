@@ -39,9 +39,10 @@ func TestDecodeCursorBadJSON(t *testing.T) {
 }
 
 func TestNullJSON(t *testing.T) {
-	assert.Nil(t, nullJSON(nil))
-	assert.Nil(t, nullJSON(json.RawMessage("null")))
-	assert.Nil(t, nullJSON(json.RawMessage("")))
+	emptyJSON := json.RawMessage("{}")
+	assert.Equal(t, emptyJSON, nullJSON(nil))
+	assert.Equal(t, emptyJSON, nullJSON(json.RawMessage("null")))
+	assert.Equal(t, emptyJSON, nullJSON(json.RawMessage("")))
 
 	val := nullJSON(json.RawMessage(`{"key":"value"}`))
 	assert.NotNil(t, val)
