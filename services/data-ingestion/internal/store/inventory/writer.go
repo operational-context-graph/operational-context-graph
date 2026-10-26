@@ -10,12 +10,15 @@ package inventory
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store"
 )
 
@@ -90,12 +93,115 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	}
 
 	if len(relationships) > 0 {
-		if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", relationships); err != nil {
+		resolved, err := w.resolveRelationships(ctx, relationships)
+		if err != nil {
 			return err
+		}
+		if len(resolved) > 0 {
+			if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", resolved); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+// relPayload is the shape of a canonical_relation record payload.
+type relPayload struct {
+	ArtifactType        string   `json:"artifact_type"`
+	SourceSystem        string   `json:"source_system"`
+	SourceKey           []string `json:"source_key"`
+	TargetKey           []string `json:"target_key"`
+	Extensions          any      `json:"extensions,omitempty"`
+	IngestedAt          *string  `json:"ingested_at,omitempty"`
+	CreatedAtSource     *string  `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *string  `json:"last_updated_at_source,omitempty"`
+}
+
+// resolveRelationships looks up the source and target asset UUIDs by source_id,
+// then returns new store.Record values with the resolved IDs in the payload.
+func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) ([]store.Record, error) {
+	var out []store.Record
+	for _, rec := range recs {
+		var rel relPayload
+		if err := json.Unmarshal(rec.Payload, &rel); err != nil {
+			// Skip malformed relationship records permanently.
+			continue
+		}
+		if len(rel.SourceKey) < 2 || len(rel.TargetKey) < 2 {
+			continue
+		}
+		sourceSystem := rel.SourceSystem
+		sourceID := rel.SourceKey[1]
+		targetID := rel.TargetKey[1]
+
+		srcUUID, err := w.lookupAssetID(ctx, sourceSystem, sourceID)
+		if err != nil {
+			// Asset not found yet — skip this relationship; it will be retried next drain.
+			continue
+		}
+		tgtUUID, err := w.lookupAssetID(ctx, sourceSystem, targetID)
+		if err != nil {
+			continue
+		}
+
+		resolved := map[string]any{
+			"source_asset_id": srcUUID,
+			"target_asset_id": tgtUUID,
+			"artifact_type":   rel.ArtifactType,
+			"source_system":   rel.SourceSystem,
+			"source_key":      strings.Join(rel.SourceKey, ":"),
+			"target_key":      strings.Join(rel.TargetKey, ":"),
+			"extensions":      rel.Extensions,
+		}
+		if rel.IngestedAt != nil {
+			resolved["ingested_at"] = rel.IngestedAt
+		}
+		b, err := json.Marshal(resolved)
+		if err != nil {
+			continue
+		}
+		out = append(out, store.Record{
+			Schema:      rec.Schema,
+			Payload:     b,
+			ContentType: "application/json",
+		})
+	}
+	return out, nil
+}
+
+// lookupAssetID fetches the UUID of the current asset with the given source_system and source_id.
+func (w *Writer) lookupAssetID(ctx context.Context, sourceSystem, sourceID string) (uuid.UUID, error) {
+	base := strings.TrimRight(w.cfg.BaseURL, "/")
+	u := base + "/v1/assets?source_system=" + url.QueryEscape(sourceSystem) + "&source_id=" + url.QueryEscape(sourceID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return uuid.Nil, fmt.Errorf("inventory writer: lookup asset %s/%s: HTTP %d", sourceSystem, sourceID, resp.StatusCode)
+	}
+
+	var result struct {
+		Items []struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return uuid.Nil, err
+	}
+	if len(result.Items) == 0 {
+		return uuid.Nil, fmt.Errorf("inventory writer: asset not found: %s/%s", sourceSystem, sourceID)
+	}
+	return result.Items[0].ID, nil
 }
 
 func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.Record) error {
@@ -128,8 +234,6 @@ func (w *Writer) handleResponse(resp *http.Response, path string) error {
 		return &store.PermanentError{Reason: fmt.Sprintf("validation error (%s): %s", path, string(raw))}
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return store.ErrOverloaded
-	case resp.StatusCode == http.StatusServiceUnavailable:
-		return store.ErrOverloaded
 	case resp.StatusCode >= 500:
 		return store.ErrOverloaded
 	default:
@@ -140,7 +244,7 @@ func (w *Writer) handleResponse(resp *http.Response, path string) error {
 // isRelationship reports whether rec is a relationship record by LogicalArtifactType.
 func isRelationship(rec store.Record) bool {
 	t := strings.ToLower(rec.Schema.LogicalArtifactType)
-	return strings.Contains(t, "relationship") || strings.Contains(t, ".rel.")
+	return strings.Contains(t, "relationship") || strings.Contains(t, ".rel.") || t == "canonical_relation"
 }
 
 // buildWrappedJSONArray assembles payloads into {"<key>": [...]} body.

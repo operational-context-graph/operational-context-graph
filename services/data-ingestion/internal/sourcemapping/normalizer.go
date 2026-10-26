@@ -7,6 +7,7 @@ package sourcemapping
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -237,9 +238,16 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 	if inner == nil {
 		inner = doc
 		rawTS = getString(doc, "@timestamp")
-		tsNanos = toEpochNanos(rawTS)
+		if tsNanos == 0 {
+			tsNanos = toEpochNanos(rawTS)
+		}
 	} else {
 		rawTS = getString(inner, "@timestamp")
+	}
+
+	// If rawTS is still empty (OTLP path with no @timestamp in body), derive from tsNanos.
+	if rawTS == "" && tsNanos > 0 {
+		rawTS = time.Unix(0, tsNanos).UTC().Format(time.RFC3339)
 	}
 
 	epochSecs := tsNanos / 1_000_000_000
@@ -381,7 +389,18 @@ func toSeverityEnum(s string) string {
 }
 
 // toRecord marshals a payload map to an IngestRecord for the given canonical type.
+// If "extensions" is a map, it is JSON-marshalled then base64-encoded to satisfy
+// the inventory-store API's []byte field (Go JSON decodes []byte from base64 strings).
 func toRecord(logicalArtifactType string, payload map[string]any) (ingest.IngestRecord, error) {
+	if ext, ok := payload["extensions"]; ok {
+		if extMap, ok := ext.(map[string]any); ok {
+			extJSON, err := json.Marshal(extMap)
+			if err != nil {
+				return ingest.IngestRecord{}, fmt.Errorf("sourcemapping: marshal extensions: %w", err)
+			}
+			payload["extensions"] = base64.StdEncoding.EncodeToString(extJSON)
+		}
+	}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return ingest.IngestRecord{}, fmt.Errorf("sourcemapping: marshal %s: %w", logicalArtifactType, err)
