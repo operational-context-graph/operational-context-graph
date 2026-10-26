@@ -237,16 +237,9 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 	if inner == nil {
 		inner = doc
 		rawTS = getString(doc, "@timestamp")
-		if tsNanos == 0 {
-			tsNanos = toEpochNanos(rawTS)
-		}
+		tsNanos = toEpochNanos(rawTS)
 	} else {
 		rawTS = getString(inner, "@timestamp")
-	}
-
-	// If rawTS is still empty (OTLP path with no @timestamp in body), derive from tsNanos.
-	if rawTS == "" && tsNanos > 0 {
-		rawTS = time.Unix(0, tsNanos).UTC().Format(time.RFC3339)
 	}
 
 	epochSecs := tsNanos / 1_000_000_000
