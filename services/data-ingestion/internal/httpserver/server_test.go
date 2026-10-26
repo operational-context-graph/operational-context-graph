@@ -33,7 +33,7 @@ func TestServerHealthRoute(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.JSONEq(t, `{"status":"not-ok"}`, w.Body.String())
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String())
 }
 
 func TestServerReadyRoute(t *testing.T) {
