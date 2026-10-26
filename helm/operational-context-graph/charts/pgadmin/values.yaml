@@ -5,7 +5,7 @@ enabled: false
 
 image:
   repository: dpage/pgadmin4
-  tag: "8"
+  tag: "9@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de"
   pullPolicy: IfNotPresent
 
 secretName: pgadmin-secret
