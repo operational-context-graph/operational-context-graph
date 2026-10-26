@@ -3,36 +3,40 @@
 
 package v1
 
-import "github.com/google/uuid"
+import (
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
 
 // UpsertAssetRequest is the body for POST /v1/assets.
 type UpsertAssetRequest struct {
-	IRI                 string  `json:"iri"                    validate:"required"`
-	Name                string  `json:"name,omitempty"`
-	ArtifactType        string  `json:"artifact_type"          validate:"required"`
-	SourceSystem        string  `json:"source_system"          validate:"required"`
-	SourceID            string  `json:"source_id"              validate:"required"`
-	Extensions          []byte  `json:"extensions,omitempty"`
-	IngestedAt          *string `json:"ingested_at,omitempty"`
-	CreatedAtSource     *string `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string `json:"last_updated_at_source,omitempty"`
+	IRI                 string          `json:"iri"                    validate:"required"`
+	Name                string          `json:"name,omitempty"`
+	ArtifactType        string          `json:"artifact_type"          validate:"required"`
+	SourceSystem        string          `json:"source_system"          validate:"required"`
+	SourceID            string          `json:"source_id"              validate:"required"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *string         `json:"ingested_at,omitempty"`
+	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
 }
 
 // AssetResponse is the body returned for a single asset.
 type AssetResponse struct {
-	ID                  uuid.UUID `json:"id"`
-	IRI                 string    `json:"iri"`
-	Name                *string   `json:"name,omitempty"`
-	ArtifactType        string    `json:"artifact_type"`
-	SourceSystem        string    `json:"source_system"`
-	SourceID            string    `json:"source_id"`
-	Extensions          []byte    `json:"extensions,omitempty"`
-	IngestedAt          *string   `json:"ingested_at,omitempty"`
-	CreatedAt           string    `json:"created_at"`
-	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
-	ValidFrom           string    `json:"valid_from"`
-	ValidTo             *string   `json:"valid_to,omitempty"`
+	ID                  uuid.UUID       `json:"id"`
+	IRI                 string          `json:"iri"`
+	Name                *string         `json:"name,omitempty"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	SourceID            string          `json:"source_id"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *string         `json:"ingested_at,omitempty"`
+	CreatedAt           string          `json:"created_at"`
+	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
+	ValidFrom           string          `json:"valid_from"`
+	ValidTo             *string         `json:"valid_to,omitempty"`
 }
 
 // UpsertAssetResponse wraps AssetResponse with a created flag.
@@ -59,35 +63,45 @@ type BatchResult struct {
 }
 
 // UpsertRelationshipRequest is the body for POST /v1/relationships.
+// Callers MUST provide either source_asset_id/target_asset_id (UUIDs) or
+// source_key/target_key ([source_system, source_id] arrays). When keys are
+// provided the store resolves asset UUIDs internally.
 type UpsertRelationshipRequest struct {
-	SourceAssetID       uuid.UUID `json:"source_asset_id"        validate:"required"`
-	TargetAssetID       uuid.UUID `json:"target_asset_id"        validate:"required"`
-	ArtifactType        string    `json:"artifact_type"          validate:"required"`
-	SourceSystem        string    `json:"source_system"          validate:"required"`
-	SourceKey           string    `json:"source_key"             validate:"required"`
-	TargetKey           string    `json:"target_key"             validate:"required"`
-	Extensions          []byte    `json:"extensions,omitempty"`
-	IngestedAt          *string   `json:"ingested_at,omitempty"`
-	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
+	SourceAssetID       *uuid.UUID      `json:"source_asset_id,omitempty"`
+	TargetAssetID       *uuid.UUID      `json:"target_asset_id,omitempty"`
+	ArtifactType        string          `json:"artifact_type"          validate:"required"`
+	SourceSystem        string          `json:"source_system"          validate:"required"`
+	SourceKey           []string        `json:"source_key,omitempty"`
+	TargetKey           []string        `json:"target_key,omitempty"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *string         `json:"ingested_at,omitempty"`
+	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
+	// ValidTime is the canonical model alias for last_updated_at_source.
+	// When both are present, last_updated_at_source takes precedence.
+	ValidTime           *string         `json:"valid_time,omitempty"`
 }
 
 // RelationshipResponse is the body returned for a single relationship.
 type RelationshipResponse struct {
-	ID                  uuid.UUID `json:"id"`
-	SourceAssetID       uuid.UUID `json:"source_asset_id"`
-	TargetAssetID       uuid.UUID `json:"target_asset_id"`
-	ArtifactType        string    `json:"artifact_type"`
-	SourceSystem        string    `json:"source_system"`
-	SourceKey           string    `json:"source_key"`
-	TargetKey           string    `json:"target_key"`
-	Extensions          []byte    `json:"extensions,omitempty"`
-	IngestedAt          *string   `json:"ingested_at,omitempty"`
-	CreatedAt           string    `json:"created_at"`
-	CreatedAtSource     *string   `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string   `json:"last_updated_at_source,omitempty"`
-	ValidFrom           string    `json:"valid_from"`
-	ValidTo             *string   `json:"valid_to,omitempty"`
+	ID                  uuid.UUID       `json:"id"`
+	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
+	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
+	SourceKey           string          `json:"source_key"`
+	TargetKey           string          `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *string         `json:"ingested_at,omitempty"`
+	CreatedAt           string          `json:"created_at"`
+	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
+	ValidFrom           string          `json:"valid_from"`
+	ValidTo             *string         `json:"valid_to,omitempty"`
 }
 
 // UpsertRelationshipResponse wraps RelationshipResponse with a created flag.
