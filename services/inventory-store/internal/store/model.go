@@ -56,6 +56,8 @@ type Relationship struct {
 	SourceSystem        string          `json:"source_system"`
 	SourceKey           *string         `json:"source_key,omitempty"`
 	TargetKey           *string         `json:"target_key,omitempty"`
+	SourceIRI           *string         `json:"source_iri,omitempty"`
+	TargetIRI           *string         `json:"target_iri,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -65,7 +67,8 @@ type Relationship struct {
 	ValidTo             *time.Time      `json:"valid_to,omitempty"`
 }
 
-// RelationshipInput is the request body for POST /relationships.
+// RelationshipInput is the resolved input for store-layer upsert operations.
+// SourceAssetID and TargetAssetID must be populated before calling upsert methods.
 type RelationshipInput struct {
 	SourceAssetID       uuid.UUID       `json:"source_asset_id"`
 	TargetAssetID       uuid.UUID       `json:"target_asset_id"`
@@ -73,6 +76,24 @@ type RelationshipInput struct {
 	SourceSystem        string          `json:"source_system"`
 	SourceKey           string          `json:"source_key"`
 	TargetKey           string          `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
+	Extensions          json.RawMessage `json:"extensions,omitempty"`
+	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
+	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
+	LastUpdatedAtSource *time.Time      `json:"last_updated_at_source,omitempty"`
+}
+
+// RelationshipKeyInput is an unresolved relationship where the endpoints are
+// identified by [source_system, source_id] key pairs. The store resolves them
+// to asset UUIDs before calling the upsert path.
+type RelationshipKeyInput struct {
+	SourceKey           []string        `json:"source_key"`
+	TargetKey           []string        `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
+	ArtifactType        string          `json:"artifact_type"`
+	SourceSystem        string          `json:"source_system"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`

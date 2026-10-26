@@ -68,6 +68,9 @@ func (s *stubDB) GetRelationshipByID(_ context.Context, _ uuid.UUID) (store.Rela
 func (s *stubDB) UpsertRelationshipBatch(_ context.Context, _ []store.RelationshipInput) ([]store.Relationship, error) {
 	return nil, nil
 }
+func (s *stubDB) UpsertRelationshipBatchByKey(_ context.Context, _ []store.RelationshipKeyInput) ([]store.Relationship, error) {
+	return nil, nil
+}
 func (s *stubDB) Ping(_ context.Context) error { return nil }
 func (s *stubDB) SchemaReady(_ context.Context) error { return nil }
 
@@ -289,13 +292,12 @@ func TestHandleUpsertRelationship_MissingRequiredFields_Returns400(t *testing.T)
 	}
 	assert.Contains(t, got, "artifact_type")
 	assert.Contains(t, got, "source_system")
-	assert.Contains(t, got, "source_key")
-	assert.Contains(t, got, "target_key")
 }
 
-func TestHandleUpsertRelationship_NilUUIDs_Returns400(t *testing.T) {
+func TestHandleUpsertRelationship_NoEndpoints_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")
 
+	// Neither UUIDs nor key arrays provided — must return 400.
 	rr := test.PostJSON(t, srv.Handler, httpapi.PathRelationships, map[string]any{
 		"artifact_type": "depends-on",
 		"source_system": "cmdb",

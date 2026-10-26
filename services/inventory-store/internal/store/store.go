@@ -52,7 +52,7 @@ func (s *Store) SchemaReady(ctx context.Context) error {
 
 func nullJSON(b json.RawMessage) any {
 	if len(b) == 0 || string(b) == "null" {
-		return nil
+		return json.RawMessage("{}")
 	}
 	return b
 }

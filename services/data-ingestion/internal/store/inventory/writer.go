@@ -69,6 +69,8 @@ func (w *Writer) Limits() store.BatchLimits {
 
 // Write delivers batch to the Inventory Store. Assets are written before
 // relationships to satisfy the FK constraint enforced by the store.
+// Relationship payloads carry source_key/target_key arrays; the inventory store
+// resolves asset UUIDs internally.
 func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	if len(batch.Records) == 0 {
 		return nil
@@ -101,8 +103,8 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.Record) error {
 	body := buildWrappedJSONArray(key, recs)
 
-	url := strings.TrimRight(w.cfg.BaseURL, "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	u := strings.TrimRight(w.cfg.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("inventory writer: build request: %w", err)
 	}
@@ -128,8 +130,6 @@ func (w *Writer) handleResponse(resp *http.Response, path string) error {
 		return &store.PermanentError{Reason: fmt.Sprintf("validation error (%s): %s", path, string(raw))}
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return store.ErrOverloaded
-	case resp.StatusCode == http.StatusServiceUnavailable:
-		return store.ErrOverloaded
 	case resp.StatusCode >= 500:
 		return store.ErrOverloaded
 	default:
@@ -140,7 +140,7 @@ func (w *Writer) handleResponse(resp *http.Response, path string) error {
 // isRelationship reports whether rec is a relationship record by LogicalArtifactType.
 func isRelationship(rec store.Record) bool {
 	t := strings.ToLower(rec.Schema.LogicalArtifactType)
-	return strings.Contains(t, "relationship") || strings.Contains(t, ".rel.")
+	return strings.Contains(t, "relation") || strings.Contains(t, ".rel.")
 }
 
 // buildWrappedJSONArray assembles payloads into {"<key>": [...]} body.
