@@ -7,7 +7,7 @@
 # Build stage.
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker build -f services/data-ingestion/Dockerfile .
-FROM golang:1.27 AS build
+FROM golang:1.27.3 AS build
 WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
 # Goose stage — build the migration CLI independently so it does not affect go.mod.
-FROM golang:1.27 AS goose
+FROM golang:1.27.3 AS goose
 RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 # Runtime stage.

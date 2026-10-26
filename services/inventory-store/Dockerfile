@@ -12,7 +12,7 @@
 # Port:
 #   8080 — HTTP API
 
-FROM golang:1.27 AS builder
+FROM golang:1.27.3 AS builder
 
 ARG VERSION=dev
 
@@ -30,10 +30,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/inventory-store
 
 # Goose stage — build the migration CLI independently so it does not affect go.mod.
-FROM golang:1.27 AS goose
+FROM golang:1.27.3 AS goose
 RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 FROM gcr.io/distroless/static-debian12
+LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 
 COPY --from=builder /out/inventory-store /inventory-store
 COPY --from=goose /go/bin/goose /usr/local/bin/goose
