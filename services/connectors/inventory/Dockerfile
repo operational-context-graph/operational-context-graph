@@ -6,7 +6,7 @@
 
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker buildx build --platform linux/amd64 --provenance=false -t ghcr.io/operational-context-graph/inventory-connector:latest -f services/connectors/inventory/Dockerfile .
-FROM golang:1.27 AS build
+FROM golang:1.27@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS build
 WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
