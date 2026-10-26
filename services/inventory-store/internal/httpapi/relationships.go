@@ -181,10 +181,16 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 			return
 		}
 
-		// Check whether the batch uses key-based or UUID-based addressing.
-		// We route the whole batch consistently: if any item has source_key/target_key
-		// and no source_asset_id/target_asset_id, we use the key-based path.
+		// Determine routing: key-based if any item omits source_asset_id/target_asset_id.
+		// Validate all items use the same addressing mode.
 		useKeys := req.Relationships[0].SourceAssetID == nil || req.Relationships[0].TargetAssetID == nil
+		for i, r := range req.Relationships {
+			itemUseKeys := r.SourceAssetID == nil || r.TargetAssetID == nil
+			if itemUseKeys != useKeys {
+				renderError(c, fmt.Errorf("%w: item %d: mixed UUID and key-based addressing in batch", apperr.ErrInvalidInput, i))
+				return
+			}
+		}
 
 		if useKeys {
 			keyInputs := make([]store.RelationshipKeyInput, 0, len(req.Relationships))
@@ -272,6 +278,8 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		SourceSystem:  r.SourceSystem,
 		SourceKey:     derefStr(r.SourceKey),
 		TargetKey:     derefStr(r.TargetKey),
+		SourceIRI:     derefStr(r.SourceIRI),
+		TargetIRI:     derefStr(r.TargetIRI),
 		Extensions:    r.Extensions,
 		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
 		ValidFrom:     r.ValidFrom.UTC().Format(time.RFC3339),
@@ -305,6 +313,8 @@ func toRelationshipInput(r v1.UpsertRelationshipRequest) (store.RelationshipInpu
 		SourceSystem:  r.SourceSystem,
 		SourceKey:     strings.Join(r.SourceKey, ":"),
 		TargetKey:     strings.Join(r.TargetKey, ":"),
+		SourceIRI:     r.SourceIRI,
+		TargetIRI:     r.TargetIRI,
 		Extensions:    r.Extensions,
 	}
 	if r.IngestedAt != nil {
@@ -327,6 +337,12 @@ func toRelationshipInput(r v1.UpsertRelationshipRequest) (store.RelationshipInpu
 			return store.RelationshipInput{}, fmt.Errorf("%w: invalid last_updated_at_source: %s", apperr.ErrInvalidInput, err.Error())
 		}
 		in.LastUpdatedAtSource = &t
+	} else if r.ValidTime != nil {
+		t, err := time.Parse(time.RFC3339, *r.ValidTime)
+		if err != nil {
+			return store.RelationshipInput{}, fmt.Errorf("%w: invalid valid_time: %s", apperr.ErrInvalidInput, err.Error())
+		}
+		in.LastUpdatedAtSource = &t
 	}
 	return in, nil
 }
@@ -338,6 +354,8 @@ func toRelationshipKeyInput(r v1.UpsertRelationshipRequest) store.RelationshipKe
 		TargetKey:    r.TargetKey,
 		ArtifactType: r.ArtifactType,
 		SourceSystem: r.SourceSystem,
+		SourceIRI:    r.SourceIRI,
+		TargetIRI:    r.TargetIRI,
 		Extensions:   r.Extensions,
 	}
 	if r.IngestedAt != nil {
@@ -352,6 +370,10 @@ func toRelationshipKeyInput(r v1.UpsertRelationshipRequest) store.RelationshipKe
 	}
 	if r.LastUpdatedAtSource != nil {
 		if t, err := time.Parse(time.RFC3339, *r.LastUpdatedAtSource); err == nil {
+			in.LastUpdatedAtSource = &t
+		}
+	} else if r.ValidTime != nil {
+		if t, err := time.Parse(time.RFC3339, *r.ValidTime); err == nil {
 			in.LastUpdatedAtSource = &t
 		}
 	}

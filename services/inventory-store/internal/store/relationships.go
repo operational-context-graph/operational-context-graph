@@ -15,13 +15,13 @@ import (
 
 // relColumns is the canonical SELECT column list for the relationships table.
 const relColumns = `id, source_asset_id, target_asset_id, artifact_type,
-	source_system, source_key, target_key, extensions, ingested_at,
+	source_system, source_key, target_key, source_iri, target_iri, extensions, ingested_at,
 	created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
 func scanRelationship(row pgx.Row, r *Relationship) error {
 	return row.Scan(
 		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.SourceIRI, &r.TargetIRI, &r.Extensions, &r.IngestedAt,
 		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
 	)
 }
@@ -29,7 +29,7 @@ func scanRelationship(row pgx.Row, r *Relationship) error {
 func scanRelationshipRows(rows pgx.Rows, r *Relationship) error {
 	return rows.Scan(
 		&r.ID, &r.SourceAssetID, &r.TargetAssetID, &r.ArtifactType,
-		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.Extensions, &r.IngestedAt,
+		&r.SourceSystem, &r.SourceKey, &r.TargetKey, &r.SourceIRI, &r.TargetIRI, &r.Extensions, &r.IngestedAt,
 		&r.CreatedAt, &r.CreatedAtSource, &r.LastUpdatedAtSource, &r.ValidFrom, &r.ValidTo,
 	)
 }
@@ -89,16 +89,18 @@ RETURNING ` + relColumns
 	const insert = `
 INSERT INTO relationships (source_asset_id, target_asset_id, artifact_type,
                            source_system, source_key, target_key,
+                           source_iri, target_iri,
                            extensions, ingested_at,
                            created_at_source, last_updated_at_source,
                            valid_from, valid_to)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($10, NOW()), NULL)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($12, NOW()), NULL)
 RETURNING ` + relColumns
 
 	var r Relationship
 	err = scanRelationship(tx.QueryRow(ctx, insert,
 		in.SourceAssetID, in.TargetAssetID, in.ArtifactType,
 		in.SourceSystem, nullStr(in.SourceKey), nullStr(in.TargetKey),
+		nullStr(in.SourceIRI), nullStr(in.TargetIRI),
 		nullJSON(in.Extensions), in.IngestedAt,
 		in.CreatedAtSource, in.LastUpdatedAtSource,
 	), &r)
@@ -347,16 +349,15 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	return rels, nil
 }
 
-// resolveKey looks up the current (valid_to IS NULL) asset UUID for a
-// [source_system, source_id] key pair. It returns ErrAssetNotFound when no
-// matching asset exists.
-func (s *Store) resolveKey(ctx context.Context, key []string) (uuid.UUID, error) {
+// resolveKeyTx looks up the current (valid_to IS NULL) asset UUID for a
+// [source_system, source_id] key pair inside tx with FOR UPDATE to prevent races.
+func resolveKeyTx(ctx context.Context, tx pgx.Tx, key []string) (uuid.UUID, error) {
 	if len(key) != 2 {
 		return uuid.Nil, fmt.Errorf("%w: key must be [source_system, source_id], got %v", ErrInvalidInput, key)
 	}
 	var id uuid.UUID
-	err := s.pool.QueryRow(ctx,
-		`SELECT id FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`,
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL FOR UPDATE`,
 		key[0], key[1],
 	).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -369,17 +370,22 @@ func (s *Store) resolveKey(ctx context.Context, key []string) (uuid.UUID, error)
 }
 
 // UpsertRelationshipBatchByKey resolves [source_system, source_id] key pairs to
-// asset UUIDs and then upserts the relationships in a single transaction.
+// asset UUIDs inside a single transaction and then upserts the relationships.
 // Returns ErrAssetNotFound if any referenced asset is missing.
 func (s *Store) UpsertRelationshipBatchByKey(ctx context.Context, inputs []RelationshipKeyInput) ([]Relationship, error) {
-	// Resolve all unique keys first, caching results.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	cache := make(map[string]uuid.UUID)
 	lookup := func(key []string) (uuid.UUID, error) {
 		k := strings.Join(key, "\x00")
 		if id, ok := cache[k]; ok {
 			return id, nil
 		}
-		id, err := s.resolveKey(ctx, key)
+		id, err := resolveKeyTx(ctx, tx, key)
 		if err != nil {
 			return uuid.Nil, err
 		}
@@ -387,7 +393,7 @@ func (s *Store) UpsertRelationshipBatchByKey(ctx context.Context, inputs []Relat
 		return id, nil
 	}
 
-	resolved := make([]RelationshipInput, 0, len(inputs))
+	rels := make([]Relationship, 0, len(inputs))
 	for _, in := range inputs {
 		srcID, err := lookup(in.SourceKey)
 		if err != nil {
@@ -397,29 +403,21 @@ func (s *Store) UpsertRelationshipBatchByKey(ctx context.Context, inputs []Relat
 		if err != nil {
 			return nil, err
 		}
-		resolved = append(resolved, RelationshipInput{
+		resolved := RelationshipInput{
 			SourceAssetID:       srcID,
 			TargetAssetID:       tgtID,
 			ArtifactType:        in.ArtifactType,
 			SourceSystem:        in.SourceSystem,
 			SourceKey:           strings.Join(in.SourceKey, ":"),
 			TargetKey:           strings.Join(in.TargetKey, ":"),
+			SourceIRI:           in.SourceIRI,
+			TargetIRI:           in.TargetIRI,
 			Extensions:          in.Extensions,
 			IngestedAt:          in.IngestedAt,
 			CreatedAtSource:     in.CreatedAtSource,
 			LastUpdatedAtSource: in.LastUpdatedAtSource,
-		})
-	}
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	rels := make([]Relationship, 0, len(resolved))
-	for _, in := range resolved {
-		r, _, err := upsertRelationshipTx(ctx, tx, in)
+		}
+		r, _, err := upsertRelationshipTx(ctx, tx, resolved)
 		if err != nil {
 			return nil, fmt.Errorf("upsert relationship batch by key row: %w", err)
 		}

@@ -56,6 +56,8 @@ type Relationship struct {
 	SourceSystem        string          `json:"source_system"`
 	SourceKey           *string         `json:"source_key,omitempty"`
 	TargetKey           *string         `json:"target_key,omitempty"`
+	SourceIRI           *string         `json:"source_iri,omitempty"`
+	TargetIRI           *string         `json:"target_iri,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -74,6 +76,8 @@ type RelationshipInput struct {
 	SourceSystem        string          `json:"source_system"`
 	SourceKey           string          `json:"source_key"`
 	TargetKey           string          `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *time.Time      `json:"ingested_at,omitempty"`
 	CreatedAtSource     *time.Time      `json:"created_at_source,omitempty"`
@@ -86,6 +90,8 @@ type RelationshipInput struct {
 type RelationshipKeyInput struct {
 	SourceKey           []string        `json:"source_key"`
 	TargetKey           []string        `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
 	ArtifactType        string          `json:"artifact_type"`
 	SourceSystem        string          `json:"source_system"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`

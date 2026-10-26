@@ -73,10 +73,15 @@ type UpsertRelationshipRequest struct {
 	SourceSystem        string          `json:"source_system"          validate:"required"`
 	SourceKey           []string        `json:"source_key,omitempty"`
 	TargetKey           []string        `json:"target_key,omitempty"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *string         `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
 	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
+	// ValidTime is the canonical model alias for last_updated_at_source.
+	// When both are present, last_updated_at_source takes precedence.
+	ValidTime           *string         `json:"valid_time,omitempty"`
 }
 
 // RelationshipResponse is the body returned for a single relationship.
@@ -88,6 +93,8 @@ type RelationshipResponse struct {
 	SourceSystem        string          `json:"source_system"`
 	SourceKey           string          `json:"source_key"`
 	TargetKey           string          `json:"target_key"`
+	SourceIRI           string          `json:"source_iri,omitempty"`
+	TargetIRI           string          `json:"target_iri,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *string         `json:"ingested_at,omitempty"`
 	CreatedAt           string          `json:"created_at"`
