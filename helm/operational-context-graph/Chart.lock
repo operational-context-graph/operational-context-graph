@@ -4,8 +4,11 @@ dependencies:
   version: 0.1.0
 - name: postgresql
   repository: oci://registry-1.docker.io/bitnamicharts
-  version: 18.12.14
+  version: 18.12.15
 - name: pgadmin
+  repository: ""
+  version: 0.1.0
+- name: inventory-store
   repository: ""
   version: 0.1.0
 - name: telemetry-store
@@ -23,5 +26,5 @@ dependencies:
 - name: otelcol
   repository: ""
   version: 0.1.0
-digest: sha256:6d4a6bdb319f5a2bb72b347b16881ff1d4b738dadb17b950f27269d42ef2b7aa
-generated: "2026-10-23T13:02:06.979668+02:00"
+digest: sha256:206f6315b9ee94dbe9a79f17f35412697ec261f5419d95d44c0fcfbaea9c256f
+generated: "2026-10-26T07:30:17.63094403Z"
