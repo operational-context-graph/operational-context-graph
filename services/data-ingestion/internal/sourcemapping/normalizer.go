@@ -7,7 +7,6 @@ package sourcemapping
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -389,18 +388,7 @@ func toSeverityEnum(s string) string {
 }
 
 // toRecord marshals a payload map to an IngestRecord for the given canonical type.
-// If "extensions" is a map, it is JSON-marshalled then base64-encoded to satisfy
-// the inventory-store API's []byte field (Go JSON decodes []byte from base64 strings).
 func toRecord(logicalArtifactType string, payload map[string]any) (ingest.IngestRecord, error) {
-	if ext, ok := payload["extensions"]; ok {
-		if extMap, ok := ext.(map[string]any); ok {
-			extJSON, err := json.Marshal(extMap)
-			if err != nil {
-				return ingest.IngestRecord{}, fmt.Errorf("sourcemapping: marshal extensions: %w", err)
-			}
-			payload["extensions"] = base64.StdEncoding.EncodeToString(extJSON)
-		}
-	}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return ingest.IngestRecord{}, fmt.Errorf("sourcemapping: marshal %s: %w", logicalArtifactType, err)
