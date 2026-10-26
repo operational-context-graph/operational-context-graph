@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,56 +50,32 @@ func handleUpsertRelationship(d db) gin.HandlerFunc {
 		if err := validateRequired(
 			requiredField{"artifact_type", req.ArtifactType},
 			requiredField{"source_system", req.SourceSystem},
-			requiredField{"source_key", req.SourceKey},
-			requiredField{"target_key", req.TargetKey},
 		); err != nil {
 			renderError(c, err)
 			return
 		}
-		if req.SourceAssetID == uuid.Nil || req.TargetAssetID == uuid.Nil {
-			var errs []apperr.FieldError
-			if req.SourceAssetID == uuid.Nil {
-				errs = append(errs, apperr.FieldError{Field: "source_asset_id", Message: "is required"})
+
+		// Key-based path: resolve asset IDs inside the store.
+		if req.SourceAssetID == nil || req.TargetAssetID == nil {
+			if len(req.SourceKey) != 2 || len(req.TargetKey) != 2 {
+				renderError(c, fmt.Errorf("%w: provide source_asset_id/target_asset_id or source_key/target_key ([system, id])", apperr.ErrInvalidInput))
+				return
 			}
-			if req.TargetAssetID == uuid.Nil {
-				errs = append(errs, apperr.FieldError{Field: "target_asset_id", Message: "is required"})
+			rels, err := d.UpsertRelationshipBatchByKey(c.Request.Context(), []store.RelationshipKeyInput{toRelationshipKeyInput(req)})
+			if err != nil {
+				renderError(c, err)
+				return
 			}
-			renderError(c, &apperr.ValidationError{Fields: errs})
+			c.JSON(http.StatusOK, v1.UpsertRelationshipResponse{Relationship: toRelationshipResponse(rels[0]), Created: false})
 			return
 		}
-		in := store.RelationshipInput{
-			SourceAssetID: req.SourceAssetID,
-			TargetAssetID: req.TargetAssetID,
-			ArtifactType:  req.ArtifactType,
-			SourceSystem:  req.SourceSystem,
-			SourceKey:     req.SourceKey,
-			TargetKey:     req.TargetKey,
-			Extensions:    req.Extensions,
+
+		in, err := toRelationshipInput(req)
+		if err != nil {
+			renderError(c, err)
+			return
 		}
-		if req.IngestedAt != nil {
-			t, err := time.Parse(time.RFC3339, *req.IngestedAt)
-			if err != nil {
-				renderError(c, fmt.Errorf("%w: invalid ingested_at: %s", apperr.ErrInvalidInput, err.Error()))
-				return
-			}
-			in.IngestedAt = &t
-		}
-		if req.CreatedAtSource != nil {
-			t, err := time.Parse(time.RFC3339, *req.CreatedAtSource)
-			if err != nil {
-				renderError(c, fmt.Errorf("%w: invalid created_at_source: %s", apperr.ErrInvalidInput, err.Error()))
-				return
-			}
-			in.CreatedAtSource = &t
-		}
-		if req.LastUpdatedAtSource != nil {
-			t, err := time.Parse(time.RFC3339, *req.LastUpdatedAtSource)
-			if err != nil {
-				renderError(c, fmt.Errorf("%w: invalid last_updated_at_source: %s", apperr.ErrInvalidInput, err.Error()))
-				return
-			}
-			in.LastUpdatedAtSource = &t
-		}
+
 		rel, created, err := d.UpsertRelationship(c.Request.Context(), in)
 		if err != nil {
 			renderError(c, err)
@@ -203,55 +180,60 @@ func handleUpsertRelationshipBatch(d db) gin.HandlerFunc {
 			renderError(c, fmt.Errorf("%w: relationships must not be empty", apperr.ErrInvalidInput))
 			return
 		}
-		inputs := make([]store.RelationshipInput, len(req.Relationships))
+
+		// Check whether the batch uses key-based or UUID-based addressing.
+		// We route the whole batch consistently: if any item has source_key/target_key
+		// and no source_asset_id/target_asset_id, we use the key-based path.
+		useKeys := req.Relationships[0].SourceAssetID == nil || req.Relationships[0].TargetAssetID == nil
+
+		if useKeys {
+			keyInputs := make([]store.RelationshipKeyInput, 0, len(req.Relationships))
+			for i, r := range req.Relationships {
+				if err := validateRequired(
+					requiredField{"artifact_type", r.ArtifactType},
+					requiredField{"source_system", r.SourceSystem},
+				); err != nil {
+					renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
+					return
+				}
+				if len(r.SourceKey) != 2 || len(r.TargetKey) != 2 {
+					renderError(c, fmt.Errorf("%w: item %d: source_key and target_key must each be [source_system, source_id]", apperr.ErrInvalidInput, i))
+					return
+				}
+				keyInputs = append(keyInputs, toRelationshipKeyInput(r))
+			}
+			rels, err := d.UpsertRelationshipBatchByKey(c.Request.Context(), keyInputs)
+			if err != nil {
+				renderError(c, err)
+				return
+			}
+			items := make([]v1.RelationshipResponse, len(rels))
+			for i, r := range rels {
+				items[i] = toRelationshipResponse(r)
+			}
+			c.JSON(http.StatusOK, v1.RelationshipListResponse{Items: items})
+			return
+		}
+
+		inputs := make([]store.RelationshipInput, 0, len(req.Relationships))
 		for i, r := range req.Relationships {
 			if err := validateRequired(
 				requiredField{"artifact_type", r.ArtifactType},
 				requiredField{"source_system", r.SourceSystem},
-				requiredField{"source_key", r.SourceKey},
-				requiredField{"target_key", r.TargetKey},
 			); err != nil {
 				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
 				return
 			}
-			if r.SourceAssetID == uuid.Nil || r.TargetAssetID == uuid.Nil {
+			if r.SourceAssetID == nil || r.TargetAssetID == nil {
 				renderError(c, fmt.Errorf("%w: item %d: source_asset_id and target_asset_id are required", apperr.ErrInvalidInput, i))
 				return
 			}
-			in := store.RelationshipInput{
-				SourceAssetID: r.SourceAssetID,
-				TargetAssetID: r.TargetAssetID,
-				ArtifactType:  r.ArtifactType,
-				SourceSystem:  r.SourceSystem,
-				SourceKey:     r.SourceKey,
-				TargetKey:     r.TargetKey,
-				Extensions:    r.Extensions,
+			in, err := toRelationshipInput(r)
+			if err != nil {
+				renderError(c, fmt.Errorf("%w: item %d: %s", apperr.ErrInvalidInput, i, err.Error()))
+				return
 			}
-			if r.IngestedAt != nil {
-				t, err := time.Parse(time.RFC3339, *r.IngestedAt)
-				if err != nil {
-					renderError(c, fmt.Errorf("%w: item %d invalid ingested_at: %s", apperr.ErrInvalidInput, i, err.Error()))
-					return
-				}
-				in.IngestedAt = &t
-			}
-			if r.CreatedAtSource != nil {
-				t, err := time.Parse(time.RFC3339, *r.CreatedAtSource)
-				if err != nil {
-					renderError(c, fmt.Errorf("%w: item %d invalid created_at_source: %s", apperr.ErrInvalidInput, i, err.Error()))
-					return
-				}
-				in.CreatedAtSource = &t
-			}
-			if r.LastUpdatedAtSource != nil {
-				t, err := time.Parse(time.RFC3339, *r.LastUpdatedAtSource)
-				if err != nil {
-					renderError(c, fmt.Errorf("%w: item %d invalid last_updated_at_source: %s", apperr.ErrInvalidInput, i, err.Error()))
-					return
-				}
-				in.LastUpdatedAtSource = &t
-			}
-			inputs[i] = in
+			inputs = append(inputs, in)
 		}
 		rels, err := d.UpsertRelationshipBatch(c.Request.Context(), inputs)
 		if err != nil {
@@ -311,4 +293,67 @@ func toRelationshipResponse(r store.Relationship) v1.RelationshipResponse {
 		resp.LastUpdatedAtSource = &s
 	}
 	return resp
+}
+
+// toRelationshipInput converts a UUID-based request to a store.RelationshipInput.
+// The caller must ensure SourceAssetID and TargetAssetID are non-nil.
+func toRelationshipInput(r v1.UpsertRelationshipRequest) (store.RelationshipInput, error) {
+	in := store.RelationshipInput{
+		SourceAssetID: *r.SourceAssetID,
+		TargetAssetID: *r.TargetAssetID,
+		ArtifactType:  r.ArtifactType,
+		SourceSystem:  r.SourceSystem,
+		SourceKey:     strings.Join(r.SourceKey, ":"),
+		TargetKey:     strings.Join(r.TargetKey, ":"),
+		Extensions:    r.Extensions,
+	}
+	if r.IngestedAt != nil {
+		t, err := time.Parse(time.RFC3339, *r.IngestedAt)
+		if err != nil {
+			return store.RelationshipInput{}, fmt.Errorf("%w: invalid ingested_at: %s", apperr.ErrInvalidInput, err.Error())
+		}
+		in.IngestedAt = &t
+	}
+	if r.CreatedAtSource != nil {
+		t, err := time.Parse(time.RFC3339, *r.CreatedAtSource)
+		if err != nil {
+			return store.RelationshipInput{}, fmt.Errorf("%w: invalid created_at_source: %s", apperr.ErrInvalidInput, err.Error())
+		}
+		in.CreatedAtSource = &t
+	}
+	if r.LastUpdatedAtSource != nil {
+		t, err := time.Parse(time.RFC3339, *r.LastUpdatedAtSource)
+		if err != nil {
+			return store.RelationshipInput{}, fmt.Errorf("%w: invalid last_updated_at_source: %s", apperr.ErrInvalidInput, err.Error())
+		}
+		in.LastUpdatedAtSource = &t
+	}
+	return in, nil
+}
+
+// toRelationshipKeyInput converts a key-based request to a store.RelationshipKeyInput.
+func toRelationshipKeyInput(r v1.UpsertRelationshipRequest) store.RelationshipKeyInput {
+	in := store.RelationshipKeyInput{
+		SourceKey:    r.SourceKey,
+		TargetKey:    r.TargetKey,
+		ArtifactType: r.ArtifactType,
+		SourceSystem: r.SourceSystem,
+		Extensions:   r.Extensions,
+	}
+	if r.IngestedAt != nil {
+		if t, err := time.Parse(time.RFC3339, *r.IngestedAt); err == nil {
+			in.IngestedAt = &t
+		}
+	}
+	if r.CreatedAtSource != nil {
+		if t, err := time.Parse(time.RFC3339, *r.CreatedAtSource); err == nil {
+			in.CreatedAtSource = &t
+		}
+	}
+	if r.LastUpdatedAtSource != nil {
+		if t, err := time.Parse(time.RFC3339, *r.LastUpdatedAtSource); err == nil {
+			in.LastUpdatedAtSource = &t
+		}
+	}
+	return in
 }

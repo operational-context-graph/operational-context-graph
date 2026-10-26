@@ -63,13 +63,16 @@ type BatchResult struct {
 }
 
 // UpsertRelationshipRequest is the body for POST /v1/relationships.
+// Callers MUST provide either source_asset_id/target_asset_id (UUIDs) or
+// source_key/target_key ([source_system, source_id] arrays). When keys are
+// provided the store resolves asset UUIDs internally.
 type UpsertRelationshipRequest struct {
-	SourceAssetID       uuid.UUID       `json:"source_asset_id"        validate:"required"`
-	TargetAssetID       uuid.UUID       `json:"target_asset_id"        validate:"required"`
+	SourceAssetID       *uuid.UUID      `json:"source_asset_id,omitempty"`
+	TargetAssetID       *uuid.UUID      `json:"target_asset_id,omitempty"`
 	ArtifactType        string          `json:"artifact_type"          validate:"required"`
 	SourceSystem        string          `json:"source_system"          validate:"required"`
-	SourceKey           string          `json:"source_key"             validate:"required"`
-	TargetKey           string          `json:"target_key"             validate:"required"`
+	SourceKey           []string        `json:"source_key,omitempty"`
+	TargetKey           []string        `json:"target_key,omitempty"`
 	Extensions          json.RawMessage `json:"extensions,omitempty"`
 	IngestedAt          *string         `json:"ingested_at,omitempty"`
 	CreatedAtSource     *string         `json:"created_at_source,omitempty"`

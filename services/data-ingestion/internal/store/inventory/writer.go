@@ -10,11 +10,9 @@ package inventory
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -71,6 +69,8 @@ func (w *Writer) Limits() store.BatchLimits {
 
 // Write delivers batch to the Inventory Store. Assets are written before
 // relationships to satisfy the FK constraint enforced by the store.
+// Relationship payloads carry source_key/target_key arrays; the inventory store
+// resolves asset UUIDs internally.
 func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	if len(batch.Records) == 0 {
 		return nil
@@ -92,147 +92,12 @@ func (w *Writer) Write(ctx context.Context, batch store.Batch) error {
 	}
 
 	if len(relationships) > 0 {
-		resolved, err := w.resolveRelationships(ctx, relationships)
-		if err != nil {
+		if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", relationships); err != nil {
 			return err
-		}
-		if len(resolved) > 0 {
-			if err := w.postBatch(ctx, "/v1/relationships/batch", "relationships", resolved); err != nil {
-				return err
-			}
 		}
 	}
 
 	return nil
-}
-
-// relPayload is the canonical relationship payload produced by the normalizer.
-// source_key and target_key are [source_system, source_id] arrays used to look
-// up the asset UUIDs required by the inventory store API.
-type relPayload struct {
-	ArtifactType        string          `json:"artifact_type"`
-	SourceSystem        string          `json:"source_system"`
-	SourceKey           []string        `json:"source_key"`
-	TargetKey           []string        `json:"target_key"`
-	Extensions          json.RawMessage `json:"extensions,omitempty"`
-	IngestedAt          *string         `json:"ingested_at,omitempty"`
-	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
-}
-
-// resolvedRel is a relationship body ready to POST to /v1/relationships/batch.
-type resolvedRel struct {
-	SourceAssetID       string          `json:"source_asset_id"`
-	TargetAssetID       string          `json:"target_asset_id"`
-	ArtifactType        string          `json:"artifact_type"`
-	SourceSystem        string          `json:"source_system"`
-	SourceKey           string          `json:"source_key"`
-	TargetKey           string          `json:"target_key"`
-	Extensions          json.RawMessage `json:"extensions,omitempty"`
-	IngestedAt          *string         `json:"ingested_at,omitempty"`
-	CreatedAtSource     *string         `json:"created_at_source,omitempty"`
-	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
-}
-
-// resolveRelationships converts relationship records into resolvedRels by
-// looking up source and target asset UUIDs from the inventory store.
-// Results are cached within the batch to avoid duplicate requests.
-func (w *Writer) resolveRelationships(ctx context.Context, recs []store.Record) ([]store.Record, error) {
-	cache := make(map[string]string)
-
-	lookup := func(key []string) (string, error) {
-		if len(key) != 2 {
-			return "", &store.PermanentError{Reason: fmt.Sprintf("inventory writer: invalid key %v: expected [source_system, source_id]", key)}
-		}
-		cacheKey := key[0] + "\x00" + key[1]
-		if id, ok := cache[cacheKey]; ok {
-			return id, nil
-		}
-		id, err := w.lookupAssetID(ctx, key[0], key[1])
-		if err != nil {
-			return "", err
-		}
-		cache[cacheKey] = id
-		return id, nil
-	}
-
-	var out []store.Record
-	for _, rec := range recs {
-		var p relPayload
-		if err := json.Unmarshal(rec.Payload, &p); err != nil {
-			return nil, &store.PermanentError{Reason: fmt.Sprintf("inventory writer: unmarshal relationship payload: %v", err)}
-		}
-
-		srcID, err := lookup(p.SourceKey)
-		if err != nil {
-			return nil, err
-		}
-		tgtID, err := lookup(p.TargetKey)
-		if err != nil {
-			return nil, err
-		}
-
-		resolved := resolvedRel{
-			SourceAssetID:       srcID,
-			TargetAssetID:       tgtID,
-			ArtifactType:        p.ArtifactType,
-			SourceSystem:        p.SourceSystem,
-			SourceKey:           strings.Join(p.SourceKey, ":"),
-			TargetKey:           strings.Join(p.TargetKey, ":"),
-			Extensions:          p.Extensions,
-			IngestedAt:          p.IngestedAt,
-			CreatedAtSource:     p.CreatedAtSource,
-			LastUpdatedAtSource: p.LastUpdatedAtSource,
-		}
-		b, err := json.Marshal(resolved)
-		if err != nil {
-			return nil, fmt.Errorf("inventory writer: marshal resolved relationship: %w", err)
-		}
-		out = append(out, store.Record{
-			Schema:      rec.Schema,
-			Payload:     b,
-			ContentType: "application/json",
-		})
-	}
-	return out, nil
-}
-
-// lookupAssetID queries the inventory store for an asset by source_system +
-// source_id and returns its UUID string.
-func (w *Writer) lookupAssetID(ctx context.Context, sourceSystem, sourceID string) (string, error) {
-	u := strings.TrimRight(w.cfg.BaseURL, "/") + "/v1/assets?" + url.Values{
-		"source_system": {sourceSystem},
-		"source_id":     {sourceID},
-	}.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return "", fmt.Errorf("inventory writer: build lookup request: %w", err)
-	}
-
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("%w: inventory writer lookup: %w", store.ErrOverloaded, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%w: inventory writer lookup HTTP %d: %s", store.ErrOverloaded, resp.StatusCode, raw)
-	}
-
-	var result struct {
-		Items []struct {
-			ID string `json:"id"`
-		} `json:"items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("inventory writer: decode lookup response: %w", err)
-	}
-	if len(result.Items) == 0 {
-		return "", &store.PermanentError{Reason: fmt.Sprintf("inventory writer: asset not found: %s/%s", sourceSystem, sourceID)}
-	}
-	return result.Items[0].ID, nil
 }
 
 func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.Record) error {

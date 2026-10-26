@@ -38,7 +38,7 @@ func relRecord(payload string) store.Record {
 }
 
 // relPayload returns a minimal valid relationship JSON payload with source_key
-// and target_key arrays so the writer can resolve asset UUIDs.
+// and target_key arrays. The inventory store resolves asset UUIDs internally.
 func relPayload(srcSystem, srcID, tgtSystem, tgtID string) string {
 	return `{"artifact_type":"routes_to","source_system":"` + srcSystem + `","source_key":["` + srcSystem + `","` + srcID + `"],"target_key":["` + tgtSystem + `","` + tgtID + `"]}`
 }
@@ -58,11 +58,6 @@ func trackingServer(t *testing.T, statusCode int) (*inventory.Writer, *[]request
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		log = append(log, requestLog{Path: r.URL.Path, Body: string(raw)})
-		if r.URL.Path == "/v1/assets" {
-			rw.WriteHeader(http.StatusOK)
-			_, _ = rw.Write([]byte(`{"items":[{"id":"00000000-0000-0000-0000-000000000001"}]}`))
-			return
-		}
 		rw.WriteHeader(statusCode)
 	}))
 	t.Cleanup(srv.Close)
@@ -88,8 +83,9 @@ func TestWriter_Write_RelationshipsOnly(t *testing.T) {
 	err := w.Write(context.Background(), batch(1, relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.NoError(t, err)
-	// two asset lookups (GET /v1/assets) + one relationship batch POST
-	assert.Equal(t, "/v1/relationships/batch", (*log)[len(*log)-1].Path)
+	// The writer passes raw payloads to /v1/relationships/batch — no asset lookups.
+	require.Len(t, *log, 1)
+	assert.Equal(t, "/v1/relationships/batch", (*log)[0].Path)
 }
 
 func TestWriter_Write_MixedBatch_AssetsFirst(t *testing.T) {
@@ -98,9 +94,9 @@ func TestWriter_Write_MixedBatch_AssetsFirst(t *testing.T) {
 	err := w.Write(context.Background(), batch(1, assetRecord(`{"iri":"urn:1"}`), relRecord(relPayload("netbox", "1", "netbox", "2"))))
 
 	require.NoError(t, err)
-	// asset batch first, then asset lookups, then relationship batch last
+	require.Len(t, *log, 2)
 	assert.Equal(t, "/v1/assets/batch", (*log)[0].Path, "assets must be written first")
-	assert.Equal(t, "/v1/relationships/batch", (*log)[len(*log)-1].Path, "relationships must be written last")
+	assert.Equal(t, "/v1/relationships/batch", (*log)[1].Path, "relationships must be written last")
 }
 
 func TestWriter_Write_EmptyBatchIsNoOp(t *testing.T) {
@@ -126,6 +122,16 @@ func TestWriter_Write_JSONArrayBody(t *testing.T) {
 	assert.Equal(t, `{"assets":[{"iri":"urn:1"},{"iri":"urn:2"}]}`, (*log)[0].Body)
 }
 
+func TestWriter_Write_RelationshipPayloadPassedThrough(t *testing.T) {
+	w, log := trackingServer(t, http.StatusOK)
+	payload := relPayload("netbox", "1", "netbox", "2")
+
+	err := w.Write(context.Background(), batch(1, relRecord(payload)))
+
+	require.NoError(t, err)
+	assert.Equal(t, `{"relationships":[`+payload+`]}`, (*log)[0].Body)
+}
+
 // ── permanent failures ────────────────────────────────────────────────────────
 
 func TestWriter_Write_Asset404_IsPermanentError(t *testing.T) {
@@ -145,9 +151,6 @@ func TestWriter_Write_Relationship404_IsPermanentError(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/assets/batch":
 			rw.WriteHeader(http.StatusOK)
-		case "/v1/assets":
-			rw.WriteHeader(http.StatusOK)
-			_, _ = rw.Write([]byte(`{"items":[{"id":"00000000-0000-0000-0000-000000000001"}]}`))
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}

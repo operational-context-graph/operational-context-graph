@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -342,6 +343,91 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit batch: %w", err)
+	}
+	return rels, nil
+}
+
+// resolveKey looks up the current (valid_to IS NULL) asset UUID for a
+// [source_system, source_id] key pair. It returns ErrAssetNotFound when no
+// matching asset exists.
+func (s *Store) resolveKey(ctx context.Context, key []string) (uuid.UUID, error) {
+	if len(key) != 2 {
+		return uuid.Nil, fmt.Errorf("%w: key must be [source_system, source_id], got %v", ErrInvalidInput, key)
+	}
+	var id uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT id FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL`,
+		key[0], key[1],
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: %s:%s", ErrAssetNotFound, key[0], key[1])
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("resolve asset key %s:%s: %w", key[0], key[1], err)
+	}
+	return id, nil
+}
+
+// UpsertRelationshipBatchByKey resolves [source_system, source_id] key pairs to
+// asset UUIDs and then upserts the relationships in a single transaction.
+// Returns ErrAssetNotFound if any referenced asset is missing.
+func (s *Store) UpsertRelationshipBatchByKey(ctx context.Context, inputs []RelationshipKeyInput) ([]Relationship, error) {
+	// Resolve all unique keys first, caching results.
+	cache := make(map[string]uuid.UUID)
+	lookup := func(key []string) (uuid.UUID, error) {
+		k := strings.Join(key, "\x00")
+		if id, ok := cache[k]; ok {
+			return id, nil
+		}
+		id, err := s.resolveKey(ctx, key)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		cache[k] = id
+		return id, nil
+	}
+
+	resolved := make([]RelationshipInput, 0, len(inputs))
+	for _, in := range inputs {
+		srcID, err := lookup(in.SourceKey)
+		if err != nil {
+			return nil, err
+		}
+		tgtID, err := lookup(in.TargetKey)
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, RelationshipInput{
+			SourceAssetID:       srcID,
+			TargetAssetID:       tgtID,
+			ArtifactType:        in.ArtifactType,
+			SourceSystem:        in.SourceSystem,
+			SourceKey:           strings.Join(in.SourceKey, ":"),
+			TargetKey:           strings.Join(in.TargetKey, ":"),
+			Extensions:          in.Extensions,
+			IngestedAt:          in.IngestedAt,
+			CreatedAtSource:     in.CreatedAtSource,
+			LastUpdatedAtSource: in.LastUpdatedAtSource,
+		})
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rels := make([]Relationship, 0, len(resolved))
+	for _, in := range resolved {
+		r, _, err := upsertRelationshipTx(ctx, tx, in)
+		if err != nil {
+			return nil, fmt.Errorf("upsert relationship batch by key row: %w", err)
+		}
+		rels = append(rels, r)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit batch by key: %w", err)
 	}
 	return rels, nil
 }
