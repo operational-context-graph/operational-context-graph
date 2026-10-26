@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: otel/opentelemetry-collector
-  tag: "0.115.0@sha256:6cba83e64eb40b54dbf442e3a9356dbf8ecb3681e1e9d0008577141b7ca656a8"
+  tag: "0.163.2@sha256:63e5e8eccf4268be02388ba9f2dc36b80b5e47721291293411c0e83152d75bda"
   pullPolicy: IfNotPresent
 
 # Port the collector listens on for OTLP/HTTP.
