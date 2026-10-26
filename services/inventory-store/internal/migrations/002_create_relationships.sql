@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS relationships (
     source_system          VARCHAR(128) NOT NULL,
     source_key             TEXT,
     target_key             TEXT,
+    source_iri             TEXT,
+    target_iri             TEXT,
     extensions             JSONB        NOT NULL DEFAULT '{}',
     ingested_at            TIMESTAMPTZ,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

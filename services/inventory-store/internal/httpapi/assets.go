@@ -4,7 +4,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -57,7 +56,7 @@ func handleUpsertAsset(d db) gin.HandlerFunc {
 			ArtifactType: req.ArtifactType,
 			SourceSystem: req.SourceSystem,
 			SourceID:     req.SourceID,
-			Extensions:   json.RawMessage(req.Extensions),
+			Extensions:   req.Extensions,
 		}
 		if req.IngestedAt != nil {
 			t, err := time.Parse(time.RFC3339, *req.IngestedAt)
@@ -175,7 +174,7 @@ func handleUpsertAssetBatch(d db) gin.HandlerFunc {
 				ArtifactType: a.ArtifactType,
 				SourceSystem: a.SourceSystem,
 				SourceID:     a.SourceID,
-				Extensions:   json.RawMessage(a.Extensions),
+				Extensions:   a.Extensions,
 			}
 			if a.IngestedAt != nil {
 				t, err := time.Parse(time.RFC3339, *a.IngestedAt)
@@ -224,7 +223,7 @@ func toAssetResponse(a store.Asset) v1.AssetResponse {
 		ArtifactType: a.ArtifactType,
 		SourceSystem: a.SourceSystem,
 		SourceID:     a.SourceID,
-		Extensions:   []byte(a.Extensions),
+		Extensions:   a.Extensions,
 		CreatedAt:    a.CreatedAt.UTC().Format(time.RFC3339),
 		ValidFrom:    a.ValidFrom.UTC().Format(time.RFC3339),
 	}

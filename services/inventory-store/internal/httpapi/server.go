@@ -32,6 +32,7 @@ type db interface {
 	FilterRelationships(ctx context.Context, assetID, sourceAssetID, targetAssetID *uuid.UUID, artifactType string, limit int) ([]store.Relationship, error)
 	GetRelationshipByID(ctx context.Context, id uuid.UUID) (store.Relationship, error)
 	UpsertRelationshipBatch(ctx context.Context, inputs []store.RelationshipInput) ([]store.Relationship, error)
+	UpsertRelationshipBatchByKey(ctx context.Context, inputs []store.RelationshipKeyInput) ([]store.Relationship, error)
 	Ping(ctx context.Context) error
 	SchemaReady(ctx context.Context) error
 }

@@ -13,4 +13,5 @@ var (
 	ErrAssetNotFound        = fmt.Errorf("asset not found: %w", apperr.ErrNotFound)
 	ErrAssetAlreadyExists   = fmt.Errorf("asset already exists: %w", apperr.ErrAlreadyExists)
 	ErrRelationshipNotFound = fmt.Errorf("relationship not found: %w", apperr.ErrNotFound)
+	ErrInvalidInput         = fmt.Errorf("invalid input: %w", apperr.ErrInvalidInput)
 )

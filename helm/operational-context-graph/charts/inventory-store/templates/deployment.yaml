@@ -31,6 +31,8 @@ spec:
               value: "postgres"
             - name: GOOSE_MIGRATION_DIR
               value: "/migrations"
+            - name: GOOSE_TABLE
+              value: "goose_db_version_inventory_store"
             - name: DB_HOST
               value: {{ required "database.host is required" .Values.database.host | quote }}
             - name: DB_PORT
