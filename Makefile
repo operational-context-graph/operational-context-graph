@@ -36,6 +36,7 @@ vet: ## Vet all services and connectors
 
 test: ## Test all services and connectors
 	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
+	$(MAKE) -C $(SERVICE_IS) COVERAGE_DIR=$(COVERAGE_DIR) test
 	$(MAKE) -C $(CONNECTOR_INVENTORY) COVERAGE_DIR=$(COVERAGE_DIR) test
 	$(MAKE) -C $(SERVICE_TS) COVERAGE_DIR=$(COVERAGE_DIR) test
 
