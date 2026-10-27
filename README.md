@@ -12,7 +12,40 @@ This is a polyglot monorepo. Sub-components live under `services/` (long-running
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+### Prerequisites
+
+- [Go](https://go.dev/dl/) — version defined in `go.work` (currently 1.27.3)
+- [Buf](https://buf.build/docs/installation) — for protobuf code generation
+- [pnpm](https://pnpm.io/installation) — for OpenSpec tooling
+
+### Getting started
+
+This repository uses a [Go workspace](https://go.dev/ref/mod#workspaces) (`go.work`) to manage all Go modules together. The workspace and its checksum file (`go.work.sum`) are committed — no extra setup step is needed.
+
+```bash
+# Clone and enter the repo
+git clone https://github.com/operational-context-graph/operational-context-graph.git
+cd operational-context-graph
+
+# Install Node dependencies (OpenSpec tooling)
+pnpm install
+
+# Generate protobuf stubs
+make proto-generate
+
+# Build all services
+make build
+
+# Run all tests
+make test
+```
+
+### Adding a new Go service
+
+1. Create your module under `services/` with its own `go.mod`.
+2. Add it to the `use` block in `go.work`.
+3. Run `go work sync` to update `go.work.sum`.
+4. If your module requires a newer Go version than the current workspace minimum, update the `go` directive in `go.work` to match.
 
 ## Support, Feedback, Contributing
 

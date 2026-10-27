@@ -13,7 +13,7 @@ COVERAGE_DIR := $(CURDIR)/coverage
 .PHONY: build run test lint vet tidy mocks \
 	proto-lint proto-format proto-generate go-work-init
 
-go-work-init: ## Initialize local Go workspace (not committed; run once after checkout)
+go-work-init: ## Regenerate go.work from scratch (go.work is committed; only needed after a full workspace reset)
 	@if [ ! -f go.work ]; then \
 		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
 	fi
