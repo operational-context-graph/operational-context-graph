@@ -10,7 +10,6 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	mock "github.com/stretchr/testify/mock"
 )
-
 // NewIngestor creates a new instance of Ingestor. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewIngestor(t interface {
@@ -102,4 +101,52 @@ func (_c *Ingestor_Ingest_Call) Return(ingestResult ingest.IngestResult, err err
 func (_c *Ingestor_Ingest_Call) RunAndReturn(run func(ctx context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error)) *Ingestor_Ingest_Call {
 	_c.Call.Return(run)
 	return _c
+}
+
+// ── MockBackfiller ────────────────────────────────────────────────────────────
+
+// NewMockBackfiller creates a new instance of MockBackfiller for testing.
+func NewMockBackfiller(t interface {
+	mock.TestingT
+	Cleanup(func())
+}) *MockBackfiller {
+	m := &MockBackfiller{}
+	m.Mock.Test(t)
+	t.Cleanup(func() { m.AssertExpectations(t) })
+	return m
+}
+
+// MockBackfiller is a test double for backfill.Backfiller.
+type MockBackfiller struct {
+	mock.Mock
+}
+
+func (m *MockBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, bool, error) {
+	ret := m.Called(ctx, connectorID, partition)
+	var r0 map[string]any
+	if v := ret.Get(0); v != nil {
+		r0 = v.(map[string]any)
+	}
+	return r0, ret.Bool(1), ret.Error(2)
+}
+
+func (m *MockBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {
+	return m.Called(ctx, connectorID, partition).Error(0)
+}
+
+func (m *MockBackfiller) CloseGap(ctx context.Context, connectorID, partition string) error {
+	return m.Called(ctx, connectorID, partition).Error(0)
+}
+
+func (m *MockBackfiller) AdvanceLive(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
+	return m.Called(ctx, connectorID, partition, watermark).Error(0)
+}
+
+func (m *MockBackfiller) AdvanceBackfill(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
+	return m.Called(ctx, connectorID, partition, watermark).Error(0)
+}
+
+func (m *MockBackfiller) IsGapOpen(ctx context.Context, connectorID, partition string) (bool, error) {
+	ret := m.Called(ctx, connectorID, partition)
+	return ret.Bool(0), ret.Error(1)
 }

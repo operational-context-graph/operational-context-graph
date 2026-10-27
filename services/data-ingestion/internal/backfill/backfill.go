@@ -52,4 +52,9 @@ type Backfiller interface {
 	// Precondition: callers MUST invoke AdvanceBackfill only after
 	// outbox.Write returns nil.
 	AdvanceBackfill(ctx context.Context, connectorID, partition string, watermark map[string]any) error
+
+	// IsGapOpen reports whether a gap is currently open for the
+	// (connectorID, partition) pair. Returns (false, nil) when no row exists
+	// (no gap has been started). Returns a non-nil error on storage failure.
+	IsGapOpen(ctx context.Context, connectorID, partition string) (bool, error)
 }

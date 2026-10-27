@@ -41,6 +41,8 @@ func (r *fakeRow) Scan(dest ...any) error {
 			} else {
 				*v = r.values[i].([]byte)
 			}
+		case *bool:
+			*v = r.values[i].(bool)
 		}
 	}
 	return nil
@@ -459,4 +461,45 @@ func TestCloseGap_Concurrent_WithAdvanceLive(t *testing.T) {
 	for _, err := range errs {
 		assert.NoError(t, err)
 	}
+}
+
+// ── IsGapOpen ─────────────────────────────────────────────────────────────────
+
+func TestIsGapOpen_GapOpen(t *testing.T) {
+	d := &fakeDB{row: &fakeRow{values: []any{true}}}
+	b := newBackfiller(d)
+
+	open, err := b.IsGapOpen(context.Background(), "conn1", "{}")
+	require.NoError(t, err)
+	assert.True(t, open)
+}
+
+func TestIsGapOpen_GapClosed(t *testing.T) {
+	d := &fakeDB{row: &fakeRow{values: []any{false}}}
+	b := newBackfiller(d)
+
+	open, err := b.IsGapOpen(context.Background(), "conn1", "{}")
+	require.NoError(t, err)
+	assert.False(t, open)
+}
+
+func TestIsGapOpen_NoRow(t *testing.T) {
+	d := &fakeDB{row: &fakeRow{scanErr: pgx.ErrNoRows}}
+	b := newBackfiller(d)
+
+	open, err := b.IsGapOpen(context.Background(), "conn1", "{}")
+	require.NoError(t, err)
+	assert.False(t, open)
+}
+
+func TestIsGapOpen_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	d := &fakeDB{row: &fakeRow{scanErr: context.Canceled}}
+	b := newBackfiller(d)
+
+	_, err := b.IsGapOpen(ctx, "conn1", "{}")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
 }

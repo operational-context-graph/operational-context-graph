@@ -17,18 +17,21 @@ import (
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
-// OCGHandler owns the shared state for OCG receivers (ingestor, limits, retry).
-// OCGReceiver holds a pointer back to OCGHandler and implements the gRPC interface.
-// OCGHandler is safe for concurrent use by multiple goroutines.
+// OCGHandler owns the shared state for OCG receivers (ingestor, limits, retry,
+// backfiller). OCGReceiver holds a pointer back to OCGHandler and implements
+// the gRPC interface. OCGHandler is safe for concurrent use by multiple
+// goroutines.
 type OCGHandler struct {
-	ingestor ingest.Ingestor
-	limits   *config.LimitsConfig
-	retry    *config.RetryConfig
+	ingestor  ingest.Ingestor
+	limits    *config.LimitsConfig
+	retry     *config.RetryConfig
+	backfiller backfill.Backfiller
 }
 
 // NewOCGHandler constructs an OCGHandler. Returns an error when any
@@ -37,6 +40,7 @@ func NewOCGHandler(
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
+	backfiller backfill.Backfiller,
 ) (*OCGHandler, error) {
 	if ingestor == nil {
 		return nil, fmt.Errorf("grpcserver: ingestor must not be nil")
@@ -47,7 +51,10 @@ func NewOCGHandler(
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: retry must not be nil")
 	}
-	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry}, nil
+	if backfiller == nil {
+		return nil, fmt.Errorf("grpcserver: backfiller must not be nil")
+	}
+	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry, backfiller: backfiller}, nil
 }
 
 // register mounts the OCG receivers onto grpcSrv.
@@ -79,6 +86,8 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 			"batch exceeds maximum message count (%d)", recv.handler.limits.MaxMessages)
 	}
 
+	connectorID := connectorIDFromContext(ctx)
+
 	batch := make([]ingest.IngestRecord, len(req.Messages))
 	for i, env := range req.Messages {
 		batch[i] = ingest.IngestRecord{
@@ -91,11 +100,11 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		}
 		if env.Partition != nil {
 			// Encode partition struct as a stable JSON string used as storage key.
-			b, err := json.Marshal(env.Partition.AsMap())
+			partitionJSON, err := json.Marshal(env.Partition.AsMap())
 			if err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
 			}
-			batch[i].Partition = string(b)
+			batch[i].Partition = string(partitionJSON)
 		}
 		if env.Watermark != nil {
 			batch[i].Watermark = env.Watermark.AsMap()
@@ -105,6 +114,18 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	result, err := recv.handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
 		return nil, recv.handler.mapIngestError(err)
+	}
+
+	// Advance live watermarks for accepted messages that carry a watermark.
+	// Nil partition is valid — it produces an empty partition key representing
+	// a generic per-connector watermark (no partition).
+	for i, env := range req.Messages {
+		if env.Watermark == nil {
+			continue
+		}
+		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
+			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+		}
 	}
 
 	return &ingestionv1.IngestResponse{

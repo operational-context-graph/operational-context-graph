@@ -42,11 +42,11 @@ func NewPostgresBackfiller(pool *pgxpool.Pool) (*PostgresBackfiller, error) {
 
 // GetWatermark returns the last committed watermark for the (connectorID,
 // partition) pair. Returns (nil, false, nil) when no row exists.
-func (b *PostgresBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, bool, error) {
+func (backfiller *PostgresBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, bool, error) {
 	const q = `SELECT watermark FROM data_ingestion_watermarks WHERE connector_id=$1 AND partition_key=$2`
 
 	var raw []byte
-	err := b.db.QueryRow(ctx, q, connectorID, partition).Scan(&raw)
+	err := backfiller.db.QueryRow(ctx, q, connectorID, partition).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -65,14 +65,14 @@ func (b *PostgresBackfiller) GetWatermark(ctx context.Context, connectorID, part
 }
 
 // StartGap opens a gap for the (connectorID, partition) pair. Idempotent.
-func (b *PostgresBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {
+func (backfiller *PostgresBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {
 	const q = `
 INSERT INTO data_ingestion_watermarks (connector_id, partition_key, gap_open, updated_at)
 VALUES ($1, $2, true, now())
 ON CONFLICT (connector_id, partition_key)
 DO UPDATE SET gap_open = true, updated_at = now()`
 
-	if _, err := b.db.Exec(ctx, q, connectorID, partition); err != nil {
+	if _, err := backfiller.db.Exec(ctx, q, connectorID, partition); err != nil {
 		return fmt.Errorf("backfill: start gap: %w", err)
 	}
 	return nil
@@ -80,7 +80,7 @@ DO UPDATE SET gap_open = true, updated_at = now()`
 
 // CloseGap closes an open gap. If a live_frontier was accumulated, the
 // committed watermark jumps to it. No-op when no gap is open.
-func (b *PostgresBackfiller) CloseGap(ctx context.Context, connectorID, partition string) error {
+func (backfiller *PostgresBackfiller) CloseGap(ctx context.Context, connectorID, partition string) error {
 	const q = `
 UPDATE data_ingestion_watermarks
    SET gap_open      = false,
@@ -89,7 +89,7 @@ UPDATE data_ingestion_watermarks
        updated_at    = now()
  WHERE connector_id = $1 AND partition_key = $2 AND gap_open = true`
 
-	if _, err := b.db.Exec(ctx, q, connectorID, partition); err != nil {
+	if _, err := backfiller.db.Exec(ctx, q, connectorID, partition); err != nil {
 		return fmt.Errorf("backfill: close gap: %w", err)
 	}
 	return nil
@@ -100,7 +100,7 @@ UPDATE data_ingestion_watermarks
 // partition or watermark is empty.
 //
 // Callers MUST invoke AdvanceLive only after outbox.Write returns nil.
-func (b *PostgresBackfiller) AdvanceLive(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
+func (backfiller *PostgresBackfiller) AdvanceLive(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
 	if partition == "" || len(watermark) == 0 {
 		return nil
 	}
@@ -120,7 +120,7 @@ ON CONFLICT (connector_id, partition_key) DO UPDATE
        live_frontier = CASE WHEN data_ingestion_watermarks.gap_open THEN EXCLUDED.watermark                  ELSE data_ingestion_watermarks.live_frontier END,
        updated_at    = now()`
 
-	if _, err := b.db.Exec(ctx, q, connectorID, partition, raw); err != nil {
+	if _, err := backfiller.db.Exec(ctx, q, connectorID, partition, raw); err != nil {
 		return fmt.Errorf("backfill: advance live: %w", err)
 	}
 	return nil
@@ -131,7 +131,7 @@ ON CONFLICT (connector_id, partition_key) DO UPDATE
 // partition or watermark is empty.
 //
 // Callers MUST invoke AdvanceBackfill only after outbox.Write returns nil.
-func (b *PostgresBackfiller) AdvanceBackfill(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
+func (backfiller *PostgresBackfiller) AdvanceBackfill(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
 	if partition == "" || len(watermark) == 0 {
 		return nil
 	}
@@ -147,8 +147,24 @@ UPDATE data_ingestion_watermarks
        updated_at = now()
  WHERE connector_id = $1 AND partition_key = $2 AND gap_open = true`
 
-	if _, err := b.db.Exec(ctx, q, connectorID, partition, raw); err != nil {
+	if _, err := backfiller.db.Exec(ctx, q, connectorID, partition, raw); err != nil {
 		return fmt.Errorf("backfill: advance backfill: %w", err)
 	}
 	return nil
+}
+
+// IsGapOpen reports whether a gap is currently open for the (connectorID,
+// partition) pair. Returns (false, nil) when no row exists.
+func (backfiller *PostgresBackfiller) IsGapOpen(ctx context.Context, connectorID, partition string) (bool, error) {
+	const q = `SELECT gap_open FROM data_ingestion_watermarks WHERE connector_id=$1 AND partition_key=$2`
+
+	var gapOpen bool
+	err := backfiller.db.QueryRow(ctx, q, connectorID, partition).Scan(&gapOpen)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("backfill: is gap open: %w", err)
+	}
+	return gapOpen, nil
 }

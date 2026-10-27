@@ -16,6 +16,7 @@ import (
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -33,6 +34,13 @@ func noop(t *testing.T) *Ingestor {
 	return m
 }
 
+// noopBackfiller returns a Backfiller mock that accepts all AdvanceLive calls.
+func noopBackfiller(t *testing.T) *MockBackfiller {
+	m := NewMockBackfiller(t)
+	m.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
+	return m
+}
+
 func defaultLimits() *config.LimitsConfig {
 	return &config.LimitsConfig{MaxMessages: 1000, MaxPayloadBytes: 4 * 1024 * 1024}
 }
@@ -43,7 +51,7 @@ func defaultRetry() *config.RetryConfig {
 
 func newServer(t *testing.T, ingestor ingest.Ingestor, limits *config.LimitsConfig, retry *config.RetryConfig) *grpcserver.OCGReceiver {
 	t.Helper()
-	h, err := grpcserver.NewOCGHandler(ingestor, limits, retry)
+	h, err := grpcserver.NewOCGHandler(ingestor, limits, retry, noopBackfiller(t))
 	require.NoError(t, err)
 	return grpcserver.NewOCGReceiver(h)
 }
@@ -116,17 +124,22 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 // --- 5.6: nil LimitsConfig or nil Ingestor at construction → non-nil error ---
 
 func TestNilLimitsAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(t), nil, defaultRetry())
+	_, err := grpcserver.NewOCGHandler(noop(t), nil, defaultRetry(), noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNilIngestorAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(nil, defaultLimits(), defaultRetry())
+	_, err := grpcserver.NewOCGHandler(nil, defaultLimits(), defaultRetry(), noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNilRetryAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), nil)
+	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), nil, noopBackfiller(t))
+	require.Error(t, err)
+}
+
+func TestNilBackfillerAtConstruction(t *testing.T) {
+	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), defaultRetry(), nil)
 	require.Error(t, err)
 }
 
@@ -371,4 +384,135 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 	require.Len(t, captured, 1)
 	assert.Equal(t, `{"shard":"east"}`, captured[0].Partition)
 	assert.Equal(t, map[string]interface{}{"offset": float64(99)}, captured[0].Watermark)
+}
+
+// ctxWithConnectorID injects a connector-id gRPC metadata header into a
+// context so connectorIDFromContext can extract it in unit tests (no real
+// gRPC transport needed).
+func ctxWithConnectorID(connectorID string) context.Context {
+	md := metadata.Pairs("connector-id", connectorID)
+	return metadata.NewIncomingContext(context.Background(), md)
+}
+
+// --- 2.3: AdvanceLive called/not-called based on watermark and partition ---
+
+func TestAdvanceLiveCalledWhenWatermarkAndPartitionPresent(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, "conn-1", mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+
+	m := noop(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	bf.AssertExpectations(t)
+}
+
+func TestAdvanceLiveNotCalledWhenWatermarkNil(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	// no AdvanceLive expectation — if it's called, AssertExpectations will fail
+
+	m := noop(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         nil,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+}
+
+func TestAdvanceLiveCalledWhenPartitionNilButWatermarkPresent(t *testing.T) {
+	// Nil partition is valid: it produces an empty partition key ("") representing
+	// a generic per-connector watermark. AdvanceLive MUST be called.
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, "conn-1", "", mock.Anything).Once().Return(nil)
+
+	m := noop(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         nil,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	bf.AssertExpectations(t)
+}
+
+func TestIngestPipelineDeadlineExceeded(t *testing.T) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.DeadlineExceeded)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.DeadlineExceeded, status.Code(err))
+}
+
+func TestIngestPipelineCanceled(t *testing.T) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.Canceled)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Canceled, status.Code(err))
+}
+
+func TestAdvanceLiveErrorReturnsUnavailable(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("storage down"))
+
+	m := noop(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
