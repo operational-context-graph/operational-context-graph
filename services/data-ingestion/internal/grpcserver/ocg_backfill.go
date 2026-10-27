@@ -90,7 +90,10 @@ func (recv *OCGBackfillReceiver) GetWatermark(ctx context.Context, req *ingestio
 		return nil, status.Error(codes.Unauthenticated, "connector identity required")
 	}
 
-	partitionKey := partitionToKey(req.GetPartition())
+	partitionKey, err := partitionToKey(req.GetPartition())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
+	}
 
 	wm, found, err := recv.handler.backfiller.GetWatermark(ctx, connectorID, partitionKey)
 	if err != nil {
@@ -117,7 +120,10 @@ func (recv *OCGBackfillReceiver) StartGap(ctx context.Context, req *ingestionv1.
 		return nil, status.Error(codes.InvalidArgument, "partition is required")
 	}
 
-	partitionKey := partitionToKey(req.GetPartition())
+	partitionKey, err := partitionToKey(req.GetPartition())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
+	}
 
 	if err := recv.handler.backfiller.StartGap(ctx, connectorID, partitionKey); err != nil {
 		return nil, recv.handler.unavailableWithRetry("start gap failed")
@@ -135,7 +141,10 @@ func (recv *OCGBackfillReceiver) CloseGap(ctx context.Context, req *ingestionv1.
 		return nil, status.Error(codes.InvalidArgument, "partition is required")
 	}
 
-	partitionKey := partitionToKey(req.GetPartition())
+	partitionKey, err := partitionToKey(req.GetPartition())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
+	}
 
 	if err := recv.handler.backfiller.CloseGap(ctx, connectorID, partitionKey); err != nil {
 		return nil, recv.handler.unavailableWithRetry("close gap failed")
@@ -264,13 +273,14 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 
 // partitionToKey JSON-encodes a proto Struct partition into the storage key
 // string. Returns an empty string when p is nil (no-partition stream).
-func partitionToKey(p *structpb.Struct) string {
+// Returns a non-nil error when p is non-nil but cannot be encoded.
+func partitionToKey(p *structpb.Struct) (string, error) {
 	if p == nil {
-		return ""
+		return "", nil
 	}
 	partitionJSON, err := json.Marshal(p.AsMap())
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("invalid partition: %w", err)
 	}
-	return string(partitionJSON)
+	return string(partitionJSON), nil
 }
