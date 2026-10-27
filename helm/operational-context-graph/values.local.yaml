@@ -16,16 +16,6 @@ data-ingestion:
     repository: localhost:5001/data-ingestion
     tag: local
     pullPolicy: Always
-  database:
-    host: ocg-postgresql
-    sslmode: disable
-    passwordSecret:
-      name: postgres-secret
-      key: password
-  inventoryStore:
-    baseURL: "http://ocg-inventory-store:8080"
-  telemetryStore:
-    baseURL: "http://ocg-telemetry-store:8080"
 
 inventory-store:
   enabled: true
@@ -60,26 +50,13 @@ inventory-connector:
   netbox:
     baseURL: "http://<your-mockreplay-host>:8081"
     pageSize: 1000
-    tokenSecret:
-      name: netbox-token
-      key: token
-  grpc:
-    endpoint: "ocg-data-ingestion:9090"
-    connectorID: "ocg-inventory-connector"
-  connector:
-    schemaVersion: "0.1.0"
-    endpoints:
-      - "dcim/devices/"
 
 otelcol:
   enabled: true
-  dataIngestionEndpoint: "ocg-data-ingestion:9090"
 
 doris:
   enabled: true
   feSpec:
-    replicas: 1
-    image: apache/doris:fe-4.1.4@sha256:3cbfc9b6293057a0b7f10c2e597f20f4a6bafed0729dfa9795db21eae2e136bb
     requests:
       cpu: "0.5"
       memory: 1Gi
@@ -87,19 +64,9 @@ doris:
       cpu: "1"
       memory: 2Gi
     config:
-      metaDir: /opt/apache-doris/fe/doris-meta
-      priorityNetworks: 10.0.0.0/8
-      httpPort: 8030
-      rpcPort: 9020
-      queryPort: 9030
-      editLogPort: 9010
       # Heap must fit within the 2Gi container limit
       javaOpts: "-Xmx1024m -Xms1024m"
-      queryTimeout: 300
-      streamLoadTimeout: 600
   beSpec:
-    replicas: 1
-    image: apache/doris:be-4.1.4@sha256:08c139f3d0ec45090a5214fd76f19f84b871d05f1a2db83b5e35a85c193617b2
     requests:
       cpu: "0.5"
       memory: 2Gi
@@ -107,12 +74,6 @@ doris:
       cpu: "1"
       memory: 4Gi
     config:
-      storageRootPath: /opt/apache-doris/be/storage
-      priorityNetworks: 10.0.0.0/8
-      bePort: 9060
-      webserverPort: 8040
-      heartbeatServicePort: 9050
-      brpcPort: 8060
       memLimit: "70%"
 
 doris-operator:
