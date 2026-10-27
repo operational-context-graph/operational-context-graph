@@ -38,8 +38,9 @@ type Backfiller interface {
 
 	// AdvanceLive updates the committed watermark from the live stream when
 	// no gap is open; when a gap is open it records the watermark as
-	// live_frontier only. The operation is a no-op when partition or
-	// watermark is empty.
+	// live_frontier only. The operation is a no-op when connectorID or
+	// watermark is empty. An empty partition key is valid — it represents a
+	// global per-connector watermark (no partition).
 	//
 	// Precondition: callers MUST invoke AdvanceLive only after
 	// outbox.Write returns nil.
@@ -47,7 +48,7 @@ type Backfiller interface {
 
 	// AdvanceBackfill advances the committed watermark from the backfill
 	// channel only while a gap is open. The operation is a silent no-op when
-	// no gap is open or when partition or watermark is empty.
+	// no gap is open or when connectorID, partition, or watermark is empty.
 	//
 	// Precondition: callers MUST invoke AdvanceBackfill only after
 	// outbox.Write returns nil.

@@ -157,6 +157,18 @@ func TestStartGap_Idempotent(t *testing.T) {
 	assert.Len(t, d.execSQL, 2)
 }
 
+func TestStartGap_ClearsLiveFrontierOnConflict(t *testing.T) {
+	// ON CONFLICT must include live_frontier = NULL so a stale frontier from
+	// a previous incomplete gap cycle cannot corrupt CloseGap via COALESCE.
+	d := &fakeDB{}
+	b := newBackfiller(d)
+
+	err := b.StartGap(context.Background(), "conn1", "{}")
+	require.NoError(t, err)
+	require.Len(t, d.execSQL, 1)
+	assert.Contains(t, d.execSQL[0], "live_frontier = NULL")
+}
+
 func TestStartGap_DBError(t *testing.T) {
 	boom := errors.New("db error")
 	d := &fakeDB{execErr: boom}
@@ -290,6 +302,15 @@ func TestAdvanceBackfill_NilWatermark_NoOp(t *testing.T) {
 	b := newBackfiller(d)
 
 	err := b.AdvanceBackfill(context.Background(), "conn1", "{}", nil)
+	require.NoError(t, err)
+	assert.Empty(t, d.execSQL)
+}
+
+func TestAdvanceBackfill_EmptyConnectorID_NoOp(t *testing.T) {
+	d := &fakeDB{}
+	b := newBackfiller(d)
+
+	err := b.AdvanceBackfill(context.Background(), "", "{}", map[string]any{"k": "v"})
 	require.NoError(t, err)
 	assert.Empty(t, d.execSQL)
 }

@@ -65,12 +65,14 @@ func (backfiller *PostgresBackfiller) GetWatermark(ctx context.Context, connecto
 }
 
 // StartGap opens a gap for the (connectorID, partition) pair. Idempotent.
+// live_frontier is cleared on every open so a stale frontier from a previous
+// incomplete gap cycle cannot corrupt the next CloseGap via COALESCE.
 func (backfiller *PostgresBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {
 	const q = `
 INSERT INTO data_ingestion_watermarks (connector_id, partition_key, gap_open, updated_at)
 VALUES ($1, $2, true, now())
 ON CONFLICT (connector_id, partition_key)
-DO UPDATE SET gap_open = true, updated_at = now()`
+DO UPDATE SET gap_open = true, live_frontier = NULL, updated_at = now()`
 
 	if _, err := backfiller.db.Exec(ctx, q, connectorID, partition); err != nil {
 		return fmt.Errorf("backfill: start gap: %w", err)
@@ -129,11 +131,11 @@ ON CONFLICT (connector_id, partition_key) DO UPDATE
 
 // AdvanceBackfill advances the committed watermark from the backfill channel
 // only while a gap is open. Silent no-op when no gap is open or when
-// partition or watermark is empty.
+// connectorID, partition, or watermark is empty.
 //
 // Callers MUST invoke AdvanceBackfill only after outbox.Write returns nil.
 func (backfiller *PostgresBackfiller) AdvanceBackfill(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
-	if partition == "" || len(watermark) == 0 {
+	if connectorID == "" || partition == "" || len(watermark) == 0 {
 		return nil
 	}
 
