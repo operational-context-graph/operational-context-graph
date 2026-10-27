@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:octobus.log:1.0.0",
+  "type": "object",
+  "required": ["iri", "artifact_type", "source_system", "timestamp", "observed_timestamp", "signal_type", "record_id", "severity"],
+  "properties": {
+    "iri": { "type": "string" },
+    "artifact_type": { "type": "string", "const": "LogRecord" },
+    "source_system": { "type": "string" },
+    "ingested_at": { "type": ["string", "null"], "format": "date-time" },
+    "timestamp": { "type": "string", "format": "date-time", "description": "RFC 3339 timestamp from @timestamp" },
+    "observed_timestamp": { "type": "string", "format": "date-time" },
+    "signal_type": { "type": "string" },
+    "record_id": { "type": "string" },
+    "host_name": { "type": ["string", "null"] },
+    "source_object_id": { "type": ["string", "null"] },
+    "severity": {
+      "type": "string",
+      "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"]
+    },
+    "body": { "type": ["string", "null"] },
+    "resource_attributes": {
+      "type": "object",
+      "properties": {
+        "host.name": { "type": "string" }
+      }
+    },
+    "attributes": { "type": "object" },
+    "extensions": {
+      "type": "object",
+      "properties": {
+        "syslog_facility": { "type": "string" },
+        "syslog_pri": { "type": ["integer", "string"] },
+        "syslog_severity_code": { "type": ["integer", "string"] },
+        "tags": {},
+        "event_hash": { "type": "string" },
+        "fqdn": { "type": "string" }
+      }
+    }
+  }
+}

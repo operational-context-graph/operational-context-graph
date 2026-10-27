@@ -18,6 +18,35 @@ spec:
       labels:
         {{- include "data-ingestion.selectorLabels" . | nindent 8 }}
     spec:
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/goose", "up"]
+          env:
+            - name: GOOSE_DRIVER
+              value: "postgres"
+            - name: GOOSE_MIGRATION_DIR
+              value: "/migrations"
+            - name: GOOSE_TABLE
+              value: "goose_db_version_data_ingestion"
+            - name: DB_HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: GOOSE_DBSTRING
+              value: "host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) user=$(DB_USER) password=$(DB_PASSWORD) sslmode=$(DB_SSLMODE)"
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -29,8 +58,29 @@ spec:
             - name: grpc
               containerPort: {{ .Values.grpcContainerPort }}
               protocol: TCP
-          {{- if .Values.tls.enabled }}
           env:
+            - name: OCG_DI_DATABASE__HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: OCG_DI_DATABASE__PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OCG_DI_DATABASE__NAME
+              value: {{ .Values.database.name | quote }}
+            - name: OCG_DI_DATABASE__USER
+              value: {{ .Values.database.user | quote }}
+            - name: OCG_DI_DATABASE__SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: OCG_DI_DATABASE__MAXCONNS
+              value: {{ .Values.database.maxconns | quote }}
+            - name: OCG_DI_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: OCG_DI_TELEMETRY_STORE__BASE_URL
+              value: {{ .Values.telemetryStore.baseURL | quote }}
+            - name: OCG_DI_INVENTORY_STORE__BASE_URL
+              value: {{ .Values.inventoryStore.baseURL | quote }}
+          {{- if .Values.tls.enabled }}
             - name: OCG_DI_GRPC__TLS__CERT_FILE
               value: {{ .Values.tls.mountPath }}/tls.crt
             - name: OCG_DI_GRPC__TLS__KEY_FILE

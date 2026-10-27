@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for the inventory-store subchart.
+enabled: true
+replicaCount: 2
+
+image:
+  repository: ghcr.io/operational-context-graph/inventory-store
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Container port the service listens on (matches OCG_IS_SERVER__PORT default).
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# PostgreSQL connection settings. The password is never set here; it is read
+# from a Kubernetes Secret via passwordSecret.
+database:
+  host: ""
+  port: 5432
+  name: ocg
+  user: ocg
+  sslmode: require
+  maxconns: 25
+  passwordSecret:
+    name: ""
+    key: password
+
+env:
+  LOG_LEVEL: "info"
+
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""

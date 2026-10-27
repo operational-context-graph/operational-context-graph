@@ -1,0 +1,10 @@
+{
+  "artifact_type": "HOSTS",
+  "source_system": "netbox",
+  "source_iri": "urn:ocg:asset/netbox/netboxid-41821",
+  "target_iri": "urn:ocg:dc/ap-jp-1a/ap-jp-1-lb013a/ap-jp-1-lb013a-01",
+  "source_key": ["netbox", "41821"],
+  "target_key": ["netbox", "42655"],
+  "valid_time": "2026-02-24T18:02:53.232747Z",
+  "extensions": {}
+}
