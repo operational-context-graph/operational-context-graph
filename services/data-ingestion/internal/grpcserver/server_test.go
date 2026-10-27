@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
@@ -562,6 +563,7 @@ func TestPlaintextModeStarts(t *testing.T) {
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
+	ctx = metadata.AppendToOutgoingContext(ctx, "connector-id", "test-conn")
 	client := ingestionv1.NewIngestionServiceClient(conn)
 	_, err = client.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{{
@@ -605,6 +607,7 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 	go func() {
 		ctx2, cl := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cl()
+		ctx2 = metadata.AppendToOutgoingContext(ctx2, "connector-id", "test-conn")
 		client := ingestionv1.NewIngestionServiceClient(conn)
 		_, e := client.Ingest(ctx2, &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{{Payload: []byte("x")}},
@@ -656,6 +659,7 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 	go func() {
 		ctx2, cl := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cl()
+		ctx2 = metadata.AppendToOutgoingContext(ctx2, "connector-id", "test-conn")
 		client := ingestionv1.NewIngestionServiceClient(conn)
 		_, _ = client.Ingest(ctx2, &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{{Payload: []byte("x")}},
@@ -702,9 +706,8 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
+	ctx = metadata.AppendToOutgoingContext(ctx, "connector-id", "test-conn")
 	client := ingestionv1.NewIngestionServiceClient(conn)
-
-	// Small payload — fits within MaxRecvMsgSize including framing overhead.
 	_, err = client.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{
 			{Payload: make([]byte, 100)},

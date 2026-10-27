@@ -214,11 +214,22 @@ func TestCloseGap_CancelledContext(t *testing.T) {
 
 // ── AdvanceLive ───────────────────────────────────────────────────────────────
 
-func TestAdvanceLive_EmptyPartition_NoOp(t *testing.T) {
+func TestAdvanceLive_EmptyPartition_WritesGlobalWatermark(t *testing.T) {
+	// Empty partition key represents a global per-connector watermark (no partition).
+	// AdvanceLive MUST write to the DB for this case.
 	d := &fakeDB{}
 	b := newBackfiller(d)
 
 	err := b.AdvanceLive(context.Background(), "conn1", "", map[string]any{"k": "v"})
+	require.NoError(t, err)
+	assert.Len(t, d.execSQL, 1)
+}
+
+func TestAdvanceLive_EmptyConnectorID_NoOp(t *testing.T) {
+	d := &fakeDB{}
+	b := newBackfiller(d)
+
+	err := b.AdvanceLive(context.Background(), "", `{"p":1}`, map[string]any{"k": "v"})
 	require.NoError(t, err)
 	assert.Empty(t, d.execSQL)
 }

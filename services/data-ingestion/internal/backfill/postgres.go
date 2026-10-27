@@ -97,11 +97,12 @@ UPDATE data_ingestion_watermarks
 
 // AdvanceLive updates the committed watermark from the live stream. When a
 // gap is open it stores the watermark as live_frontier instead. No-op when
-// partition or watermark is empty.
+// connectorID or watermark is empty. An empty partition key is valid — it
+// represents a global per-connector watermark (no partition).
 //
 // Callers MUST invoke AdvanceLive only after outbox.Write returns nil.
 func (backfiller *PostgresBackfiller) AdvanceLive(ctx context.Context, connectorID, partition string, watermark map[string]any) error {
-	if partition == "" || len(watermark) == 0 {
+	if connectorID == "" || len(watermark) == 0 {
 		return nil
 	}
 
