@@ -12,7 +12,42 @@ This is a polyglot monorepo. Sub-components live under `services/` (long-running
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+### Prerequisites
+
+- Go (version pinned in the root `go.mod`)
+- [Buf](https://buf.build/docs/installation) for protobuf code generation
+- pnpm and uv for the TypeScript and Python sub-components
+
+### Go monorepo layout
+
+All Go code lives in a single module rooted at the repository top (`go.mod`).
+Standard Go tooling works from the root and resolves every package:
+
+```sh
+go build ./...
+go test ./...
+```
+
+Equivalent `make` targets fan the same commands out with coverage and linting:
+
+```sh
+make build   # buf generate, then go build ./...
+make test    # go test ./... with the race detector and coverage
+make lint     # golangci-lint per service
+```
+
+There is no `go.work` to initialize — the single module is the source of truth
+for dependencies and the Go toolchain version.
+
+### Adding a new Go service
+
+1. Create the service directory under `services/` (connectors under
+   `services/connectors/`).
+2. Put its Go packages under that directory; they join the root module
+   automatically — no new `go.mod`.
+3. Run `make tidy` (`go mod tidy`) to pull in any new dependencies.
+4. If the new code needs a newer Go release, bump the `go` directive in the
+   root `go.mod`; CI reads the toolchain version from there.
 
 ## Support, Feedback, Contributing
 

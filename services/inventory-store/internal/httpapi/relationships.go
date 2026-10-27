@@ -12,9 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	v1 "github.com/operational-context-graph/inventory-store/api/v1"
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
-	"github.com/operational-context-graph/inventory-store/internal/store"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/inventory-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/store"
 )
 
 const (

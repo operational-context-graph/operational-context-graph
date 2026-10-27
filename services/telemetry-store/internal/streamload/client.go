@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
 )
 
 // LoadResult holds the parsed Doris Stream Load response fields callers need.

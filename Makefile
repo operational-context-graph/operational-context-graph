@@ -20,36 +20,25 @@ go-work-init: ## Initialize local Go workspace (not committed; run once after ch
 	go work sync
 
 build: proto-generate ## Build all services
-	$(MAKE) -C $(SERVICE_DI) build
-	$(MAKE) -C $(SERVICE_IS) build
-	$(MAKE) -C $(CONNECTOR_INVENTORY) build
-	$(MAKE) -C $(SERVICE_TS) build
+	go build ./...
 
 run: ## Run the data-ingestion service (dev)
 	$(MAKE) -C $(SERVICE_DI) run
 
-vet: ## Vet all services and connectors
-	$(MAKE) -C $(SERVICE_DI) vet
-	$(MAKE) -C $(SERVICE_IS) vet
-	$(MAKE) -C $(CONNECTOR_INVENTORY) vet
-	$(MAKE) -C $(SERVICE_TS) vet
+vet: ## Vet the whole module
+	go vet ./...
 
-test: ## Test all services and connectors
-	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(SERVICE_IS) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(CONNECTOR_INVENTORY) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(SERVICE_TS) COVERAGE_DIR=$(COVERAGE_DIR) test
+test: ## Test the whole module with race detector and coverage
+	mkdir -p $(COVERAGE_DIR)
+	go test ./... -race -coverprofile=$(COVERAGE_DIR)/coverage.out
 
 lint: ## Lint all services and connectors
 	$(MAKE) -C $(SERVICE_DI) lint
 	$(MAKE) -C $(CONNECTOR_INVENTORY) lint
 	$(MAKE) -C $(SERVICE_TS) lint
 
-tidy: ## Tidy go.mod files
-	cd gen/go && go mod tidy
-	$(MAKE) -C $(SERVICE_DI) tidy
-	$(MAKE) -C $(CONNECTOR_INVENTORY) tidy
-	$(MAKE) -C $(SERVICE_TS) tidy
+tidy: ## Tidy the root go.mod
+	go mod tidy
 
 mocks: ## Regenerate mocks
 	$(MAKE) -C $(SERVICE_DI) mocks

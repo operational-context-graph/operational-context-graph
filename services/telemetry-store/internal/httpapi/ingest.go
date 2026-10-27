@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	v1 "github.com/operational-context-graph/telemetry-store/api/v1"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/telemetry-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
 )
 
 const (

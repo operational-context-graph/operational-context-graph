@@ -26,8 +26,8 @@ jobs:
       matrix:
         include:
           - language: go
-            # `build-mode: autobuild` fails in this go.work monorepo because it has no go.mod.
-            # We build each module ourselves (see the build step below).
+            # Manual build so proto stubs are generated before CodeQL traces the
+            # build (see the build step below). The repo root is a single Go module.
             build-mode: manual
           # TODO: enable when JavaScript/TypeScript support is needed
           # - language: javascript-typescript
@@ -44,7 +44,7 @@ jobs:
         if: matrix.language == 'go'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: services/data-ingestion/go.mod
+          go-version-file: go.mod
           cache: false
 
       - name: Set up Buf
@@ -60,8 +60,9 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
 
-      # Manual build: CodeQL traces this to build the database. Build every
-      # module so new services are covered automatically.
+      # Manual build: CodeQL traces this to build the database. `make build`
+      # compiles the whole module (go build ./...), so new packages are covered
+      # automatically.
       - name: Build Go modules
         if: matrix.language == 'go'
         run: |
