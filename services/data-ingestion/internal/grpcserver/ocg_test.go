@@ -99,12 +99,12 @@ func TestMaxMessagesBoundary(t *testing.T) {
 	for i := range msgs {
 		msgs[i] = envelope(nil)
 	}
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: msgs})
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 
 	// MaxMessages+1 — should be rejected
 	msgs = append(msgs, envelope(nil))
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: msgs})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.Error(t, err)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 }
@@ -115,7 +115,7 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: 50}
 	srv := newServer(t, noop(t), limits, defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope(nil)},
 	})
 	require.NoError(t, err, "nil payload is valid proto3; handler must not panic")
@@ -143,6 +143,20 @@ func TestNilBackfillerAtConstruction(t *testing.T) {
 	require.Error(t, err)
 }
 
+// --- 5.7: no connector identity → UNAUTHENTICATED ---
+
+func TestIngestNoConnectorIdentityReturnsUnauthenticated(t *testing.T) {
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	m.AssertNotCalled(t, "Ingest")
+}
+
 // --- 6.1: ErrOverloaded → UNAVAILABLE + RetryInfo ---
 
 func TestOverloadedErrorReturnsUnavailableWithRetryInfo(t *testing.T) {
@@ -150,7 +164,7 @@ func TestOverloadedErrorReturnsUnavailableWithRetryInfo(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, ingest.ErrOverloaded)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -169,7 +183,7 @@ func TestWrappedOverloadedDetected(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.Join(ingest.ErrOverloaded, errors.New("context")))
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -185,7 +199,7 @@ func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	for i := 0; i < 5; i++ {
-		_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 		})
 		require.Error(t, err)
@@ -202,7 +216,7 @@ func TestErrUnavailableReturnsUnavailable(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, unavailErr)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -221,7 +235,7 @@ func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.New(secretMsg))
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -239,13 +253,24 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected}, nil
 	})
-	srv := newServer(t, m, defaultLimits(), defaultRetry())
+	// Rejections in batch: AdvanceLive must NOT be called.
+	bf := NewMockBackfiller(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
 
-	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
-		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("a")), envelope([]byte("b")), envelope([]byte("c")), envelope([]byte("d"))},
-	})
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+	msgs := []*ingestionv1.MessageEnvelope{
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("a"), Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("b"), Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("c"), Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("d"), Watermark: wmStruct},
+	}
+	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(rejected), resp.PartialSuccess.RejectedMessages)
+	bf.AssertNotCalled(t, "AdvanceLive")
 }
 
 func TestAllRejectedReturnsOK(t *testing.T) {
@@ -253,19 +278,28 @@ func TestAllRejectedReturnsOK(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		return ingest.IngestResult{Rejected: len(batch)}, nil
 	})
-	srv := newServer(t, m, defaultLimits(), defaultRetry())
+	// All rejected: AdvanceLive must NOT be called.
+	bf := NewMockBackfiller(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
 
-	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
-		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x")), envelope([]byte("y"))},
-	})
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+	msgs := []*ingestionv1.MessageEnvelope{
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("x"), Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("y"), Watermark: wmStruct},
+	}
+	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), resp.PartialSuccess.RejectedMessages)
+	bf.AssertNotCalled(t, "AdvanceLive")
 }
 
 // --- 6.6: context cancelled ---
 
 func TestCancelledContextOnEntry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctxWithConnectorID("conn-1"))
 	cancel()
 
 	srv := newServer(t, noop(t), defaultLimits(), defaultRetry())
@@ -275,7 +309,7 @@ func TestCancelledContextOnEntry(t *testing.T) {
 }
 
 func TestContextCancelledDuringIngest(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctxWithConnectorID("conn-1"))
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(c context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		cancel()
@@ -301,7 +335,7 @@ func TestConcurrentIngest(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+			_, _ = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 				Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("concurrent"))},
 			})
 		}()
@@ -328,7 +362,7 @@ func TestPartitionFieldMapped(t *testing.T) {
 		Payload:           []byte("x"),
 		Partition:         partitionStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Equal(t, `{"key":"val"}`, captured[0].Partition)
@@ -352,7 +386,7 @@ func TestWatermarkFieldMapped(t *testing.T) {
 		Payload:           []byte("x"),
 		Watermark:         watermarkStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Empty(t, captured[0].Partition, "partition must be empty when not set")
@@ -379,7 +413,7 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 		Partition:         partitionStruct,
 		Watermark:         watermarkStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Equal(t, `{"shard":"east"}`, captured[0].Partition)
@@ -473,7 +507,7 @@ func TestIngestPipelineDeadlineExceeded(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.DeadlineExceeded)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -485,7 +519,7 @@ func TestIngestPipelineCanceled(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.Canceled)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)

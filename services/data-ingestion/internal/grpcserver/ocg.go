@@ -87,6 +87,9 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	connectorID := connectorIDFromContext(ctx)
+	if connectorID == "" {
+		return nil, status.Error(codes.Unauthenticated, "connector identity required")
+	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
 	for i, env := range req.Messages {
@@ -116,15 +119,19 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		return nil, recv.handler.mapIngestError(err)
 	}
 
-	// Advance live watermarks for accepted messages that carry a watermark.
-	// Nil partition is valid — it produces an empty partition key representing
-	// a generic per-connector watermark (no partition).
-	for i, env := range req.Messages {
-		if env.Watermark == nil {
-			continue
-		}
-		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
-			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+	// Advance live watermarks only when all messages in the batch were accepted.
+	// IngestResult carries only aggregate counts, not per-index status, so we
+	// cannot safely skip individual rejected messages while advancing others.
+	// Skipping the entire watermark advance on any rejection is safe: the
+	// connector retries the batch and the watermark catches up then.
+	if result.Rejected == 0 {
+		for i, env := range req.Messages {
+			if env.Watermark == nil {
+				continue
+			}
+			if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
+				return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+			}
 		}
 	}
 
@@ -159,14 +166,20 @@ func (h *OCGHandler) mapIngestError(err error) error {
 }
 
 // unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
-func (s *OCGHandler) unavailableWithRetry(msg string) error {
+// Both OCGHandler and OCGBackfillHandler delegate to this shared function so
+// retry-delay policy stays in one place.
+func unavailableWithRetry(msg string, retry *config.RetryConfig) error {
 	base := status.New(codes.Unavailable, msg)
 	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(s.retry.RetryDelay),
+		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if err != nil {
 		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
 		return base.Err()
 	}
 	return withRetry.Err()
+}
+
+func (s *OCGHandler) unavailableWithRetry(msg string) error {
+	return unavailableWithRetry(msg, s.retry)
 }

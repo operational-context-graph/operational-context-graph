@@ -14,10 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
-
-	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
@@ -69,15 +66,7 @@ func (h *OCGBackfillHandler) register(grpcSrv *grpc.Server) {
 
 // unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
 func (h *OCGBackfillHandler) unavailableWithRetry(msg string) error {
-	base := status.New(codes.Unavailable, msg)
-	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(h.retry.InitialBackoff),
-	})
-	if err != nil {
-		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
-		return base.Err()
-	}
-	return withRetry.Err()
+	return unavailableWithRetry(msg, h.retry)
 }
 
 // ── receiver struct ───────────────────────────────────────────────────────────
@@ -159,14 +148,15 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 	if req == nil || len(req.Messages) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "messages must not be empty")
 	}
-	if len(req.Messages) > recv.handler.limits.MaxMessages {
-		return nil, status.Errorf(codes.ResourceExhausted,
-			"batch exceeds maximum message count (%d)", recv.handler.limits.MaxMessages)
-	}
 
 	connectorID := connectorIDFromContext(ctx)
 	if connectorID == "" {
 		return nil, status.Error(codes.Unauthenticated, "connector identity required")
+	}
+
+	if len(req.Messages) > recv.handler.limits.MaxMessages {
+		return nil, status.Errorf(codes.ResourceExhausted,
+			"batch exceeds maximum message count (%d)", recv.handler.limits.MaxMessages)
 	}
 
 	// Build the full batch metadata first, then filter by gap state.
@@ -189,15 +179,24 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 	}
 
 	// Per-message gap check; build the sub-batch of gap-open messages.
+	// Cache results by partition key to avoid N identical DB queries for a batch
+	// where many messages share the same partition.
 	type gapMsg struct {
 		idx    int
 		record ingest.IngestRecord
 	}
+	gapCache := make(map[string]bool)
 	var gapMsgs []gapMsg
 	for i, env := range req.Messages {
-		gapOpen, err := recv.handler.backfiller.IsGapOpen(ctx, connectorID, metas[i].partitionKey)
-		if err != nil {
-			return nil, recv.handler.unavailableWithRetry("gap check failed")
+		partKey := metas[i].partitionKey
+		gapOpen, cached := gapCache[partKey]
+		if !cached {
+			var err error
+			gapOpen, err = recv.handler.backfiller.IsGapOpen(ctx, connectorID, partKey)
+			if err != nil {
+				return nil, recv.handler.unavailableWithRetry("gap check failed")
+			}
+			gapCache[partKey] = gapOpen
 		}
 		if !gapOpen {
 			continue
@@ -241,13 +240,18 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	// Advance backfill watermarks for accepted messages with non-nil watermarks.
-	for _, gm := range gapMsgs {
-		if metas[gm.idx].watermark == nil {
-			continue
-		}
-		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, metas[gm.idx].partitionKey, metas[gm.idx].watermark); err != nil {
-			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+	// Advance backfill watermarks only when all messages in the sub-batch were
+	// accepted. IngestResult carries only aggregate counts, so we cannot safely
+	// skip individual rejected messages. Skipping on any rejection is safe: the
+	// connector retries and the watermark catches up on the successful retry.
+	if result.Rejected == 0 {
+		for _, gm := range gapMsgs {
+			if metas[gm.idx].watermark == nil {
+				continue
+			}
+			if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, metas[gm.idx].partitionKey, metas[gm.idx].watermark); err != nil {
+				return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+			}
 		}
 	}
 
