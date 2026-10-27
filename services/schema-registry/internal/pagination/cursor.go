@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"maps"
 	"strconv"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
@@ -171,9 +172,7 @@ func stringMap(value any) (map[string]string, bool) {
 
 func cloneFilters(filters map[string]string) map[string]string {
 	clone := make(map[string]string, len(filters))
-	for key, value := range filters {
-		clone[key] = value
-	}
+	maps.Copy(clone, filters)
 	return clone
 }
 
