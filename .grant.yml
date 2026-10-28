@@ -11,7 +11,9 @@ quiet: false
 verbose: true
 
 require-license: true
-require-known-license: true
+# Syft emits LicenseRef-* hashes for license texts it cannot map to a standard SPDX ID.
+# Requiring known licenses would deny packages whose known license is otherwise allowed.
+require-known-license: false
 
 allow:
   - 0BSD
