@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	v1 "github.com/operational-context-graph/inventory-store/api/v1"
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
-	"github.com/operational-context-graph/inventory-store/internal/httpapi"
-	"github.com/operational-context-graph/inventory-store/internal/store"
-	"github.com/operational-context-graph/inventory-store/internal/test"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/inventory-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

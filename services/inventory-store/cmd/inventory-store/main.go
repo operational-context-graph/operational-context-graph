@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/operational-context-graph/inventory-store/internal/config"
-	"github.com/operational-context-graph/inventory-store/internal/database"
-	"github.com/operational-context-graph/inventory-store/internal/httpapi"
-	"github.com/operational-context-graph/inventory-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/database"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/store"
 )
 
 func main() {

@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
 )
 
 const (

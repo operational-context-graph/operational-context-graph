@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin/binding"
-	"github.com/operational-context-graph/telemetry-store/internal/config"
-	"github.com/operational-context-graph/telemetry-store/internal/database"
-	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
-	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
-	"github.com/operational-context-graph/telemetry-store/internal/store"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/database"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
 )
 
 func main() {

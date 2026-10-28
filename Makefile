@@ -2,57 +2,109 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-SHELL := /usr/bin/env bash
-
-SERVICE_DI := services/data-ingestion
-SERVICE_IS := services/inventory-store
-SERVICE_TS := services/telemetry-store
-CONNECTOR_INVENTORY := services/connectors/inventory
+SHELL       := /usr/bin/env bash
+BIN_DIR     := bin
 COVERAGE_DIR := $(CURDIR)/coverage
 
-.PHONY: build run test lint vet tidy mocks \
-	proto-lint proto-format proto-generate go-work-init
+# Go modules discovery. Connectors carry the subdirectory prefix.
+# TARGET_DIR = services/$(TARGET) resolves correctly for every target.
+SERVICES   := $(patsubst services/%/go.mod,%,$(wildcard services/*/go.mod))
+CONNECTORS := $(patsubst services/connectors/%/go.mod,connectors/%,$(wildcard services/connectors/*/go.mod))
+TARGETS    := $(SERVICES) $(CONNECTORS)
 
-go-work-init: ## Initialize local Go workspace (not committed; run once after checkout)
+# Resolved path for a single target. Used when TARGET is set.
+TARGET_DIR = services/$(TARGET)
+
+.PHONY: init build build-all run \
+        vet vet-all test test-all lint lint-all tidy tidy-all mocks \
+        proto-lint proto-format proto-generate \
+        require-target require-targets
+
+# =============================================================================
+# Workspace
+# =============================================================================
+
+# Set up the local Go workspace file. Not committed; run once after checkout.
+# go.work is ignored by .gitignore so the workspace is local only.
+# Always re-runs go work use to handle partial or outdated workspace files.
+init:
 	@if [ ! -f go.work ]; then \
-		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
+		go work init; \
 	fi
+	go work use gen/go $(addprefix services/,$(TARGETS))
 	go work sync
 
-build: proto-generate ## Build all services
-	$(MAKE) -C $(SERVICE_DI) build
-	$(MAKE) -C $(SERVICE_IS) build
-	$(MAKE) -C $(CONNECTOR_INVENTORY) build
-	$(MAKE) -C $(SERVICE_TS) build
+# =============================================================================
+# Development
+# =============================================================================
 
-run: ## Run the data-ingestion service (dev)
-	$(MAKE) -C $(SERVICE_DI) run
+# Build one service. Requires TARGET=<name>, e.g. make build TARGET=data-ingestion
+build: require-target
+	$(MAKE) -C $(TARGET_DIR) build
 
-vet: ## Vet all services and connectors
-	$(MAKE) -C $(SERVICE_DI) vet
-	$(MAKE) -C $(SERVICE_IS) vet
-	$(MAKE) -C $(CONNECTOR_INVENTORY) vet
-	$(MAKE) -C $(SERVICE_TS) vet
+# Build every service and connector.
+build-all: require-targets
+	@for s in $(TARGETS); do \
+		echo "==> build $$s"; \
+		$(MAKE) --no-print-directory build TARGET=$$s; \
+	done
 
-test: ## Test all services and connectors
-	$(MAKE) -C $(SERVICE_DI) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(SERVICE_IS) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(CONNECTOR_INVENTORY) COVERAGE_DIR=$(COVERAGE_DIR) test
-	$(MAKE) -C $(SERVICE_TS) COVERAGE_DIR=$(COVERAGE_DIR) test
+# Run one service locally. Requires TARGET=<name>.
+run: require-target
+	$(MAKE) -C $(TARGET_DIR) run
 
-lint: ## Lint all services and connectors
-	$(MAKE) -C $(SERVICE_DI) lint
-	$(MAKE) -C $(CONNECTOR_INVENTORY) lint
-	$(MAKE) -C $(SERVICE_TS) lint
+# Vet one service. Requires TARGET=<name>.
+vet: require-target
+	$(MAKE) -C $(TARGET_DIR) vet
 
-tidy: ## Tidy go.mod files
+# Vet every service and connector.
+vet-all: require-targets
+	@for s in $(TARGETS); do \
+		echo "==> vet $$s"; \
+		$(MAKE) --no-print-directory vet TARGET=$$s; \
+	done
+
+# Test one service. Requires TARGET=<name>.
+test: require-target
+	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) test
+
+# Test every service and connector. Coverage profiles land in $(COVERAGE_DIR).
+test-all: require-targets
+	@for s in $(TARGETS); do \
+		echo "==> test $$s"; \
+		$(MAKE) --no-print-directory test TARGET=$$s; \
+	done
+
+# Lint one service. Requires TARGET=<name>.
+lint: require-target
+	$(MAKE) -C $(TARGET_DIR) lint
+
+# Lint every service and connector.
+lint-all: require-targets
+	@for s in $(TARGETS); do \
+		echo "==> lint $$s"; \
+		$(MAKE) --no-print-directory lint TARGET=$$s; \
+	done
+
+# Tidy go.mod for one service. Requires TARGET=<name>.
+tidy: require-target
+	$(MAKE) -C $(TARGET_DIR) tidy
+
+# Tidy go.mod for every module, including the shared gen/go stubs.
+tidy-all: require-targets
 	cd gen/go && go mod tidy
-	$(MAKE) -C $(SERVICE_DI) tidy
-	$(MAKE) -C $(CONNECTOR_INVENTORY) tidy
-	$(MAKE) -C $(SERVICE_TS) tidy
+	@for s in $(TARGETS); do \
+		echo "==> tidy $$s"; \
+		$(MAKE) --no-print-directory tidy TARGET=$$s; \
+	done
 
-mocks: ## Regenerate mocks
-	$(MAKE) -C $(SERVICE_DI) mocks
+# Regenerate mocks for data-ingestion (requires mockery).
+mocks:
+	$(MAKE) -C services/data-ingestion mocks
+
+# =============================================================================
+# Protobuf
+# =============================================================================
 
 proto-lint:
 	buf lint
@@ -60,6 +112,24 @@ proto-lint:
 proto-format:
 	buf format -w
 
+# Regenerate Go stubs under gen/go from proto sources.
 proto-generate:
 	buf generate
 
+# =============================================================================
+# Guards
+# =============================================================================
+
+require-target:
+	@test -n "$(TARGET)" || { \
+		echo "ERROR: TARGET is required. Example: make $(MAKECMDGOALS) TARGET=telemetry-store"; \
+		echo "       Available targets: $(TARGETS)"; \
+		exit 1; \
+	}
+
+require-targets:
+	@test -n "$(TARGETS)" || { \
+		echo "ERROR: no targets found under services/*/go.mod"; \
+		echo "       Run make from the repo root and ensure each service has a go.mod"; \
+		exit 1; \
+	}

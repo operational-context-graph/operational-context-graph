@@ -6,7 +6,7 @@ package store
 import (
 	"fmt"
 
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
 )
 
 var (

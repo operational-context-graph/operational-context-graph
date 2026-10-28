@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
 )
 
 // QueryLogs returns log rows matching q.

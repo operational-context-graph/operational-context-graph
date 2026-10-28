@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/operational-context-graph/inventory-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/store"
 	"github.com/stretchr/testify/require"
 )
 

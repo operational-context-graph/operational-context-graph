@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/operational-context-graph/telemetry-store/api/v1"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
-	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
-	"github.com/operational-context-graph/telemetry-store/internal/store"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
-	"github.com/operational-context-graph/telemetry-store/internal/test"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/telemetry-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
