@@ -18,7 +18,7 @@ import (
 // grpcHostEnv / grpcPortEnv satisfy the required GRPC Host+Port fields.
 const grpcHostEnv = "OCG_DI_GRPC__HOST"
 const grpcPortEnv = "OCG_DI_GRPC__PORT"
-const dbPasswordEnv = "OCG_DI_DATABASE__PASSWORD"
+const dbPasswordEnv = "OCG_DI_DATABASE__PASSWORD" //nolint:gosec // G101: this is an environment variable name, not a credential.
 
 func TestLoadUsesEnvConfigFile(t *testing.T) {
 	dir := t.TempDir()

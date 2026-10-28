@@ -11,26 +11,26 @@ import (
 
 // Log is one row from ocg.logs.
 type Log struct {
-	Timestamp          time.Time `json:"timestamp"`
-	IRI                string    `json:"iri"`
+	Timestamp          time.Time  `json:"timestamp"`
+	IRI                string     `json:"iri"`
 	ObservedTimestamp  *time.Time `json:"observed_timestamp,omitempty"`
-	HostName           *string   `json:"host_name,omitempty"`
-	Severity           *string   `json:"severity,omitempty"`
-	Body               *string   `json:"body,omitempty"`
-	ResourceAttributes *string   `json:"resource_attributes,omitempty"`
-	Attributes         *string   `json:"attributes,omitempty"`
+	HostName           *string    `json:"host_name,omitempty"`
+	Severity           *string    `json:"severity,omitempty"`
+	Body               *string    `json:"body,omitempty"`
+	ResourceAttributes *string    `json:"resource_attributes,omitempty"`
+	Attributes         *string    `json:"attributes,omitempty"`
 }
 
 // Metric is one row from ocg.metrics.
 type Metric struct {
-	Timestamp          time.Time `json:"timestamp"`
-	IRI                string    `json:"iri"`
+	Timestamp          time.Time  `json:"timestamp"`
+	IRI                string     `json:"iri"`
 	ObservedTimestamp  *time.Time `json:"observed_timestamp,omitempty"`
-	HostName           *string   `json:"host_name,omitempty"`
-	MetricName         *string   `json:"metric_name,omitempty"`
-	Value              *float64  `json:"value,omitempty"`
-	ResourceAttributes *string   `json:"resource_attributes,omitempty"`
-	Attributes         *string   `json:"attributes,omitempty"`
+	HostName           *string    `json:"host_name,omitempty"`
+	MetricName         *string    `json:"metric_name,omitempty"`
+	Value              *float64   `json:"value,omitempty"`
+	ResourceAttributes *string    `json:"resource_attributes,omitempty"`
+	Attributes         *string    `json:"attributes,omitempty"`
 }
 
 // LogQuery parameters for GET /v1/telemetry/logs.

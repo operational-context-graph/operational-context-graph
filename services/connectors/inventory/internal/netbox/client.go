@@ -84,7 +84,7 @@ func (c *HTTPClient) doRequest(ctx context.Context, url string) (*pageResponse, 
 	if err != nil {
 		return nil, isRetryableErr(err), err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Body.Close errors are non-actionable in defers.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, false, ErrNotFound

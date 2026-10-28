@@ -19,6 +19,7 @@ import (
 
 const routeKey = "route"
 const requestIDKey = "request_id"
+const logKey = "logger"
 
 // db is the interface the HTTP handlers require from the store layer.
 type db interface {
@@ -39,12 +40,14 @@ type db interface {
 
 // NewServer creates a configured Gin-backed HTTP server.
 func NewServer(d db, addr string) *http.Server {
+	log := slog.Default()
 	gin.SetMode(gin.ReleaseMode)
 	binding.EnableDecoderDisallowUnknownFields = true
 	r := gin.New()
 	r.Use(requestIDMiddleware())
-	r.Use(loggingMiddleware())
-	r.Use(panicRecoveryMiddleware())
+	r.Use(loggerMiddleware(log))
+	r.Use(loggingMiddleware(log))
+	r.Use(panicRecoveryMiddleware(log))
 
 	r.GET("/health", func(c *gin.Context) {
 		if err := d.Ping(c.Request.Context()); err != nil {
@@ -89,14 +92,22 @@ func requestIDMiddleware() gin.HandlerFunc {
 	}
 }
 
-func loggingMiddleware() gin.HandlerFunc {
+// loggerMiddleware stores the logger in the Gin context so package functions can retrieve it.
+func loggerMiddleware(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(logKey, log)
+		c.Next()
+	}
+}
+
+func loggingMiddleware(log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
 		path := sanitizeForLog(c.FullPath())
-		slog.Info("request",
+		log.Info("request",
 			"route", route,
 			"method", c.Request.Method,
 			"path", path,
@@ -135,11 +146,11 @@ func jsonBodyMiddleware(maxBytes int64) gin.HandlerFunc {
 }
 
 // panicRecoveryMiddleware recovers from panics, logs them via slog, and returns a 500 problem response.
-func panicRecoveryMiddleware() gin.HandlerFunc {
+func panicRecoveryMiddleware(log *slog.Logger) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
-		slog.Error("panic recovered",
+		log.Error("panic recovered",
 			"panic", recovered,
 			"route", route,
 			"request_id", requestID,

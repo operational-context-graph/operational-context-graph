@@ -32,6 +32,7 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 		args = append(args, tsStr, tsStr, *q.AfterIRI)
 	}
 
+	//nolint:gosec // G201: where clause uses only internal filter strings, not user input; Limit is an integer.
 	stmt := fmt.Sprintf(
 		`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name, metric_name, value,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
@@ -41,7 +42,7 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 	if err != nil {
 		return nil, fmt.Errorf("query metrics: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Close errors are non-actionable after row iteration.
 
 	var metrics []Metric
 	for rows.Next() {

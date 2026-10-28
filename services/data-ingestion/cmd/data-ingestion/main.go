@@ -33,7 +33,8 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("data-ingestion exited with error", "error", err)
+		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		log.Error("data-ingestion exited with error", "error", err)
 		os.Exit(1)
 	}
 }
@@ -46,10 +47,11 @@ func run() error {
 	}
 
 	var level slog.Level
-	if err := level.UnmarshalText([]byte(cfg.Logging.Level)); err != nil {
-		return fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, err)
+	if unmarshalErr := level.UnmarshalText([]byte(cfg.Logging.Level)); unmarshalErr != nil {
+		return fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, unmarshalErr)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -99,11 +101,11 @@ func run() error {
 		BackoffJitter:  cfg.Drain.BackoffJitter,
 		MaxRetries:     cfg.Drain.MaxRetries,
 		PageSize:       cfg.Drain.PageSize,
-	}, slog.Default())
+	}, log)
 
-	slog.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
-	slog.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
-	slog.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
+	log.Info("data-ingestion starting", "log_level", cfg.Logging.Level)
+	log.Info("http server", "host", cfg.Server.Host, "port", cfg.Server.Port)
+	log.Info("grpc server", "host", cfg.GRPC.Host, "port", cfg.GRPC.Port, "tls", cfg.GRPC.TLS != nil)
 
 	// The HTTP server, gRPC server, and outbox drain all run until the shared
 	// context is cancelled. Any one of them returning triggers shutdown of the

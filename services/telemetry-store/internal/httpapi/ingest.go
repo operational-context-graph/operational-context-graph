@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -120,7 +121,8 @@ func readAndValidateNDJSON(r io.Reader) ([]byte, error) {
 		lineCount++
 	}
 	if err := scanner.Err(); err != nil {
-		if mbe, ok := err.(*http.MaxBytesError); ok {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
 			return nil, mbe
 		}
 		return nil, fmt.Errorf("%w: reading body: %s", apperr.ErrInvalidInput, err.Error())

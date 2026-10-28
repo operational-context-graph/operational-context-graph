@@ -33,7 +33,7 @@ func newTestPublisher(t *testing.T, srv *fakeIngestionServer) *GRPCPublisher {
 	listener := bufconn.Listen(bufSize)
 	grpcServer := grpc.NewServer()
 	pb.RegisterIngestionServiceServer(grpcServer, srv)
-	go grpcServer.Serve(listener)
+	go func() { _ = grpcServer.Serve(listener) }() // Serve error is non-actionable in background goroutine.
 	t.Cleanup(grpcServer.Stop)
 
 	conn, err := grpc.NewClient("passthrough://bufnet",
@@ -43,7 +43,7 @@ func newTestPublisher(t *testing.T, srv *fakeIngestionServer) *GRPCPublisher {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() }) // Close errors are non-actionable in test cleanup.
 
 	return &GRPCPublisher{
 		conn:        conn,
@@ -55,11 +55,11 @@ func newTestPublisher(t *testing.T, srv *fakeIngestionServer) *GRPCPublisher {
 func testMessage() envelope.Message {
 	return envelope.Message{
 		LogicalArtifactId: "netbox.Device",
-		SchemaVersion:       "0.1.0",
-		Payload:             json.RawMessage(`{"id":1}`),
-		Partition:           map[string]any{"endpoint": "dcim/devices/"},
-		Watermark:           map[string]any{"last_id": 1},
-		ContentType:         "application/json",
+		SchemaVersion:     "0.1.0",
+		Payload:           json.RawMessage(`{"id":1}`),
+		Partition:         map[string]any{"endpoint": "dcim/devices/"},
+		Watermark:         map[string]any{"last_id": 1},
+		ContentType:       "application/json",
 	}
 }
 

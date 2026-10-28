@@ -100,7 +100,10 @@ func renderError(c *gin.Context, err error) {
 		requestID := c.GetHeader("X-Request-Id")
 		requestID = strings.ReplaceAll(requestID, "\n", "")
 		requestID = strings.ReplaceAll(requestID, "\r", "")
-		slog.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
+		log, _ := c.Get(logKey)
+		if l, ok := log.(*slog.Logger); ok {
+			l.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
+		}
 		p = problem{
 			Type:   errTypeInternal,
 			Title:  "Internal Server Error",

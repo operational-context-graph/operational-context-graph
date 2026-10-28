@@ -24,9 +24,9 @@ import (
 
 // stubDB is a hand-written stub that satisfies the httpapi db interface.
 type stubDB struct {
-	upsertAssetFn        func(ctx context.Context, in store.AssetInput) (store.Asset, bool, error)
-	getAssetFn           func(ctx context.Context, id uuid.UUID) (store.Asset, error)
-	closeRelationshipFn  func(ctx context.Context, id uuid.UUID) error
+	upsertAssetFn       func(ctx context.Context, in store.AssetInput) (store.Asset, bool, error)
+	getAssetFn          func(ctx context.Context, id uuid.UUID) (store.Asset, error)
+	closeRelationshipFn func(ctx context.Context, id uuid.UUID) error
 }
 
 func (s *stubDB) UpsertAsset(ctx context.Context, in store.AssetInput) (store.Asset, bool, error) {
@@ -71,7 +71,7 @@ func (s *stubDB) UpsertRelationshipBatch(_ context.Context, _ []store.Relationsh
 func (s *stubDB) UpsertRelationshipBatchByKey(_ context.Context, _ []store.RelationshipKeyInput) ([]store.Relationship, error) {
 	return nil, nil
 }
-func (s *stubDB) Ping(_ context.Context) error { return nil }
+func (s *stubDB) Ping(_ context.Context) error        { return nil }
 func (s *stubDB) SchemaReady(_ context.Context) error { return nil }
 
 func TestHandleUpsertAsset_Created(t *testing.T) {
@@ -173,8 +173,6 @@ func TestHandleFilterRelationships_EmptyResult(t *testing.T) {
 	test.DecodeJSON(t, rr, &resp)
 	assert.Empty(t, resp.Items)
 }
-
-
 
 func TestHealthEndpoint_OK(t *testing.T) {
 	srv := httpapi.NewServer(&stubDB{}, ":0")

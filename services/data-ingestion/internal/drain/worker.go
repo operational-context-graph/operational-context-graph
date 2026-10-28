@@ -59,7 +59,7 @@ func (wk *worker) run(ctx context.Context) {
 		rows, err := wk.outbox.ScanPending(ctx, wk.storeID, wk.cfg.PageSize)
 		if err != nil {
 			if ctx.Err() == nil {
-				wk.log.Warn("scan pending failed; backing off", "error", err)
+				wk.log.WarnContext(ctx, "scan pending failed; backing off", "error", err)
 			}
 			if !sleepCtx(ctx, wk.cfg.PollInterval) {
 				return
@@ -117,7 +117,7 @@ func (wk *worker) flush(ctx context.Context, rows []PendingRow) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		wk.log.Warn("pin batch failed; backing off", "error", err)
+		wk.log.WarnContext(ctx, "pin batch failed; backing off", "error", err)
 		return sleepCtx(ctx, wk.cfg.PollInterval)
 	}
 	return wk.deliver(ctx, toBatch(batchID, rows))
@@ -141,7 +141,7 @@ func (wk *worker) deliver(ctx context.Context, batch store.Batch) bool {
 		}
 		if err == nil {
 			if derr := wk.outbox.DeleteBatch(ctx, batch.ID); derr != nil {
-				wk.log.Warn("batch acknowledged but delete failed; will resend",
+				wk.log.WarnContext(ctx, "batch acknowledged but delete failed; will resend",
 					"batch_id", batch.ID, "error", derr)
 			}
 			return true
@@ -149,7 +149,7 @@ func (wk *worker) deliver(ctx context.Context, batch store.Batch) bool {
 
 		var perm *store.PermanentError
 		if errors.As(err, &perm) {
-			wk.log.Error("permanent store failure; discarding batch",
+			wk.log.ErrorContext(ctx, "permanent store failure; discarding batch",
 				"batch_id", batch.ID, "reason", perm.Reason)
 			wk.discard(ctx, batch.ID)
 			return true
@@ -159,12 +159,12 @@ func (wk *worker) deliver(ctx context.Context, batch store.Batch) bool {
 		attempts++
 		overloaded := errors.Is(err, store.ErrOverloaded)
 		if wk.cfg.MaxRetries > 0 && attempts >= wk.cfg.MaxRetries {
-			wk.log.Error("max retries exhausted; discarding batch",
+			wk.log.ErrorContext(ctx, "max retries exhausted; discarding batch",
 				"batch_id", batch.ID, "attempts", attempts, "overloaded", overloaded, "error", err)
 			wk.discard(ctx, batch.ID)
 			return true
 		}
-		wk.log.Warn("store delivery failed; pausing and retrying",
+		wk.log.WarnContext(ctx, "store delivery failed; pausing and retrying",
 			"batch_id", batch.ID, "attempt", attempts, "overloaded", overloaded, "error", err)
 		if !sleepCtx(ctx, wk.backoff.next()) {
 			return false
@@ -175,7 +175,7 @@ func (wk *worker) deliver(ctx context.Context, batch store.Batch) bool {
 // discard removes a batch's rows after a permanent or retry-exhausted failure.
 func (wk *worker) discard(ctx context.Context, batchID int64) {
 	if err := wk.outbox.DeleteBatch(ctx, batchID); err != nil && ctx.Err() == nil {
-		wk.log.Warn("discard delete failed; batch stays pinned", "batch_id", batchID, "error", err)
+		wk.log.WarnContext(ctx, "discard delete failed; batch stays pinned", "batch_id", batchID, "error", err)
 	}
 }
 
@@ -186,7 +186,7 @@ func (wk *worker) resumePinned(ctx context.Context) {
 	rows, err := wk.outbox.LoadPinned(ctx, wk.storeID)
 	if err != nil {
 		if ctx.Err() == nil {
-			wk.log.Warn("load pinned failed", "error", err)
+			wk.log.WarnContext(ctx, "load pinned failed", "error", err)
 		}
 		return
 	}

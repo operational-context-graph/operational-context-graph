@@ -41,7 +41,8 @@ func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
 			Limit:    limit,
 		}
 		if after := c.Query("after"); after != "" {
-			cur, err := store.DecodeCursor(after)
+			var cur store.Cursor
+			cur, err = store.DecodeCursor(after)
 			if err != nil {
 				renderError(c, fmt.Errorf("%w: invalid cursor", apperr.ErrInvalidInput))
 				return
@@ -97,7 +98,8 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 			Limit:      limit,
 		}
 		if after := c.Query("after"); after != "" {
-			cur, err := store.DecodeCursor(after)
+			var cur store.Cursor
+			cur, err = store.DecodeCursor(after)
 			if err != nil {
 				renderError(c, fmt.Errorf("%w: invalid cursor", apperr.ErrInvalidInput))
 				return

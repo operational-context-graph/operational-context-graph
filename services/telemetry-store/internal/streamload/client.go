@@ -74,7 +74,7 @@ func (c *Client) doLoad(ctx context.Context, url, label string, body io.Reader) 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", apperr.ErrDorisOverloaded, err.Error())
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Body.Close errors are non-actionable in defers.
 
 	// Doris FE redirects to a coordinator BE on 307; re-attach auth.
 	if resp.StatusCode == http.StatusTemporaryRedirect {
@@ -84,7 +84,8 @@ func (c *Client) doLoad(ctx context.Context, url, label string, body io.Reader) 
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 
-		req2, err := http.NewRequestWithContext(ctx, http.MethodPut, location, bytes.NewReader(buf))
+		var req2 *http.Request
+		req2, err = http.NewRequestWithContext(ctx, http.MethodPut, location, bytes.NewReader(buf))
 		if err != nil {
 			return nil, fmt.Errorf("build redirect request: %w", err)
 		}
@@ -93,7 +94,7 @@ func (c *Client) doLoad(ctx context.Context, url, label string, body io.Reader) 
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", apperr.ErrDorisOverloaded, err.Error())
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }() // Body.Close errors are non-actionable in defers.
 	}
 
 	if resp.StatusCode == http.StatusServiceUnavailable {

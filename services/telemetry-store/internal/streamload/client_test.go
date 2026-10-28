@@ -139,6 +139,7 @@ func TestLoad_307Redirect_ResendsBody(t *testing.T) {
 	defer be.Close()
 
 	fe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//nolint:gosec // G710: open redirect is intentional in this test to simulate Doris FE→BE redirect.
 		http.Redirect(w, r, be.URL+r.URL.Path, http.StatusTemporaryRedirect)
 	}))
 	defer fe.Close()
@@ -148,4 +149,3 @@ func TestLoad_307Redirect_ResendsBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, validNDJSON, string(beBody), "BE must receive the full NDJSON body after redirect")
 }
-

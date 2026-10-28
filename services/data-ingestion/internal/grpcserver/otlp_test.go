@@ -107,14 +107,17 @@ func (s *spySchemaClient) DefaultTraceSchema(_ context.Context) (ingest.SchemaKe
 
 const otlpBufSize = 1 << 20
 
+//nolint:gochecknoglobals // test-package-level variables shared across test functions.
 var testRetry = &config.RetryConfig{
 	InitialBackoff: 100 * time.Millisecond,
 	MaxBackoff:     time.Second,
 	Multiplier:     1.5,
 }
 
+//nolint:gochecknoglobals // test-package-level variables shared across test functions.
 var testLimits = &config.LimitsConfig{MaxMessages: 100, MaxPayloadBytes: 4 * 1024 * 1024}
 
+//nolint:gochecknoglobals // test-package-level variables shared across test functions.
 var testGRPCCfg = &config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second}
 
 type otlpClients struct {
@@ -151,7 +154,7 @@ func newOTLPBufconn(t *testing.T, ingestor ingest.Ingestor, schemaClient grpcser
 		traces:  collectortracesv1.NewTraceServiceClient(conn),
 	}
 	return clients, func() {
-		conn.Close()
+		_ = conn.Close()
 		cancel()
 		<-errc
 	}

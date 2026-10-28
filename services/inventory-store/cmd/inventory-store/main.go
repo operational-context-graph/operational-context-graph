@@ -25,8 +25,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(ctx); err != nil {
-		slog.Error("startup failed", "error", err)
+		log.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -38,10 +39,11 @@ func run(ctx context.Context) error {
 	}
 
 	var level slog.Level
-	if err := level.UnmarshalText([]byte(cfg.Logging.Level)); err != nil {
+	if unmarshalErr := level.UnmarshalText([]byte(cfg.Logging.Level)); unmarshalErr != nil {
 		level = slog.LevelInfo
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(log)
 
 	pool, err := database.Open(ctx, cfg.DSN(), cfg.Database.MaxConns, 0, cfg.Database.ConnMaxLifetime)
 	if err != nil {
@@ -54,23 +56,23 @@ func run(ctx context.Context) error {
 	srv := httpapi.NewServer(db, ":"+strconv.Itoa(cfg.Server.Port))
 	srvErrC := make(chan error, 1)
 	go func() {
-		slog.Info("starting inventory-store", "addr", srv.Addr)
+		log.InfoContext(ctx, "starting inventory-store", "addr", srv.Addr)
 		srvErrC <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
-	case err := <-srvErrC:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("server error: %w", err)
+	case srvErr := <-srvErrC:
+		if srvErr != nil && !errors.Is(srvErr, http.ErrServerClosed) {
+			return fmt.Errorf("server error: %w", srvErr)
 		}
 	}
 
-	slog.Info("shutting down")
+	log.InfoContext(ctx, "shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutCtx); err != nil {
-		return fmt.Errorf("graceful shutdown: %w", err)
+	if shutErr := srv.Shutdown(shutCtx); shutErr != nil {
+		return fmt.Errorf("graceful shutdown: %w", shutErr)
 	}
 	return nil
 }

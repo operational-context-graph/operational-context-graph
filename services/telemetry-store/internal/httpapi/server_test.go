@@ -432,4 +432,3 @@ func TestHandleQueryLogs_NextCursorSetWhenFullPage(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.NotEmpty(t, resp.NextCursor, "next_cursor must be set when the page is full")
 }
-

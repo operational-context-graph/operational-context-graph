@@ -83,7 +83,10 @@ func renderError(c *gin.Context, err error) {
 	default:
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
-		slog.Error("unhandled error", "err", sanitizeForLog(err.Error()), "route", route, "request_id", requestID)
+		log, _ := c.Get(logKey)
+		if l, ok := log.(*slog.Logger); ok {
+			l.Error("unhandled error", "err", sanitizeForLog(err.Error()), "route", route, "request_id", requestID)
+		}
 		p = problem{
 			Type:   problemTypeInternal,
 			Title:  "Internal Server Error",
