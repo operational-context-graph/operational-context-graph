@@ -14,8 +14,7 @@ The Data Ingestion service is the entry point for all data that is ingested into
 | --- | --- |
 | `cmd/data-ingestion` | Process entrypoint (config load, server start, graceful shutdown). |
 | `internal/config` | Configuration loading (koanf) and validation (go-playground/validator). |
-| `internal/httpserver` | Gin engine construction and HTTP server lifecycle. |
-| `internal/handlers` | Gin HTTP handlers. Health checks only, for now. |
+| `internal/httpserver` | Gin engine construction, HTTP server lifecycle, and health/readiness handlers. |
 | `internal/ingest` | Framework-agnostic domain logic. The real design lands here. |
 | `mocks` | Generated testify mocks (optional, via mockery). |
 | `configs` | Sample runtime configuration. |
