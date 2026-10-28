@@ -12,7 +12,7 @@ dependencies:
     version: 0.1.0
     condition: data-ingestion.enabled
   - name: postgresql
-    version: 18.12.15
+    version: 18.12.16
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   - name: pgadmin
