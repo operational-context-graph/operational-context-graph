@@ -17,6 +17,8 @@ go-work-init: ## Initialize local Go workspace (not committed; run once after ch
 	@if [ ! -f go.work ]; then \
 		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
 	fi
+
+go-work-sync: ## Sync dependencies from the Go workspace's build list into each of the workspace modules
 	go work sync
 
 build: proto-generate ## Build all services
