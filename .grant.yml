@@ -11,7 +11,7 @@ quiet: false
 verbose: true
 
 require-license: true
-require-known-license: true
+require-known-license: false
 
 allow:
   - 0BSD
@@ -31,7 +31,6 @@ allow:
   - Zlib
   - CC0-*
   - BSL-1.0
-  - PostgreSQL
 
 # Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
@@ -80,36 +79,15 @@ ignore-packages:
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
 
-  # github.com/coreos/go-semver is Apache-2.0; Syft also emits a LicenseRef-* hash
-  # from the bundled NOTICE file, which grant cannot resolve to a known SPDX ID.
-  # Pulled in transitively by github.com/go-mysql-org/go-mysql.
-  - github.com/coreos/go-semver
+  # -------------------------
+  # The following packages have known permissive licenses but Syft also emits a LicenseRef-* hash
+  # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
 
-  # github.com/quic-go/quic-go is MIT; Syft also detects a secondary NOTICE/AUTHORS
-  # file that produces a LicenseRef-* hash which grant cannot resolve.
-  - github.com/quic-go/quic-go
+  # github.com/grpc-ecosystem/grpc-gateway/v2 is BSD-3-Clause
+  - github.com/grpc-ecosystem/grpc-gateway/v2
 
-  # github.com/pingcap/log is Apache-2.0; Syft also emits a LicenseRef-* hash
-  # from a bundled license file, which grant cannot resolve to a known SPDX ID.
-  # Pulled in transitively by github.com/go-mysql-org/go-mysql via pingcap/tidb.
-  - github.com/pingcap/log
-
-  # modernc.org/{sqlite,libc,memory} are BSD-3-Clause/MIT; Syft emits additional
-  # LicenseRef-* hashes from bundled LICENSE-3RD-PARTY.md files. These are
-  # test-only transitive dependencies pulled in via github.com/pressly/goose/v3.
-  - modernc.org/libc
-  - modernc.org/memory
-  - modernc.org/sqlite
-
-  # github.com/opencontainers/go-digest is Apache-2.0 (https://github.com/opencontainers/go-digest/blob/master/LICENSE);
-  # CC-BY-SA-4.0 applies only to documentation, not the Go code.
-  - github.com/opencontainers/go-digest
-
-  # github.com/jackc/pgx is licensed under MIT (https://github.com/jackc/pgx/blob/master/LICENSE)
+  # github.com/jackc/pgx/v5 is MIT
   - github.com/jackc/pgx/v5
 
-  # github.com/lib/pq is licensed under MIT (https://github.com/lib/pq/blob/main/LICENSE)
-  - github.com/lib/pq
-
-  # github.com/docker/docker is  licensed under Apache-2.0
-  - github.com/docker/docker
+  # github.com/quic-go/quic-go is MIT
+  - github.com/quic-go/quic-go

@@ -11,3 +11,7 @@ golang:
   search-remote-licenses: true
   # if unset this defaults to $GOPROXY followed by https://proxy.golang.org (env: SYFT_GOLANG_PROXY)
   proxy: "https://proxy.golang.org,direct"
+
+javascript:
+  search-remote-licenses: true
+  npm-base-url: "https://registry.npmjs.org"
