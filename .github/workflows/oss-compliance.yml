@@ -38,7 +38,7 @@ jobs:
       - name: Setup Grant
         id: setup-grant
         run: |
-          curl -sSfL https://get.anchore.io/grant | sudo sh -s -- -b /usr/local/bin
+          curl -sSfL https://get.anchore.io/grant | sudo sh -s -- -b /usr/local/bin v0.6.8
       - name: Verify Grant Installation
         run: grant --version
       # install dependencies
