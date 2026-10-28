@@ -108,9 +108,7 @@ func (s *spySchemaClient) DefaultTraceSchema(_ context.Context) (ingest.SchemaKe
 const otlpBufSize = 1 << 20
 
 var testRetry = &config.RetryConfig{
-	InitialBackoff: 100 * time.Millisecond,
-	MaxBackoff:     time.Second,
-	Multiplier:     1.5,
+	RetryDelay: 100 * time.Millisecond,
 }
 
 var testLimits = &config.LimitsConfig{MaxMessages: 100, MaxPayloadBytes: 4 * 1024 * 1024}

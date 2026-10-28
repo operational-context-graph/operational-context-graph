@@ -340,7 +340,7 @@ func firstNonEmpty(vs []string) string {
 func otlpUnavailable(retry *config.RetryConfig) error {
 	base := status.New(codes.Unavailable, "pipeline unavailable")
 	withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(retry.InitialBackoff),
+		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if attachErr != nil {
 		slog.Error("failed to attach RetryInfo", "err", attachErr)
