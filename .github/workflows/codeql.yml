@@ -40,12 +40,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The 'go work init' command takes care to set the go.work file's 'go' version directive
+      # as needed to be greater than or equal to any module inside that workspace root.
+      - name: Initialize Go workspace
+        run: make go-work-init
+
       - name: Set up Go
         if: matrix.language == 'go'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: services/data-ingestion/go.mod
-          cache: false
+          go-version-file: go.work
+          cache-dependency-path: '**/go.sum'
 
       - name: Set up Buf
         if: matrix.language == 'go'
