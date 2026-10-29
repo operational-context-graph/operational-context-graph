@@ -594,8 +594,9 @@ func TestOTLPLogs_ErrUnavailable(t *testing.T) {
 
 	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
 	require.Error(t, err)
-	// ErrUnavailable is not explicitly handled in OTLP ingest — falls through to Internal.
-	require.NotNil(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.Unavailable, st.Code())
 }
 
 func TestOTLPMetrics_ContextCancelled(t *testing.T) {

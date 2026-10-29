@@ -500,7 +500,7 @@ func TestBackfillCloseGap_Concurrent_WithIngest(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "shared"})
@@ -537,7 +537,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "shared"})
