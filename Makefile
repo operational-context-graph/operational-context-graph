@@ -16,7 +16,7 @@ COVERAGE_DIR := $(CURDIR)/coverage
 
 go-work-init: ## Initialize local Go workspace (not committed; run once after checkout)
 	@if [ ! -f go.work ]; then \
-		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY); \
+		go work init gen/go $(SERVICE_DI) $(SERVICE_IS) $(SERVICE_TS) $(CONNECTOR_INVENTORY) $(SERVICE_SR); \
 	fi
 
 go-work-sync: ## Sync dependencies from the Go workspace's build list into each of the workspace modules
