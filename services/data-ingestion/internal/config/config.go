@@ -93,13 +93,11 @@ type LimitsConfig struct {
 	MaxPayloadBytes int64 `koanf:"max_payload_bytes" validate:"required,gt=0"`
 }
 
-// RetryConfig holds retry hint settings returned in UNAVAILABLE responses.
-// The server always returns InitialBackoff as the hint; Multiplier and
-// MaxBackoff are validated and stored for future per-client backoff support.
+// RetryConfig holds the retry hint returned in codes.Unavailable responses.
+// RetryDelay is placed into RetryInfo.retry_delay; backoff growth is the
+// caller's responsibility per the gRPC retry spec.
 type RetryConfig struct {
-	InitialBackoff time.Duration `koanf:"initial_backoff" validate:"required,gt=0"`
-	MaxBackoff     time.Duration `koanf:"max_backoff"     validate:"required,gtefield=InitialBackoff"`
-	Multiplier     float64       `koanf:"multiplier"      validate:"required,gte=1.0"`
+	RetryDelay time.Duration `koanf:"retry_delay" validate:"required,gt=0"`
 }
 
 // DrainConfig holds the outbox drain's runtime settings.
@@ -161,9 +159,7 @@ func defaults() *Config {
 			MaxPayloadBytes: 4 * 1024 * 1024, // 4 MiB
 		},
 		Retry: RetryConfig{
-			InitialBackoff: 1 * time.Second,
-			MaxBackoff:     60 * time.Second,
-			Multiplier:     1.0,
+			RetryDelay: 1 * time.Second,
 		},
 		Drain: DrainConfig{
 			PollInterval:   1 * time.Second,
@@ -227,7 +223,7 @@ func LoadFromFile(path string) (*Config, error) {
 	//   OCG_DI_GRPC__ADDR               -> grpc.addr
 	//   OCG_DI_GRPC__TLS__CERT_FILE     -> grpc.tls.cert_file
 	//   OCG_DI_LIMITS__MAX_MESSAGES     -> limits.max_messages
-	//   OCG_DI_RETRY__INITIAL_BACKOFF   -> retry.initial_backoff
+	//   OCG_DI_RETRY__RETRY_DELAY          -> retry.retry_delay
 	transform := func(k, v string) (string, any) {
 		k = strings.TrimPrefix(k, envPrefix)
 		k = strings.ToLower(k)

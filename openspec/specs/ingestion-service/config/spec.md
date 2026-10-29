@@ -92,53 +92,32 @@ If any one of `GRPCConfig.TLSCertFile`, `TLSKeyFile`, `TLSCAFile` is set, all th
 - **WHEN** `MaxPayloadBytes` is 2,097,152
 - **THEN** the resolved value is 2,097,152
 
-### Requirement: RetryConfig.InitialBackoff defaults and validates
+### Requirement: RetryConfig.RetryDelay defaults and validates
 
-`InitialBackoff` SHALL default to 1 second when unset (0). A negative or zero-duration SHALL cause `Load` to return an error if explicitly set to a non-default zero. A positive value SHALL be used as-is.
+`RetryDelay` SHALL default to 1 second when unset (zero duration). A negative or
+zero duration explicitly set SHALL cause `config.Load` to return a non-nil error.
+A positive value SHALL be used as-is and placed into the `RetryInfo.retry_delay`
+field of `codes.Unavailable` gRPC responses. The env var is `OCG_DI_RETRY__RETRY_DELAY`.
 
 #### Scenario: Zero defaults to 1 second
-- **WHEN** `InitialBackoff` is the zero duration
+- **WHEN** `RetryDelay` is the zero duration (not set)
 - **THEN** the resolved value is 1 second
 
 #### Scenario: Negative duration is an error
-- **WHEN** `InitialBackoff` is a negative duration
-- **THEN** `Load` returns a non-nil error
+- **WHEN** `RetryDelay` is a negative duration
+- **THEN** `Load` returns a non-nil error; the process does not start
 
 #### Scenario: Explicit positive duration preserved
-- **WHEN** `InitialBackoff` is 5 seconds
+- **WHEN** `RetryDelay` is 5 seconds
 - **THEN** the resolved value is 5 seconds
 
-### Requirement: RetryConfig.MaxBackoff defaults, validates, and must not be less than InitialBackoff
+#### Scenario: RetryDelay is reflected in UNAVAILABLE response hint
+- **WHEN** the pipeline returns `ErrOverloaded` or `ErrUnavailable` and `RetryDelay` is 3 seconds
+- **THEN** the gRPC response carries `RetryInfo.retry_delay` equal to 3 seconds
 
-`MaxBackoff` SHALL default to 60 seconds when unset. A negative value SHALL cause `Load` to return an error. `MaxBackoff` less than `InitialBackoff` SHALL cause `Load` to return an error.
-
-#### Scenario: Zero defaults to 60 seconds
-- **WHEN** `MaxBackoff` is the zero duration
-- **THEN** the resolved value is 60 seconds
-
-#### Scenario: MaxBackoff less than InitialBackoff is an error
-- **WHEN** `InitialBackoff` is 10 seconds and `MaxBackoff` is 5 seconds
-- **THEN** `Load` returns a non-nil error
-
-#### Scenario: MaxBackoff equal to InitialBackoff is valid
-- **WHEN** `InitialBackoff` and `MaxBackoff` are both 5 seconds
-- **THEN** `Load` returns a valid config
-
-### Requirement: RetryConfig.Multiplier defaults and validates
-
-`Multiplier` SHALL default to 1.0 when unset (0). A value less than 1.0 SHALL cause `Load` to return an error (a multiplier below 1 would shorten the delay on retry — not a valid backoff).
-
-#### Scenario: Zero defaults to 1.0
-- **WHEN** `Multiplier` is 0
-- **THEN** the resolved value is 1.0
-
-#### Scenario: Value less than 1.0 is an error
-- **WHEN** `Multiplier` is 0.5
-- **THEN** `Load` returns a non-nil error
-
-#### Scenario: Multiplier of exactly 1.0 is valid
-- **WHEN** `Multiplier` is 1.0
-- **THEN** `Load` returns a valid config (constant delay, no growth)
+#### Scenario: Former env var OCG_DI_RETRY__INITIAL_BACKOFF is no longer recognised
+- **WHEN** `OCG_DI_RETRY__INITIAL_BACKOFF` is set and `OCG_DI_RETRY__RETRY_DELAY` is not set
+- **THEN** `RetryDelay` resolves to the default (1 second); the old env var is silently ignored
 
 ### Requirement: GRPCConfig.ShutdownTimeout defaults and validates
 

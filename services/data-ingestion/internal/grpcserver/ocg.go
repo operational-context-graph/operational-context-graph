@@ -141,7 +141,7 @@ func (h *OCGHandler) mapIngestError(err error) error {
 func (s *OCGHandler) unavailableWithRetry(msg string) error {
 	base := status.New(codes.Unavailable, msg)
 	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(s.retry.InitialBackoff),
+		RetryDelay: durationpb.New(s.retry.RetryDelay),
 	})
 	if err != nil {
 		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)

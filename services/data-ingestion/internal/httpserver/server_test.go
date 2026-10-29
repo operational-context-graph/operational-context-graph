@@ -18,11 +18,8 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 )
 
-func testConfig() *config.Config {
-	return &config.Config{
-		Server:  config.ServerConfig{Host: "127.0.0.1", Port: 8080},
-		Logging: config.LoggingConfig{Level: "info"},
-	}
+func testConfig() *config.ServerConfig {
+	return &config.ServerConfig{Host: "127.0.0.1", Port: 8080}
 }
 
 func TestServerHealthRoute(t *testing.T) {
@@ -66,10 +63,7 @@ func TestRunListenerError(t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
-	cfg := &config.Config{
-		Server:  config.ServerConfig{Host: "127.0.0.1", Port: port},
-		Logging: config.LoggingConfig{Level: "info"},
-	}
+	cfg := &config.ServerConfig{Host: "127.0.0.1", Port: port}
 	srv := New(cfg, nopPing)
 	err = srv.Run(context.Background())
 	require.Error(t, err)

@@ -330,108 +330,51 @@ func TestMaxPayloadBytesExplicit(t *testing.T) {
 
 // --- RetryConfig ---
 
-func TestInitialBackoffDefault(t *testing.T) {
+func TestRetryDelayDefault(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv(dbPasswordEnv, "testpassword")
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
-	assert.Equal(t, 1*time.Second, cfg.Retry.InitialBackoff)
+	assert.Equal(t, 1*time.Second, cfg.Retry.RetryDelay)
 }
 
-func TestInitialBackoffNegative(t *testing.T) {
+func TestRetryDelayNegative(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  initial_backoff: -1s\n"), 0600))
+	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  retry_delay: -1s\n"), 0600))
 
 	_, err := LoadFromFile(cfgFile)
 	require.Error(t, err)
 }
 
-func TestInitialBackoffExplicit(t *testing.T) {
+func TestRetryDelayExplicit(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv(dbPasswordEnv, "testpassword")
 
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  initial_backoff: 5s\n"), 0600))
+	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  retry_delay: 5s\n"), 0600))
 
 	cfg, err := LoadFromFile(cfgFile)
 	require.NoError(t, err)
-	assert.Equal(t, 5*time.Second, cfg.Retry.InitialBackoff)
+	assert.Equal(t, 5*time.Second, cfg.Retry.RetryDelay)
 }
 
-func TestMaxBackoffDefault(t *testing.T) {
+func TestRetryDelayOldEnvVarIgnored(t *testing.T) {
 	t.Setenv(grpcHostEnv, "0.0.0.0")
 	t.Setenv(grpcPortEnv, "9090")
 	t.Setenv(dbPasswordEnv, "testpassword")
-	cfg, err := LoadFromFile("")
-	require.NoError(t, err)
-	assert.Equal(t, 60*time.Second, cfg.Retry.MaxBackoff)
-}
-
-func TestMaxBackoffLessThanInitial(t *testing.T) {
-	t.Setenv(grpcHostEnv, "0.0.0.0")
-	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv(dbPasswordEnv, "testpassword")
-
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  initial_backoff: 10s\n  max_backoff: 5s\n"), 0600))
-
-	_, err := LoadFromFile(cfgFile)
-	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "maxbackoff")
-}
-
-func TestMaxBackoffEqualToInitial(t *testing.T) {
-	t.Setenv(grpcHostEnv, "0.0.0.0")
-	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv(dbPasswordEnv, "testpassword")
-
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  initial_backoff: 5s\n  max_backoff: 5s\n"), 0600))
-
-	cfg, err := LoadFromFile(cfgFile)
-	require.NoError(t, err)
-	assert.Equal(t, 5*time.Second, cfg.Retry.MaxBackoff)
-}
-
-func TestMultiplierDefault(t *testing.T) {
-	t.Setenv(grpcHostEnv, "0.0.0.0")
-	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv(dbPasswordEnv, "testpassword")
-	cfg, err := LoadFromFile("")
-	require.NoError(t, err)
-	assert.Equal(t, 1.0, cfg.Retry.Multiplier)
-}
-
-func TestMultiplierBelowOne(t *testing.T) {
-	t.Setenv(grpcHostEnv, "0.0.0.0")
-	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv(dbPasswordEnv, "testpassword")
-	t.Setenv("OCG_DI_RETRY__MULTIPLIER", "0.5")
-
-	_, err := LoadFromFile("")
-	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "multiplier")
-}
-
-func TestMultiplierExactlyOne(t *testing.T) {
-	t.Setenv(grpcHostEnv, "0.0.0.0")
-	t.Setenv(grpcPortEnv, "9090")
-	t.Setenv(dbPasswordEnv, "testpassword")
-	t.Setenv("OCG_DI_RETRY__MULTIPLIER", "1.0")
+	t.Setenv("OCG_DI_RETRY__INITIAL_BACKOFF", "30s")
 
 	cfg, err := LoadFromFile("")
 	require.NoError(t, err)
-	assert.Equal(t, 1.0, cfg.Retry.Multiplier)
+	assert.Equal(t, 1*time.Second, cfg.Retry.RetryDelay, "old env var must be ignored; RetryDelay should fall back to default")
 }
 
 // --- YAML file + env override ---
@@ -466,18 +409,6 @@ func TestLoad(t *testing.T) {
 
 func TestLoadFromFileInvalidPath(t *testing.T) {
 	_, err := LoadFromFile("/nonexistent/path/config.yaml")
-	require.Error(t, err)
-}
-
-// --- validateRetry: negative MaxBackoff ---
-
-func TestMaxBackoffNegative(t *testing.T) {
-	t.Setenv(dbPasswordEnv, "testpassword")
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgFile, []byte("grpc:\n  host: \"0.0.0.0\"\n  port: 9090\nretry:\n  max_backoff: -1s\n"), 0600))
-
-	_, err := LoadFromFile(cfgFile)
 	require.Error(t, err)
 }
 
