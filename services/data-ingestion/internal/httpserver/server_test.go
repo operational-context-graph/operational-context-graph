@@ -18,15 +18,12 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 )
 
-func testConfig() *config.Config {
-	return &config.Config{
-		Server:  config.ServerConfig{Host: "127.0.0.1", Port: 8080},
-		Logging: config.LoggingConfig{Level: "info"},
-	}
+func testConfig() *config.ServerConfig {
+	return &config.ServerConfig{Host: "127.0.0.1", Port: 8080}
 }
 
 func TestServerHealthRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -37,7 +34,7 @@ func TestServerHealthRoute(t *testing.T) {
 }
 
 func TestServerReadyRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -48,7 +45,7 @@ func TestServerReadyRoute(t *testing.T) {
 
 func TestRunCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Run(ctx) }()
 	cancel()
@@ -66,11 +63,8 @@ func TestRunListenerError(t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
-	cfg := &config.Config{
-		Server:  config.ServerConfig{Host: "127.0.0.1", Port: port},
-		Logging: config.LoggingConfig{Level: "info"},
-	}
-	srv := New(cfg)
+	cfg := &config.ServerConfig{Host: "127.0.0.1", Port: port}
+	srv := New(cfg, nopPing)
 	err = srv.Run(context.Background())
 	require.Error(t, err)
 }

@@ -167,7 +167,7 @@ func (handler *OTLPHandler) ingest(ctx context.Context, key ingest.SchemaKey, ba
 		if errors.Is(err, context.Canceled) {
 			return status.Error(codes.Canceled, "request canceled")
 		}
-		if errors.Is(err, ingest.ErrOverloaded) {
+		if errors.Is(err, ingest.ErrOverloaded) || errors.Is(err, ingest.ErrUnavailable) {
 			return otlpUnavailable(handler.log, handler.retry)
 		}
 		handler.log.ErrorContext(ctx, "unexpected pipeline error", "err", err)
@@ -342,7 +342,7 @@ func firstNonEmpty(vs []string) string {
 func otlpUnavailable(log *slog.Logger, retry *config.RetryConfig) error {
 	base := status.New(codes.Unavailable, "pipeline unavailable")
 	withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(retry.InitialBackoff),
+		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if attachErr != nil {
 		log.Error("failed to attach RetryInfo", "err", attachErr)

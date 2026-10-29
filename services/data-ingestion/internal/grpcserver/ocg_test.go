@@ -38,7 +38,7 @@ func defaultLimits() *config.LimitsConfig {
 }
 
 func defaultRetry() *config.RetryConfig {
-	return &config.RetryConfig{InitialBackoff: 5 * time.Second, MaxBackoff: 60 * time.Second, Multiplier: 1.0}
+	return &config.RetryConfig{RetryDelay: 5 * time.Second}
 }
 
 func newServer(t *testing.T, ingestor ingest.Ingestor, limits *config.LimitsConfig, retry *config.RetryConfig) *grpcserver.OCGReceiver {

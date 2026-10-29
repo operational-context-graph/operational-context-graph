@@ -19,26 +19,28 @@ import (
 
 // Server owns the Gin engine and the underlying HTTP server lifecycle.
 type Server struct {
-	cfg    *config.Config
+	cfg    *config.ServerConfig
 	engine *gin.Engine
 	http   *http.Server
 }
 
-// New constructs a Server from the given configuration. It uses gin.New with
+// New constructs a Server from the given server configuration. It uses gin.New with
 // explicit middleware (not gin.Default) so tests and logging stay predictable.
-func New(cfg *config.Config) *Server {
+func New(cfg *config.ServerConfig, ping func(context.Context) error) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
-	registerRoutes(engine)
+	h := newHealth(ping)
+	engine.GET("/healthz", h.healthz)
+	engine.GET("/readyz", h.readyz)
 
 	return &Server{
 		cfg:    cfg,
 		engine: engine,
 		http: &http.Server{
-			Addr:              net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)),
+			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
 			Handler:           engine,
 			ReadHeaderTimeout: 10 * time.Second,
 		},

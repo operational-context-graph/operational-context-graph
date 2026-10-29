@@ -109,9 +109,7 @@ const otlpBufSize = 1 << 20
 
 //nolint:gochecknoglobals // test-package-level variables shared across test functions.
 var testRetry = &config.RetryConfig{
-	InitialBackoff: 100 * time.Millisecond,
-	MaxBackoff:     time.Second,
-	Multiplier:     1.5,
+	RetryDelay: 100 * time.Millisecond,
 }
 
 //nolint:gochecknoglobals // test-package-level variables shared across test functions.
@@ -351,6 +349,19 @@ func TestOTLPLogs_DefaultSchemaError(t *testing.T) {
 
 func TestOTLPLogs_IngestorError(t *testing.T) {
 	spy := &spyIngestor{retErr: ingest.ErrOverloaded}
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
+	defer cleanup()
+
+	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.Unavailable, st.Code())
+	hasRetryInfo(t, err)
+}
+
+func TestOTLPLogs_IngestorUnavailable(t *testing.T) {
+	spy := &spyIngestor{retErr: ingest.ErrUnavailable}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
