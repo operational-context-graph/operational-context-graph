@@ -57,6 +57,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 			result.Rejected++
 			continue
 		}
+		result.Accepted++
 		result.Outcomes[i] = true
 		accepted = append(accepted, row...)
 	}
@@ -67,7 +68,6 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 		}
 	}
 
-	result.Accepted = len(accepted)
 	return result, nil
 }
 
