@@ -7,22 +7,28 @@
 # Build stage.
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker build -f services/data-ingestion/Dockerfile .
-FROM golang:1.27 AS build
+FROM golang:1.27@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS build
 WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
 COPY services/data-ingestion/go.mod services/data-ingestion/go.sum services/data-ingestion/
-RUN go work init gen/go services/data-ingestion && go mod download -x 2>/dev/null; true
+RUN go work init gen/go services/data-ingestion && go mod download -x 2>/dev/null
 
 COPY gen/go/ gen/go/
 COPY services/data-ingestion/ services/data-ingestion/
 RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
+# Goose stage — build the migration CLI independently so it does not affect go.mod.
+FROM golang:1.27@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS goose
+RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
+
 # Runtime stage.
 FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
+COPY --from=goose /go/bin/goose /usr/local/bin/goose
+COPY services/data-ingestion/internal/outbox/migrations /migrations
 EXPOSE 8080 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/data-ingestion"]

@@ -1,0 +1,50 @@
+{{/*
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- if .Values.enabled -}}
+apiVersion: doris.selectdb.com/v1
+kind: DorisCluster
+metadata:
+  name: {{ .Release.Name }}-doris
+  labels:
+    app.kubernetes.io/name: doris
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  feSpec:
+    replicas: {{ .Values.feSpec.replicas }}
+    image: {{ .Values.feSpec.image }}
+    requests:
+      cpu: {{ .Values.feSpec.requests.cpu | quote }}
+      memory: {{ .Values.feSpec.requests.memory }}
+    limits:
+      cpu: {{ .Values.feSpec.limits.cpu | quote }}
+      memory: {{ .Values.feSpec.limits.memory }}
+    {{- with .Values.feSpec.persistentVolumes }}
+    persistentVolumes:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    configMapInfo:
+      configMapName: {{ .Release.Name }}-doris-fe-config
+      resolveKey: fe.conf
+  beSpec:
+    replicas: {{ .Values.beSpec.replicas }}
+    image: {{ .Values.beSpec.image }}
+    requests:
+      cpu: {{ .Values.beSpec.requests.cpu | quote }}
+      memory: {{ .Values.beSpec.requests.memory }}
+    limits:
+      cpu: {{ .Values.beSpec.limits.cpu | quote }}
+      memory: {{ .Values.beSpec.limits.memory }}
+    {{- with .Values.beSpec.persistentVolumes }}
+    persistentVolumes:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    configMapInfo:
+      configMapName: {{ .Release.Name }}-doris-be-config
+      resolveKey: be.conf
+    envVars:
+      - name: SKIP_CHECK_ULIMIT
+        value: "true"
+{{- end }}

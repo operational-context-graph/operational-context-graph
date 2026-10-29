@@ -1,0 +1,19 @@
+{
+  "iri": "urn:ocg:asset/netbox/chassis-f5-sfzu-ftlo",
+  "artifact_type": "Chassis",
+  "source_system": "netbox",
+  "extensions": {
+    "model": "F5-R5900",
+    "serial": "f5-sfzu-ftlo",
+    "platform": "F5OS",
+    "primary_ip4": "10.46.32.132",
+    "site_id": "ap-jp-1a",
+    "status": "active",
+    "netbox_id": 41821,
+    "network_function": "load_balancer"
+  },
+  "name": "ap-jp-1-lb013a",
+  "source_id": "41821:chassis",
+  "created_at_source": "2024-10-21T12:24:58.763974Z",
+  "last_updated_at_source": "2025-09-19T20:08:01.774850Z"
+}

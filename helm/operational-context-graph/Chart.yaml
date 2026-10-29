@@ -11,3 +11,29 @@ dependencies:
   - name: data-ingestion
     version: 0.1.0
     condition: data-ingestion.enabled
+  - name: postgresql
+    version: 18.12.16
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+  - name: pgadmin
+    version: 0.1.0
+    condition: pgadmin.enabled
+  - name: inventory-store
+    version: 0.1.0
+    condition: inventory-store.enabled
+  - name: telemetry-store
+    version: 0.1.0
+    condition: telemetry-store.enabled
+  - name: inventory-connector
+    version: 0.1.0
+    condition: inventory-connector.enabled
+  - name: doris-operator
+    version: 25.8.0
+    repository: https://charts.selectdb.com
+    condition: doris.enabled
+  - name: doris
+    version: 0.1.0
+    condition: doris.enabled
+  - name: otelcol
+    version: 0.1.0
+    condition: otelcol.enabled

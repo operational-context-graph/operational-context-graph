@@ -8,7 +8,7 @@ Stores and serves all operational data for a data center. Provides telemetry, in
 
 ## Repository layout
 
-This is a polyglot monorepo. The gRPC interface definitions are the source of truth for the API and live under `proto/`. Generated code is not committed; run `buf generate` (see the `Makefile`) to produce language bindings locally.
+This is a polyglot monorepo. Sub-components live under `services/` (long-running servers and batch connectors under `services/connectors/`), `shared/`, and `frontend/`. The gRPC interface definitions are the source of truth for the API and live under `proto/`.
 
 ## Requirements and Setup
 

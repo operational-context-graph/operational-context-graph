@@ -13,8 +13,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"math/big"
 	"math"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,6 +35,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/grpcserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
+	collectorlogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 )
 
 // --- helpers ---
@@ -71,7 +73,7 @@ func defaultGRPCCfg(host, port string) *config.GRPCConfig {
 
 func newTestServer(t *testing.T, grpcCfg *config.GRPCConfig) *grpcserver.Server {
 	t.Helper()
-	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop())
+	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{})
 	require.NoError(t, err)
 	return srv
 }
@@ -256,25 +258,25 @@ func tlsGRPCCfg(t *testing.T, fix *tlsFixture) *config.GRPCConfig {
 // --- 8.2: port already in use → error immediately ---
 
 func TestNewServerNilGRPCCfg(t *testing.T) {
-	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop())
+	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilLimits(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop())
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop(t), &spySchemaClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilRetry(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop())
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop(t), &spySchemaClient{})
 	require.Error(t, err)
 }
 
 func TestNewServerNilIngestor(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil)
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil, &spySchemaClient{})
 	require.Error(t, err)
 }
 
@@ -297,7 +299,7 @@ func TestRunPortAlreadyInUse(t *testing.T) {
 func TestRunAlreadyCancelledContext(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -324,7 +326,7 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 func TestRunReentrancy(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -543,7 +545,7 @@ func TestRunMissingCAFile(t *testing.T) {
 func TestPlaintextModeStarts(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(),
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -577,17 +579,18 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 	start := make(chan struct{})
 	done := make(chan struct{})
 
-	slowIngestor := &fakeIngestor{fn: func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
+	slowIngestor := NewIngestor(t)
+	slowIngestor.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		close(start)
 		select {
 		case <-done:
 		case <-ctx.Done():
 		}
 		return ingest.IngestResult{Accepted: 1}, nil
-	}}
+	})
 	slowSrv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), slowIngestor,
+		defaultLimits(), defaultRetry(), slowIngestor, &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -629,15 +632,16 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 func TestHardStopAfterShutdownTimeout(t *testing.T) {
 	stuck := make(chan struct{})
 
-	stuckIngestor := &fakeIngestor{fn: func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
+	stuckIngestor := NewIngestor(t)
+	stuckIngestor.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		close(stuck)
 		// Block until the test is done.
 		select {}
-	}}
+	})
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 200 * time.Millisecond},
-		defaultLimits(), defaultRetry(), stuckIngestor,
+		defaultLimits(), defaultRetry(), stuckIngestor, &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -681,7 +685,7 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(),
+		limits, defaultRetry(), noop(t), &spySchemaClient{},
 	)
 	require.NoError(t, err)
 
@@ -730,11 +734,45 @@ func TestMaxPayloadBytesOverflow(t *testing.T) {
 	}
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(),
+		limits, defaultRetry(), noop(t), &spySchemaClient{},
 	)
 	require.NoError(t, err)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	err = srv.RunOnListener(context.Background(), lis)
+	require.Error(t, err)
+}
+
+// --- OTLP receiver wiring ---
+
+func TestServer_WithOTLPHandler(t *testing.T) {
+	srv, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
+	)
+	require.NoError(t, err)
+
+	addr, cancel, errc := startServer(srv)
+	defer func() {
+		cancel()
+		<-errc
+	}()
+	waitReady(t, addr)
+
+	conn, cerr := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, cerr)
+	defer conn.Close()
+
+	// Verify OTLP logs service is reachable (empty request returns success).
+	logsClient := collectorlogsv1.NewLogsServiceClient(conn)
+	_, err = logsClient.Export(context.Background(), &collectorlogsv1.ExportLogsServiceRequest{})
+	require.NoError(t, err)
+}
+
+func TestServer_NilSchemaClient(t *testing.T) {
+	_, err := grpcserver.NewServer(
+		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
+		defaultLimits(), defaultRetry(), noop(t), nil,
+	)
 	require.Error(t, err)
 }

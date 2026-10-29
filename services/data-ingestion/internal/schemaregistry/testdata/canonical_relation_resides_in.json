@@ -1,0 +1,10 @@
+{
+  "artifact_type": "RESIDES_IN",
+  "source_system": "netbox",
+  "source_iri": "urn:ocg:asset/netbox/serial-f5-sfzu-ftlo",
+  "target_iri": "urn:ocg:asset/netbox/chassis-f5-sfzu-ftlo",
+  "source_key": ["netbox", "41821"],
+  "target_key": ["netbox", "41821:chassis"],
+  "valid_time": "2025-09-19T20:08:01.774850Z",
+  "extensions": {}
+}

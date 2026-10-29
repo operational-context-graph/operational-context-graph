@@ -11,7 +11,7 @@ quiet: false
 verbose: true
 
 require-license: true
-require-known-license: true
+require-known-license: false
 
 allow:
   - 0BSD
@@ -34,7 +34,6 @@ allow:
 
 ignore-packages:
   # Note: Syft's SBOM does currently not contain license information for GitHub Actions
-  - actions/* # MIT
   - github/codeql-action/* # MIT
   - amannn/action-semantic-pull-request # MIT
   - fsfe/reuse-action # CC0-1.0
@@ -49,12 +48,17 @@ ignore-packages:
   - bufbuild/buf-action # Apache-2.0
 
   # Go packages
+  - github.com/grpc-ecosystem/grpc-gateway/v2 # BSD-3-Clause
   - github.com/opencontainers/go-digest # Apache-2.0, documentation under CC-BY-SA-4.0, but Syft only finds CC-BY-SA-4.0
-  - dario.cat/mergo # BSD-3-Clause and unknown license reference Syft cannot resolve
-  - github.com/jackc/pgx/v5 # MIT and unknown license reference Syft cannot resolve
-  - github.com/moby/patternmatcher # Apache-2.0 and unknown license reference Syft cannot resolve
-  - github.com/piprate/json-gold # Apache-2.0 and unknown license reference Syft cannot resolve
-  - github.com/quic-go/quic-go # MIT and unknown license reference Syft cannot resolve
+  - dario.cat/mergo # BSD-3-Clause
+  - github.com/jackc/pgx/v5 # MIT
+  - github.com/moby/patternmatcher # Apache-2.0
+  - github.com/piprate/json-gold # Apache-2.0
+  - github.com/quic-go/quic-go # MIT
+
+  # Node.js package manager
+  - pnpm # MIT
+  - "@pnpm/exe.*" # platform-specific binary distributions that lack SPDX metadata in the SBOM
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*

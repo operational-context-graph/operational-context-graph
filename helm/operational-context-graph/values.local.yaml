@@ -2,8 +2,82 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Local/dev overrides. Adjust values to match your environment before deploying.
+# See README.md for prerequisites (vm.max_map_count, secrets, etc.).
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      size: 1Gi
+
 data-ingestion:
   image:
-    repository: data-ingestion
-    tag: dev
-    pullPolicy: Never
+    repository: localhost:5001/data-ingestion
+    tag: local
+    pullPolicy: Always
+
+inventory-store:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: localhost:5001/inventory-store
+    tag: local
+    pullPolicy: Always
+  database:
+    host: ocg-postgresql
+    sslmode: disable
+    passwordSecret:
+      name: postgres-secret
+      key: password
+
+telemetry-store:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: localhost:5001/telemetry-store
+    tag: local
+    pullPolicy: Always
+  env:
+    DORIS_REPLICATION_NUM: "1"
+
+inventory-connector:
+  enabled: true
+  image:
+    repository: localhost:5001/inventory-connector
+    tag: local
+    pullPolicy: Always
+  netbox:
+    baseURL: "http://<your-mockreplay-host>:8081"
+    pageSize: 1000
+
+otelcol:
+  enabled: true
+
+doris:
+  enabled: true
+  feSpec:
+    requests:
+      cpu: "0.5"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+    config:
+      # Heap must fit within the 2Gi container limit
+      javaOpts: "-Xmx1024m -Xms1024m"
+  beSpec:
+    requests:
+      cpu: "0.5"
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+    config:
+      memLimit: "70%"
+
+doris-operator:
+  enabled: false
+
+pgadmin:
+  enabled: true
