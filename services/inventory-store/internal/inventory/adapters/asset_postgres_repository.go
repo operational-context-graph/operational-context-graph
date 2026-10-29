@@ -20,14 +20,18 @@ import (
 const assetColumns = `id, iri, name, artifact_type, source_system, source_id, extensions,
 	ingested_at, created_at, created_at_source, last_updated_at_source, valid_from, valid_to`
 
-// PostgresAssetRepository reads assets from PostgreSQL and returns domain Assets.
+// PostgresAssetRepository reads and writes assets in PostgreSQL via the domain types.
 //
-// This is the repository-pattern counterpart to the legacy store.Store DAO. For this
-// migration slice it implements reads only (GetAsset, ListAssets); the SQL is identical to
-// the legacy path so the two can be compared behind the read-path feature flag.
+// This is the repository-pattern counterpart to the legacy store.Store DAO. Its SQL mirrors the
+// legacy path so the two can be compared behind the read-path feature flag. Reads live here;
+// the temporal-versioning writes live in asset_postgres_write.go.
 type PostgresAssetRepository struct {
 	pool *pgxpool.Pool
 }
+
+// Compile-time proof that the Postgres adapter satisfies the domain ports. If a signature drifts
+// from the interface, this fails to build instead of surfacing at a call site.
+var _ inventory.AssetRepository = (*PostgresAssetRepository)(nil)
 
 // NewPostgresAssetRepository builds a repository over an existing connection pool.
 func NewPostgresAssetRepository(pool *pgxpool.Pool) *PostgresAssetRepository {
@@ -63,8 +67,8 @@ func (r *PostgresAssetRepository) ListAssets(
 	ctx context.Context,
 	artifactType, sourceSystem, sourceID string,
 	limit int,
-	after *store.Cursor,
-) ([]*inventory.Asset, *store.Cursor, error) {
+	after *inventory.Cursor,
+) ([]*inventory.Asset, *inventory.Cursor, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
@@ -120,10 +124,10 @@ func (r *PostgresAssetRepository) ListAssets(
 		return nil, nil, fmt.Errorf("list assets: %w", err)
 	}
 
-	var nextCursor *store.Cursor
+	var nextCursor *inventory.Cursor
 	if len(assets) > limit {
 		last := assets[limit-1]
-		nextCursor = &store.Cursor{CreatedAt: last.CreatedAt(), ID: last.ID()}
+		nextCursor = &inventory.Cursor{CreatedAt: last.CreatedAt(), ID: last.ID()}
 		assets = assets[:limit]
 	}
 	return assets, nextCursor, nil

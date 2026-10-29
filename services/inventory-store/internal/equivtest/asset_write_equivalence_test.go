@@ -66,22 +66,19 @@ func ptrOrNil(s string) *string {
 	return &s
 }
 
-// writeFixture bundles the two paths and the common reader used to read rows back for comparison.
+// writeFixture bundles the two write paths. Read-back for comparison goes through the legacy store
+// for BOTH keys (s.GetAsset), so only the write path under test differs between the two sides.
 type writeFixture struct {
 	s    *store.Store
 	repo *adapters.PostgresAssetRepository
-	rdr  *adapters.StoreReader // DAO-backed read; identical for both keys so only writes differ
 	ctx  context.Context
 }
 
 func newWriteFixture(t *testing.T) writeFixture {
 	t.Helper()
-	s := store.NewFromPool(testPool)
-	repo := adapters.NewPostgresAssetRepository(testPool)
 	return writeFixture{
-		s:    s,
-		repo: repo,
-		rdr:  adapters.NewStoreReader(s, repo, adapters.ReadPathDAO),
+		s:    store.NewFromPool(testPool),
+		repo: adapters.NewPostgresAssetRepository(testPool),
 		ctx:  t.Context(),
 	}
 }
@@ -99,9 +96,9 @@ func normalize(a store.Asset) store.Asset {
 // assertCurrentEquivalent reads the current (open) version of both keys and asserts equivalence.
 func assertCurrentEquivalent(t *testing.T, f writeFixture, daoID, repoID uuid.UUID) {
 	t.Helper()
-	fromDAO, err := f.rdr.GetAsset(f.ctx, daoID)
+	fromDAO, err := f.s.GetAsset(f.ctx, daoID)
 	require.NoError(t, err)
-	fromRepo, err := f.rdr.GetAsset(f.ctx, repoID)
+	fromRepo, err := f.s.GetAsset(f.ctx, repoID)
 	require.NoError(t, err)
 	assert.Equal(t, normalize(fromDAO), normalize(fromRepo), "current version differs between legacy and repo write paths")
 }
@@ -217,9 +214,9 @@ func TestWrite_NilTimestamp_Equivalent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Content (name, iri, extensions, null timestamps) must match; validity instants are NOW()-based.
-	dao, err := f.rdr.GetAsset(f.ctx, daoAsset.ID)
+	dao, err := f.s.GetAsset(f.ctx, daoAsset.ID)
 	require.NoError(t, err)
-	repo, err := f.rdr.GetAsset(f.ctx, repoAsset.ID())
+	repo, err := f.s.GetAsset(f.ctx, repoAsset.ID())
 	require.NoError(t, err)
 	dn, rn := normalize(dao), normalize(repo)
 	dn.ValidFrom, rn.ValidFrom = time.Time{}, time.Time{} // NOW()-based, cannot be equal across two writes
