@@ -359,6 +359,19 @@ func TestOTLPLogs_IngestorError(t *testing.T) {
 	hasRetryInfo(t, err)
 }
 
+func TestOTLPLogs_IngestorUnavailable(t *testing.T) {
+	spy := &spyIngestor{retErr: ingest.ErrUnavailable}
+	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
+	defer cleanup()
+
+	_, err := clients.logs.Export(context.Background(), sampleLogsReq())
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.Unavailable, st.Code())
+	hasRetryInfo(t, err)
+}
+
 func TestOTLPLogs_ContextCancelled(t *testing.T) {
 	spy := &spyIngestor{}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})

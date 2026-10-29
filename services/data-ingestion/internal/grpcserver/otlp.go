@@ -166,7 +166,7 @@ func (handler *OTLPHandler) ingest(ctx context.Context, key ingest.SchemaKey, ba
 		if errors.Is(err, context.Canceled) {
 			return status.Error(codes.Canceled, "request canceled")
 		}
-		if errors.Is(err, ingest.ErrOverloaded) {
+		if errors.Is(err, ingest.ErrOverloaded) || errors.Is(err, ingest.ErrUnavailable) {
 			return otlpUnavailable(handler.retry)
 		}
 		slog.Error("unexpected pipeline error", "err", err)
