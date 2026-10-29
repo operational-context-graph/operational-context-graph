@@ -60,7 +60,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	httpSrv := httpserver.New(cfg)
+	httpSrv := httpserver.New(cfg, pool.Ping)
 
 	schemaRegistry := schemaregistry.Stub{}
 	mappingEngine := sourcemapping.Stub{}

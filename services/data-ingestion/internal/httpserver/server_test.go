@@ -26,7 +26,7 @@ func testConfig() *config.Config {
 }
 
 func TestServerHealthRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -37,7 +37,7 @@ func TestServerHealthRoute(t *testing.T) {
 }
 
 func TestServerReadyRoute(t *testing.T) {
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -48,7 +48,7 @@ func TestServerReadyRoute(t *testing.T) {
 
 func TestRunCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := New(testConfig())
+	srv := New(testConfig(), nopPing)
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Run(ctx) }()
 	cancel()
@@ -70,7 +70,7 @@ func TestRunListenerError(t *testing.T) {
 		Server:  config.ServerConfig{Host: "127.0.0.1", Port: port},
 		Logging: config.LoggingConfig{Level: "info"},
 	}
-	srv := New(cfg)
+	srv := New(cfg, nopPing)
 	err = srv.Run(context.Background())
 	require.Error(t, err)
 }

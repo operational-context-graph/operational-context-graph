@@ -26,13 +26,15 @@ type Server struct {
 
 // New constructs a Server from the given configuration. It uses gin.New with
 // explicit middleware (not gin.Default) so tests and logging stay predictable.
-func New(cfg *config.Config) *Server {
+func New(cfg *config.Config, ping func(context.Context) error) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
-	registerRoutes(engine)
+	h := newHealth(ping)
+	engine.GET("/healthz", h.healthz)
+	engine.GET("/readyz", h.readyz)
 
 	return &Server{
 		cfg:    cfg,
