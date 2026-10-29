@@ -34,6 +34,19 @@ func noop(t *testing.T) *Ingestor {
 	return m
 }
 
+// noopAccept returns an Ingestor mock that accepts all records (Outcomes all true).
+func noopAccept(t *testing.T) *Ingestor {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+	})
+	return m
+}
+
 // noopBackfiller returns a Backfiller mock that accepts all AdvanceLive calls.
 func noopBackfiller(t *testing.T) *MockBackfiller {
 	m := NewMockBackfiller(t)
@@ -245,16 +258,22 @@ func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	assert.NotContains(t, st.Message(), secretMsg, "internal error details must not be leaked")
 }
 
-// --- 6.5: partial rejections → OK response with correct count ---
+// --- 6.5: partial rejections → OK response; accepted records advance watermark, rejected do not ---
 
 func TestPartialRejectionReturnsOK(t *testing.T) {
 	const rejected = 2
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected}, nil
+		// First (len-rejected) records accepted, last rejected ones not.
+		outcomes := make([]bool, len(batch))
+		for i := 0; i < len(batch)-rejected; i++ {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected, Outcomes: outcomes}, nil
 	})
-	// Rejections in batch: AdvanceLive must NOT be called.
 	bf := NewMockBackfiller(t)
+	// Accepted records have watermarks → AdvanceLive called once per accepted record.
+	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
 	require.NoError(t, err)
 	srv := grpcserver.NewOCGReceiver(h)
@@ -270,7 +289,8 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(rejected), resp.PartialSuccess.RejectedMessages)
-	bf.AssertNotCalled(t, "AdvanceLive")
+	// AdvanceLive called only for accepted records (len(msgs)-rejected = 2).
+	bf.AssertNumberOfCalls(t, "AdvanceLive", len(msgs)-rejected)
 }
 
 func TestAllRejectedReturnsOK(t *testing.T) {
@@ -350,7 +370,11 @@ func TestPartitionFieldMapped(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -374,7 +398,11 @@ func TestWatermarkFieldMapped(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -398,7 +426,11 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -434,7 +466,7 @@ func TestAdvanceLiveCalledWhenWatermarkAndPartitionPresent(t *testing.T) {
 	bf := NewMockBackfiller(t)
 	bf.On("AdvanceLive", mock.Anything, "conn-1", mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 
-	m := noop(t)
+	m := noopAccept(t)
 	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
 	require.NoError(t, err)
 	srv := grpcserver.NewOCGReceiver(h)
@@ -483,7 +515,7 @@ func TestAdvanceLiveCalledWhenPartitionNilButWatermarkPresent(t *testing.T) {
 	bf := NewMockBackfiller(t)
 	bf.On("AdvanceLive", mock.Anything, "conn-1", "", mock.Anything).Once().Return(nil)
 
-	m := noop(t)
+	m := noopAccept(t)
 	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
 	require.NoError(t, err)
 	srv := grpcserver.NewOCGReceiver(h)
@@ -530,7 +562,7 @@ func TestAdvanceLiveErrorReturnsUnavailable(t *testing.T) {
 	bf := NewMockBackfiller(t)
 	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("storage down"))
 
-	m := noop(t)
+	m := noopAccept(t)
 	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
 	require.NoError(t, err)
 	srv := grpcserver.NewOCGReceiver(h)

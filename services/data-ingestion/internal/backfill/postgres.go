@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// db is the subset of *pgxpool.Pool that PostgresBackfiller needs.
+// pgxQuerier is the subset of *pgxpool.Pool that PostgresBackfiller needs.
 // The interface enables test doubles without a real database connection.
-type db interface {
+type pgxQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }
@@ -26,10 +26,10 @@ type db interface {
 // data_ingestion_watermarks table. It is stateless beyond the db reference
 // and safe for concurrent use.
 type PostgresBackfiller struct {
-	db db
+	db pgxQuerier
 }
 
-var _ Backfiller = (*PostgresBackfiller)(nil)
+var _ Backfiller = (*PostgresBackfiller)(nil) // compile-time interface check
 
 // NewPostgresBackfiller constructs a PostgresBackfiller. Returns a non-nil
 // error when pool is nil so wiring mistakes surface at startup.

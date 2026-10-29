@@ -48,7 +48,7 @@ func (r *fakeRow) Scan(dest ...any) error {
 	return nil
 }
 
-// fakeDB is a test double for the db interface.
+// fakeDB is a test double for the pgxQuerier interface.
 type fakeDB struct {
 	mu       sync.Mutex
 	execErr  error
@@ -69,7 +69,7 @@ func (d *fakeDB) Exec(_ context.Context, sql string, args ...any) (pgconn.Comman
 	return pgconn.CommandTag{}, d.execErr
 }
 
-func newBackfiller(d db) *PostgresBackfiller {
+func newBackfiller(d pgxQuerier) *PostgresBackfiller {
 	return &PostgresBackfiller{db: d}
 }
 

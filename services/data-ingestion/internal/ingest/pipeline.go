@@ -41,7 +41,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 		return IngestResult{}, nil
 	}
 
-	var result IngestResult
+	result := IngestResult{Outcomes: make([]bool, len(batch))}
 	accepted := make([]OutboxRecord, 0, len(batch))
 
 	for i := range batch {
@@ -57,6 +57,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 			result.Rejected++
 			continue
 		}
+		result.Outcomes[i] = true
 		accepted = append(accepted, row...)
 	}
 

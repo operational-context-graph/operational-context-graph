@@ -125,7 +125,10 @@ func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		services = append(services, name)
 	}
 	slices.Sort(services)
-	slog.Info("grpc services registered", "services", services)
+	slog.Info("grpc server started", "count", len(services))
+	for _, name := range services {
+		slog.Info("grpc service active", "service", name)
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {

@@ -119,19 +119,13 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		return nil, recv.handler.mapIngestError(err)
 	}
 
-	// Advance live watermarks only when all messages in the batch were accepted.
-	// IngestResult carries only aggregate counts, not per-index status, so we
-	// cannot safely skip individual rejected messages while advancing others.
-	// Skipping the entire watermark advance on any rejection is safe: the
-	// connector retries the batch and the watermark catches up then.
-	if result.Rejected == 0 {
-		for i, env := range req.Messages {
-			if env.Watermark == nil {
-				continue
-			}
-			if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
-				return nil, recv.handler.unavailableWithRetry("watermark advance failed")
-			}
+	// Advance live watermark for each individually accepted record.
+	for i, env := range req.Messages {
+		if i >= len(result.Outcomes) || !result.Outcomes[i] || env.Watermark == nil {
+			continue
+		}
+		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
+			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
 		}
 	}
 

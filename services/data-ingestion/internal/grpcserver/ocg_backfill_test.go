@@ -219,7 +219,7 @@ func TestBackfillIngest_AllGapsOpen(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, "conn-1", mock.Anything, mock.Anything).Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 2}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 2, Outcomes: []bool{true, true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 
@@ -274,7 +274,11 @@ func TestBackfillIngest_MixedBatch(t *testing.T) {
 	m := NewIngestor(t)
 	m.On("Ingest", mock.Anything, mock.Anything).Return(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		capturedBatch = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
 	})
 
 	srv := newBackfillReceiver(t, bf, m)
@@ -388,7 +392,7 @@ func TestBackfillIngest_AdvanceBackfillError(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("db down"))
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 
@@ -624,7 +628,7 @@ func TestBackfillIngest_WatermarkNilNoAdvanceBackfill(t *testing.T) {
 	// AdvanceBackfill must NOT be called when watermark is nil
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "a"})
