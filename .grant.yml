@@ -52,8 +52,6 @@ ignore-packages:
   - github.com/opencontainers/go-digest # Apache-2.0, documentation under CC-BY-SA-4.0, but Syft only finds CC-BY-SA-4.0
   - dario.cat/mergo # BSD-3-Clause
   - github.com/jackc/pgx/v5 # MIT
-  - github.com/moby/patternmatcher # Apache-2.0
-  - github.com/piprate/json-gold # Apache-2.0
   - github.com/quic-go/quic-go # MIT
 
   # Node.js package manager
