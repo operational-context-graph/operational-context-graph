@@ -36,6 +36,7 @@ type Config struct {
 type Writer struct {
 	cfg    Config
 	client *http.Client
+	log    *slog.Logger
 }
 
 var _ store.StoreWriter = (*Writer)(nil)
@@ -55,6 +56,7 @@ func New(cfg Config) *Writer {
 	return &Writer{
 		cfg:    cfg,
 		client: &http.Client{Timeout: timeout},
+		log:    slog.Default(),
 	}
 }
 
@@ -114,7 +116,7 @@ func (w *Writer) post(ctx context.Context, path string, batchID int64, recs []st
 	if err != nil {
 		return fmt.Errorf("%w: telemetry writer: %w", store.ErrOverloaded, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return w.handleResponse(resp, label)
 }
@@ -142,7 +144,7 @@ func (w *Writer) handleResponse(resp *http.Response, label string) error {
 	}
 
 	if result.FilteredRows > 0 {
-		slog.Warn("telemetry writer: store filtered rows — silent data loss",
+		w.log.Warn("telemetry writer: store filtered rows — silent data loss",
 			"label", label,
 			"filtered_rows", result.FilteredRows,
 			"error_url", result.ErrorURL,

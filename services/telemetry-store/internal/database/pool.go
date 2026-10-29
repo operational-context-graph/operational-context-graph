@@ -36,14 +36,14 @@ func OpenWithConfig(ctx context.Context, dsn string, maxOpen, maxIdle int, connM
 	}
 	d, err := time.ParseDuration(connMaxLifetime)
 	if err != nil {
-		db.Close()
+		_ = db.Close() // Close errors are non-actionable on error return.
 		return nil, fmt.Errorf("invalid connMaxLifetime %q: %w", connMaxLifetime, err)
 	}
 	db.SetMaxOpenConns(maxOpen)
 	db.SetMaxIdleConns(maxIdle)
 	db.SetConnMaxLifetime(d)
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close() // Close errors are non-actionable on error return.
 		return nil, fmt.Errorf("ping doris: %w", err)
 	}
 	return db, nil

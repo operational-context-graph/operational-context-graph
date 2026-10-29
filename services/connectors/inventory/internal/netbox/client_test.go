@@ -28,7 +28,7 @@ func TestPaginate_SinglePage(t *testing.T) {
 		assert.Equal(t, "1000", r.URL.Query().Get("limit"))
 		assert.Equal(t, "0", r.URL.Query().Get("offset"))
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fixture(2, nil, 1, 2))
+		_, _ = w.Write(fixture(2, nil, 1, 2))
 	}))
 	defer srv.Close()
 
@@ -47,9 +47,9 @@ func TestPaginate_MultiPage(t *testing.T) {
 		offset := r.URL.Query().Get("offset")
 		if offset == "0" {
 			next := srv.URL + "/api/dcim/devices/?limit=2&offset=2"
-			w.Write(fixture(4, &next, 1, 2))
+			_, _ = w.Write(fixture(4, &next, 1, 2))
 		} else {
-			w.Write(fixture(4, nil, 3, 4))
+			_, _ = w.Write(fixture(4, nil, 3, 4))
 		}
 	}))
 	defer srv.Close()
@@ -65,7 +65,7 @@ func TestPaginate_AuthHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Token secret123", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fixture(1, nil, 1))
+		_, _ = w.Write(fixture(1, nil, 1))
 	}))
 	defer srv.Close()
 
@@ -77,7 +77,7 @@ func TestPaginate_AuthHeader(t *testing.T) {
 func TestPaginate_EmptyEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fixture(0, nil))
+		_, _ = w.Write(fixture(0, nil))
 	}))
 	defer srv.Close()
 

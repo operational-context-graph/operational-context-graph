@@ -81,7 +81,7 @@ type UpsertRelationshipRequest struct {
 	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
 	// ValidTime is the canonical model alias for last_updated_at_source.
 	// When both are present, last_updated_at_source takes precedence.
-	ValidTime           *string         `json:"valid_time,omitempty"`
+	ValidTime *string `json:"valid_time,omitempty"`
 }
 
 // RelationshipResponse is the body returned for a single relationship.

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
 )
 
 // QueryLogs returns log rows matching q.
@@ -32,6 +32,7 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 		args = append(args, tsStr, tsStr, *q.AfterIRI)
 	}
 
+	//nolint:gosec // G201: where clause uses only internal filter strings, not user input; Limit is an integer.
 	stmt := fmt.Sprintf(
 		`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name, severity, body,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
@@ -41,7 +42,7 @@ func (d *DB) QueryLogs(ctx context.Context, q LogQuery) ([]Log, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Close errors are non-actionable after row iteration.
 
 	var logs []Log
 	for rows.Next() {

@@ -13,11 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
-	"github.com/operational-context-graph/telemetry-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/store"
 )
 
 const routeKey = "route"
+const logKey = "logger"
 
 // telemetryDB is the interface HTTP handlers require from the store layer.
 type telemetryDB interface {
@@ -29,11 +30,13 @@ type telemetryDB interface {
 
 // NewServer creates a configured Gin-backed HTTP server.
 func NewServer(d telemetryDB, sl streamLoader, addr string, maxIngestBodyBytes int64) *http.Server {
+	log := slog.Default()
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(requestIDMiddleware())
-	r.Use(loggingMiddleware())
-	r.Use(panicRecoveryMiddleware())
+	r.Use(loggerMiddleware(log))
+	r.Use(loggingMiddleware(log))
+	r.Use(panicRecoveryMiddleware(log))
 
 	// /healthz — liveness: DB reachable.
 	r.GET("/healthz", func(c *gin.Context) {
@@ -86,7 +89,15 @@ func requestIDMiddleware() gin.HandlerFunc {
 	}
 }
 
-func loggingMiddleware() gin.HandlerFunc {
+// loggerMiddleware stores the logger in the Gin context so package functions can retrieve it.
+func loggerMiddleware(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(logKey, log)
+		c.Next()
+	}
+}
+
+func loggingMiddleware(log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
@@ -95,7 +106,7 @@ func loggingMiddleware() gin.HandlerFunc {
 		path = strings.ReplaceAll(path, "\r", "")
 		requestID := strings.ReplaceAll(c.GetHeader("X-Request-Id"), "\n", "")
 		requestID = strings.ReplaceAll(requestID, "\r", "")
-		slog.Info("request",
+		log.Info("request",
 			"route", route,
 			"method", c.Request.Method,
 			"path", path,
@@ -115,10 +126,10 @@ func setRoute(name string) gin.HandlerFunc {
 }
 
 // panicRecoveryMiddleware recovers from panics, logs them via slog, and returns a 500 problem response.
-func panicRecoveryMiddleware() gin.HandlerFunc {
+func panicRecoveryMiddleware(log *slog.Logger) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		route, _ := c.Get(routeKey)
-		slog.Error("panic recovered",
+		log.Error("panic recovered",
 			"panic", recovered,
 			"route", route,
 			"request_id", c.GetHeader("X-Request-Id"),

@@ -2,34 +2,31 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-SHELL := /usr/bin/env bash
-
+SHELL        := /usr/bin/env bash
+NAME         := $(notdir $(CURDIR))
 COVERAGE_DIR ?= $(CURDIR)/coverage
 
-.PHONY: build run test lint vet tidy mocks
+.PHONY: build run vet test lint tidy mocks
 
-build: ## Build the data-ingestion service
+build:
 	go build ./...
 
-run: ## Run the data-ingestion service from source
-	go run ./cmd/data-ingestion
+run:
+	go run ./cmd/$(NAME)
 
-vet: ## Run go vet
+vet:
 	go vet ./...
 
-test: ## Test with race detector and coverage
+test:
 	mkdir -p $(COVERAGE_DIR)
-	go test ./... -race -coverprofile=$(COVERAGE_DIR)/data-ingestion.out
+	go test ./... -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out
 
-lint: ## Lint (golangci-lint if available, else go vet)
-	if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found; running go vet"; go vet ./...; \
-	fi
+lint:
+	golangci-lint run
 
-tidy: ## Tidy go.mod
+tidy:
 	go mod tidy
 
-mocks: ## Generate mocks (requires mockery)
+# Requires mockery; installed as a Go tool in go.mod.
+mocks:
 	go tool mockery

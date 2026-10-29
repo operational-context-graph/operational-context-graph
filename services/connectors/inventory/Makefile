@@ -2,28 +2,27 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-SHELL := /usr/bin/env bash
-
+SHELL        := /usr/bin/env bash
+NAME         := $(notdir $(CURDIR))
 COVERAGE_DIR ?= $(CURDIR)/coverage
 
-.PHONY: build test lint vet tidy
+.PHONY: build run vet test lint tidy
 
-build: ## Build the inventory connector
+build:
 	go build ./...
 
-vet: ## Run go vet
+run:
+	go run ./cmd/connector
+
+vet:
 	go vet ./...
 
-test: ## Test with race detector and coverage
+test:
 	mkdir -p $(COVERAGE_DIR)
-	go test ./... -race -coverprofile=$(COVERAGE_DIR)/inventory.out
+	go test ./... -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out
 
-lint: ## Lint (golangci-lint if available, else go vet)
-	if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found; running go vet"; go vet ./...; \
-	fi
+lint:
+	golangci-lint run
 
-tidy: ## Tidy go.mod
+tidy:
 	go mod tidy

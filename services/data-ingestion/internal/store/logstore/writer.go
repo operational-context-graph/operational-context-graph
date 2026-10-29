@@ -29,8 +29,8 @@ func New(log *slog.Logger) Writer {
 func (w Writer) StoreID() store.StoreID { return "stub" }
 
 // Write acknowledges the batch (returns nil) and logs its identity, so the drain deletes the rows.
-func (w Writer) Write(_ context.Context, b store.Batch) error {
-	w.log.Info("logstore: delivered batch", "batch_id", b.ID, "records", len(b.Records))
+func (w Writer) Write(ctx context.Context, b store.Batch) error {
+	w.log.InfoContext(ctx, "logstore: delivered batch", "batch_id", b.ID, "records", len(b.Records))
 	return nil
 }
 

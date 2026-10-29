@@ -114,7 +114,7 @@ func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.R
 	if err != nil {
 		return fmt.Errorf("%w: inventory writer: %w", store.ErrOverloaded, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return w.handleResponse(resp, path)
 }

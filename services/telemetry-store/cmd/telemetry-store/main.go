@@ -15,20 +15,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin/binding"
-	"github.com/operational-context-graph/telemetry-store/internal/config"
-	"github.com/operational-context-graph/telemetry-store/internal/database"
-	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
-	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
-	"github.com/operational-context-graph/telemetry-store/internal/store"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/config"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/database"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(ctx); err != nil {
-		slog.Error("startup failed", "error", err)
+		log.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -40,10 +41,11 @@ func run(ctx context.Context) error {
 	}
 
 	var level slog.Level
-	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+	if unmarshalErr := level.UnmarshalText([]byte(cfg.LogLevel)); unmarshalErr != nil {
 		level = slog.LevelInfo
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(log)
 
 	dorissql.RegisterTimeArgs()
 
@@ -53,35 +55,35 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }() // Close errors are non-actionable on shutdown.
 
 	db, err := store.NewFromDB(ctx, sqlDB)
 	if err != nil {
 		return fmt.Errorf("prepare store: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Close errors are non-actionable on shutdown.
 
 	sl := streamload.NewClient(cfg.DorisStreamLoadURL, cfg.DorisStreamLoadUser, cfg.DorisStreamLoadPassword)
 
 	srv := httpapi.NewServer(db, sl, ":"+cfg.HTTPPort, cfg.MaxIngestBodyBytes)
 	srvErrC := make(chan error, 1)
 	go func() {
-		slog.Info("starting telemetry-store", "addr", srv.Addr)
+		log.InfoContext(ctx, "starting telemetry-store", "addr", srv.Addr)
 		srvErrC <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
-	case err := <-srvErrC:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("server error: %w", err)
+	case srvErr := <-srvErrC:
+		if srvErr != nil && !errors.Is(srvErr, http.ErrServerClosed) {
+			return fmt.Errorf("server error: %w", srvErr)
 		}
 	}
-	slog.Info("shutting down")
+	log.InfoContext(ctx, "shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutCtx); err != nil {
-		return fmt.Errorf("graceful shutdown: %w", err)
+	if shutErr := srv.Shutdown(shutCtx); shutErr != nil {
+		return fmt.Errorf("graceful shutdown: %w", shutErr)
 	}
 	return nil
 }

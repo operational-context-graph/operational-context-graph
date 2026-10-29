@@ -8,15 +8,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	v1 "github.com/operational-context-graph/telemetry-store/api/v1"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/telemetry-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
 )
 
 const (
@@ -120,7 +121,8 @@ func readAndValidateNDJSON(r io.Reader) ([]byte, error) {
 		lineCount++
 	}
 	if err := scanner.Err(); err != nil {
-		if mbe, ok := err.(*http.MaxBytesError); ok {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
 			return nil, mbe
 		}
 		return nil, fmt.Errorf("%w: reading body: %s", apperr.ErrInvalidInput, err.Error())

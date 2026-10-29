@@ -38,6 +38,7 @@ func (b *backoff) next() time.Duration {
 	d := b.cur
 	if b.jitter > 0 {
 		delta := float64(d) * b.jitter
+		//nolint:gosec // G404: math/rand is sufficient for backoff jitter; cryptographic randomness is not required.
 		d = time.Duration(float64(d) - delta + rand.Float64()*2*delta)
 	}
 	if d > b.max {

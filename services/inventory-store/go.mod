@@ -1,6 +1,6 @@
-module github.com/operational-context-graph/inventory-store
+module github.com/operational-context-graph/operational-context-graph/services/inventory-store
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/gin-gonic/gin v1.12.0

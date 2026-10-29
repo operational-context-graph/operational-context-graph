@@ -48,6 +48,7 @@ type OTLPHandler struct {
 	schemaClient SchemaRegistryClient
 	ingestor     ingest.Ingestor
 	retry        *config.RetryConfig
+	log          *slog.Logger
 }
 
 // newOTLPHandler constructs an OTLPHandler. All arguments must not be nil.
@@ -61,7 +62,7 @@ func newOTLPHandler(schemaClient SchemaRegistryClient, ingestor ingest.Ingestor,
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: otlp handler: retry must not be nil")
 	}
-	return &OTLPHandler{schemaClient: schemaClient, ingestor: ingestor, retry: retry}, nil
+	return &OTLPHandler{schemaClient: schemaClient, ingestor: ingestor, retry: retry, log: slog.Default()}, nil
 }
 
 // ── OTLPHandler methods ───────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ func (handler *OTLPHandler) exportLogs(ctx context.Context, rls []*logsv1.Resour
 
 	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultLogSchema)
 	if err != nil {
-		return otlpUnavailable(handler.retry)
+		return otlpUnavailable(handler.log, handler.retry)
 	}
 	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
@@ -128,7 +129,7 @@ func (handler *OTLPHandler) exportMetrics(ctx context.Context, rms []*metricsv1.
 
 	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultMetricSchema)
 	if err != nil {
-		return otlpUnavailable(handler.retry)
+		return otlpUnavailable(handler.log, handler.retry)
 	}
 	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
@@ -152,7 +153,7 @@ func (handler *OTLPHandler) exportTraces(ctx context.Context, rss []*tracev1.Res
 
 	key, err := schemaFromMetadata(ctx, handler.schemaClient.DefaultTraceSchema)
 	if err != nil {
-		return otlpUnavailable(handler.retry)
+		return otlpUnavailable(handler.log, handler.retry)
 	}
 	return handler.ingest(ctx, key, payloadsToRecords(key, payloads))
 }
@@ -167,13 +168,13 @@ func (handler *OTLPHandler) ingest(ctx context.Context, key ingest.SchemaKey, ba
 			return status.Error(codes.Canceled, "request canceled")
 		}
 		if errors.Is(err, ingest.ErrOverloaded) || errors.Is(err, ingest.ErrUnavailable) {
-			return otlpUnavailable(handler.retry)
+			return otlpUnavailable(handler.log, handler.retry)
 		}
-		slog.Error("unexpected pipeline error", "err", err)
+		handler.log.ErrorContext(ctx, "unexpected pipeline error", "err", err)
 		return status.Error(codes.Internal, "internal error")
 	}
 	if result.Rejected > 0 {
-		slog.Warn("otlp export: pipeline rejected records",
+		handler.log.WarnContext(ctx, "otlp export: pipeline rejected records",
 			"accepted", result.Accepted,
 			"rejected", result.Rejected,
 			"schema", key.LogicalArtifactType+"@"+key.Version,
@@ -242,6 +243,7 @@ func (recv *otlpTracesReceiver) Export(
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+//nolint:gochecknoglobals // pjsonOpts is a package-level constant-like value; protojson.MarshalOptions has no exported zero that matches this config.
 var pjsonOpts = protojson.MarshalOptions{EmitUnpopulated: false}
 
 // marshalResourceJSON returns the protojson encoding of msg as raw JSON bytes.
@@ -337,13 +339,13 @@ func firstNonEmpty(vs []string) string {
 }
 
 // otlpUnavailable returns codes.Unavailable with a RetryInfo hint.
-func otlpUnavailable(retry *config.RetryConfig) error {
+func otlpUnavailable(log *slog.Logger, retry *config.RetryConfig) error {
 	base := status.New(codes.Unavailable, "pipeline unavailable")
 	withRetry, attachErr := base.WithDetails(&errdetails.RetryInfo{
 		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if attachErr != nil {
-		slog.Error("failed to attach RetryInfo", "err", attachErr)
+		log.Error("failed to attach RetryInfo", "err", attachErr)
 		return base.Err()
 	}
 	return withRetry.Err()

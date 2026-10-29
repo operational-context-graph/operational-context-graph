@@ -58,7 +58,7 @@ func freeHostPort(t *testing.T) (host, port string) {
 	l := listenFree(t)
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
-	l.Close()
+	_ = l.Close() // Close errors are non-actionable here; we only use the address.
 	return h, p
 }
 
@@ -95,18 +95,6 @@ func startServer(srv *grpcserver.Server) (addr string, cancel context.CancelFunc
 	return addr, c, ch
 }
 
-// startServerOnAddr runs the server using its configured host/port (Run, not
-// RunOnListener). Used only when the TLS config embeds specific file paths that
-// must already be written and the port was freed just before this call.
-func startServerOnAddr(srv *grpcserver.Server) (context.CancelFunc, <-chan error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	errc := make(chan error, 1)
-	go func() {
-		errc <- srv.Run(ctx)
-	}()
-	return cancel, errc
-}
-
 // waitReady polls until the gRPC server accepts a plaintext connection.
 func waitReady(t *testing.T, addr string) {
 	t.Helper()
@@ -114,7 +102,7 @@ func waitReady(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -283,7 +271,7 @@ func TestNewServerNilIngestor(t *testing.T) {
 func TestRunPortAlreadyInUse(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	host, port, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
@@ -316,7 +304,7 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 	// Confirm nothing is listening
 	conn, dialErr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 	if dialErr == nil {
-		conn.Close()
+		_ = conn.Close()
 		t.Fatal("server should not be listening after cancelled context")
 	}
 }
@@ -374,7 +362,7 @@ func TestMTLSValidClientAccepted(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, fix.clientCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := ingestionv1.NewIngestionServiceClient(conn)
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
@@ -409,7 +397,7 @@ func TestMTLSNoClientCertRejected(t *testing.T) {
 	})
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -437,7 +425,7 @@ func TestMTLSWrongCARejected(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, wrongCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -463,7 +451,7 @@ func TestMTLSExpiredClientCertRejected(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, expiredCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -558,7 +546,7 @@ func TestPlaintextModeStarts(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -599,7 +587,7 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	rpcDone := make(chan error, 1)
 	go func() {
@@ -650,7 +638,7 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Fire an RPC that will block.
 	go func() {
@@ -698,7 +686,7 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -761,7 +749,7 @@ func TestServer_WithOTLPHandler(t *testing.T) {
 
 	conn, cerr := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, cerr)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Verify OTLP logs service is reachable (empty request returns success).
 	logsClient := collectorlogsv1.NewLogsServiceClient(conn)

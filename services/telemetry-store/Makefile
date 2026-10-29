@@ -1,33 +1,30 @@
 # SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
 # SPDX-License-Identifier: Apache-2.0
 
-SHELL := /usr/bin/env bash
-
-COVERAGE_DIR ?= $(CURDIR)/coverage
+SHELL        := /usr/bin/env bash
+NAME         := $(notdir $(CURDIR))
 BIN_DIR      := $(CURDIR)/bin
+COVERAGE_DIR ?= $(CURDIR)/coverage
 
-.PHONY: build run test lint vet tidy
+.PHONY: build run vet test lint tidy
 
-build: ## Build all commands into bin/
+build:
 	mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/telemetry-store ./cmd/telemetry-store
+	go build -o $(BIN_DIR)/$(NAME) ./cmd/$(NAME)
 
-run: ## Run the telemetry-store service from source
-	go run ./cmd/telemetry-store
+run:
+	go run ./cmd/$(NAME)
 
-vet: ## Run go vet
+vet:
 	go vet ./...
 
-test: ## Test with race detector and coverage
+test:
 	mkdir -p $(COVERAGE_DIR)
-	go test ./... -race -coverprofile=$(COVERAGE_DIR)/telemetry-store.out
+	go test ./... -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out
 
-lint: ## Lint (golangci-lint if available, else go vet)
-	if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found; running go vet"; go vet ./...; \
-	fi
+lint:
+	golangci-lint run
 
-tidy: ## Tidy go.mod
+tidy:
 	go mod tidy

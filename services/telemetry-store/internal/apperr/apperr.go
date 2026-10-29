@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	ErrNotFound              = errors.New("not found")
-	ErrAlreadyExists         = errors.New("already exists")
-	ErrInvalidInput          = errors.New("invalid input")
-	ErrConflict              = errors.New("conflict")
-	ErrUnsupportedMediaType  = errors.New("unsupported media type")
-	ErrLabelExists           = errors.New("label already exists")
-	ErrDorisLoadFailed       = errors.New("doris load failed")
-	ErrDorisOverloaded       = errors.New("doris overloaded")
+	ErrNotFound             = errors.New("not found")
+	ErrAlreadyExists        = errors.New("already exists")
+	ErrInvalidInput         = errors.New("invalid input")
+	ErrConflict             = errors.New("conflict")
+	ErrUnsupportedMediaType = errors.New("unsupported media type")
+	ErrLabelExists          = errors.New("label already exists")
+	ErrDorisLoadFailed      = errors.New("doris load failed")
+	ErrDorisOverloaded      = errors.New("doris overloaded")
 )
 
 // FieldError describes a validation failure for a single request field.

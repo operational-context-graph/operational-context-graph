@@ -1,6 +1,6 @@
 module github.com/operational-context-graph/operational-context-graph/services/data-ingestion
 
-go 1.26.0
+go 1.27.3
 
 toolchain go1.27.3
 

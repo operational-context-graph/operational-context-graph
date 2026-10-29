@@ -31,6 +31,7 @@ type schemaEntry struct {
 	version             string
 }
 
+//nolint:gochecknoglobals // registeredSchemas is a compile-time constant list of bundled schema entries.
 var registeredSchemas = []schemaEntry{
 	{"schemas/canonical_chassis.json", "canonical_chassis", "0.1.0"},
 	{"schemas/canonical_network_device.json", "canonical_network_device", "0.1.0"},

@@ -19,6 +19,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
 
+//nolint:gochecknoglobals // test-package-level keys shared across test functions.
 var (
 	srcKey   = ingest.SchemaKey{LogicalArtifactType: "ocg.src.log", Version: "1.0.0"}
 	canonKey = ingest.SchemaKey{LogicalArtifactType: "ocg.telemetry.log", Version: "2.4.0"}
@@ -369,7 +370,7 @@ func TestPipeline_Ingest_ConcurrentBatches(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]ingest.IngestResult, goroutines)
 	errs := make([]error, goroutines)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -378,7 +379,7 @@ func TestPipeline_Ingest_ConcurrentBatches(t *testing.T) {
 	}
 	wg.Wait()
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		require.NoError(t, errs[g])
 		assert.Equal(t, ingest.IngestResult{Accepted: perBatch, Rejected: 0}, results[g])
 	}

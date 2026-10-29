@@ -14,11 +14,11 @@ import (
 func msg(id int, payloadSize int) envelope.Message {
 	return envelope.Message{
 		LogicalArtifactId: "netbox.Device",
-		SchemaVersion:       "0.1.0",
-		Payload:             json.RawMessage(`{"id":` + string(rune('0'+id)) + `}`),
-		Partition:           map[string]any{"endpoint": "dcim/devices/"},
-		Watermark:           map[string]any{"last_id": id},
-		ContentType:         "application/json",
+		SchemaVersion:     "0.1.0",
+		Payload:           json.RawMessage(`{"id":` + string(rune(int32('0')+int32(id))) + `}`), //nolint:gosec // G115: id is bounded 0-9 in tests; overflow is impossible.
+		Partition:         map[string]any{"endpoint": "dcim/devices/"},
+		Watermark:         map[string]any{"last_id": id},
+		ContentType:       "application/json",
 		// pad payload to requested size
 	}
 }
@@ -26,11 +26,11 @@ func msg(id int, payloadSize int) envelope.Message {
 func msgWithPayload(size int) envelope.Message {
 	return envelope.Message{
 		LogicalArtifactId: "netbox.Device",
-		SchemaVersion:       "0.1.0",
-		Payload:             json.RawMessage(`"` + strings.Repeat("x", size) + `"`),
-		Partition:           map[string]any{"endpoint": "dcim/devices/"},
-		Watermark:           map[string]any{"last_id": 1},
-		ContentType:         "application/json",
+		SchemaVersion:     "0.1.0",
+		Payload:           json.RawMessage(`"` + strings.Repeat("x", size) + `"`),
+		Partition:         map[string]any{"endpoint": "dcim/devices/"},
+		Watermark:         map[string]any{"last_id": 1},
+		ContentType:       "application/json",
 	}
 }
 
@@ -65,11 +65,11 @@ func TestChunk_SplitsOnBytes(t *testing.T) {
 func TestToProto_Fields(t *testing.T) {
 	m := envelope.Message{
 		LogicalArtifactId: "netbox.Device",
-		SchemaVersion:       "0.1.0",
-		Payload:             json.RawMessage(`{"id":1}`),
-		Partition:           map[string]any{"endpoint": "dcim/devices/"},
-		Watermark:           map[string]any{"last_id": 1},
-		ContentType:         "application/json",
+		SchemaVersion:     "0.1.0",
+		Payload:           json.RawMessage(`{"id":1}`),
+		Partition:         map[string]any{"endpoint": "dcim/devices/"},
+		Watermark:         map[string]any{"last_id": 1},
+		ContentType:       "application/json",
 	}
 	env, err := toProto(m)
 	require.NoError(t, err)
