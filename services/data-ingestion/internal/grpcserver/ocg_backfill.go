@@ -170,6 +170,7 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 	// Single pass: decode, gap-check (cached per partition), build sub-batch.
 	gapCache := make(map[string]bool)
 	batch := make([]ingest.IngestRecord, 0, len(req.Messages))
+	openPartitions := 0 // distinct partitions with an open gap present in batch
 
 	for _, msg := range req.Messages {
 		partKey, err := partitionToKey(msg.Partition)
@@ -184,6 +185,9 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 				return nil, recv.handler.unavailableWithRetry("gap check failed")
 			}
 			gapCache[partKey] = gapOpen
+			if gapOpen {
+				openPartitions++
+			}
 		}
 		if !gapOpen {
 			slog.WarnContext(ctx, "backfill message dropped: no open gap for partition",
@@ -230,8 +234,8 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	// Reverse scan: last accepted watermark per partition, stop once all partitions covered.
-	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, len(gapCache))
+	// Reverse scan: last accepted watermark per partition, stop once all open-gap partitions covered.
+	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, openPartitions)
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
