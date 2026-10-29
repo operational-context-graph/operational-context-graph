@@ -353,15 +353,6 @@ func toEpochNanos(ts string) int64 {
 	return t.UnixNano()
 }
 
-// toEpochSeconds parses an RFC 3339 timestamp and returns epoch seconds.
-func toEpochSeconds(ts string) int64 {
-	t, err := time.Parse(time.RFC3339Nano, ts)
-	if err != nil {
-		return 0
-	}
-	return t.Unix()
-}
-
 // toSeverityEnum maps a syslog severity string to the canonical severity enum.
 func toSeverityEnum(s string) string {
 	switch strings.ToLower(s) {
