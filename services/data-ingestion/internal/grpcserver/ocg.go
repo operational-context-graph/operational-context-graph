@@ -17,7 +17,6 @@ import (
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -31,7 +30,7 @@ type OCGHandler struct {
 	ingestor  ingest.Ingestor
 	limits    *config.LimitsConfig
 	retry     *config.RetryConfig
-	backfiller backfill.Backfiller
+	backfiller Backfiller
 }
 
 // NewOCGHandler constructs an OCGHandler. Returns an error when any
@@ -40,7 +39,7 @@ func NewOCGHandler(
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
-	backfiller backfill.Backfiller,
+	backfiller Backfiller,
 ) (*OCGHandler, error) {
 	if ingestor == nil {
 		return nil, fmt.Errorf("grpcserver: ingestor must not be nil")
@@ -92,25 +91,25 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
-	for i, env := range req.Messages {
+	for i, msg := range req.Messages {
 		batch[i] = ingest.IngestRecord{
 			Schema: ingest.SchemaKey{
-				LogicalArtifactType: env.GetLogicalArtifactId(),
-				Version:             env.GetSchemaVersion(),
+				LogicalArtifactType: msg.GetLogicalArtifactId(),
+				Version:             msg.GetSchemaVersion(),
 			},
-			Payload:     env.GetPayload(),
-			ContentType: env.GetContentType(),
+			Payload:     msg.GetPayload(),
+			ContentType: msg.GetContentType(),
 		}
-		if env.Partition != nil {
+		if msg.Partition != nil {
 			// Encode partition struct as a stable JSON string used as storage key.
-			partitionJSON, err := json.Marshal(env.Partition.AsMap())
+			partitionJSON, err := json.Marshal(msg.Partition.AsMap())
 			if err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
 			}
 			batch[i].Partition = string(partitionJSON)
 		}
-		if env.Watermark != nil {
-			batch[i].Watermark = env.Watermark.AsMap()
+		if msg.Watermark != nil {
+			batch[i].Watermark = msg.Watermark.AsMap()
 		}
 	}
 
@@ -119,12 +118,10 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		return nil, recv.handler.mapIngestError(err)
 	}
 
-	// Advance live watermark for each individually accepted record.
-	for i, env := range req.Messages {
-		if i >= len(result.Outcomes) || !result.Outcomes[i] || env.Watermark == nil {
-			continue
-		}
-		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, batch[i].Partition, batch[i].Watermark); err != nil {
+	// Collect last accepted watermark per partition (message order = last wins).
+	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, 0)
+	for partition, wm := range lastWM {
+		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
 		}
 	}

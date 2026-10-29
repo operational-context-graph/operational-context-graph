@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
@@ -42,7 +41,7 @@ type Server struct {
 
 // NewServer constructs a Server. All arguments are required and must not be nil.
 // Returns an error when any argument is nil.
-func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient, backfiller backfill.Backfiller) (*Server, error) {
+func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient, backfiller Backfiller) (*Server, error) {
 	if grpcCfg == nil {
 		return nil, errors.New("grpcserver: grpcCfg must not be nil")
 	}

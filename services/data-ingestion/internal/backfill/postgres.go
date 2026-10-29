@@ -29,7 +29,6 @@ type PostgresBackfiller struct {
 	db pgxQuerier
 }
 
-var _ Backfiller = (*PostgresBackfiller)(nil) // compile-time interface check
 
 // NewPostgresBackfiller constructs a PostgresBackfiller. Returns a non-nil
 // error when pool is nil so wiring mistakes surface at startup.

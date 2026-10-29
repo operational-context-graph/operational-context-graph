@@ -17,7 +17,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
-	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 )
@@ -25,7 +24,7 @@ import (
 // OCGBackfillHandler owns the shared state for the BackfillService gRPC
 // receiver. It is safe for concurrent use by multiple goroutines.
 type OCGBackfillHandler struct {
-	backfiller backfill.Backfiller
+	backfiller Backfiller
 	ingestor   ingest.Ingestor
 	limits     *config.LimitsConfig
 	retry      *config.RetryConfig
@@ -34,7 +33,7 @@ type OCGBackfillHandler struct {
 // NewOCGBackfillHandler constructs an OCGBackfillHandler. Returns an error when
 // any argument is nil to catch wiring mistakes at startup, not at first RPC.
 func NewOCGBackfillHandler(
-	backfiller backfill.Backfiller,
+	backfiller Backfiller,
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
@@ -169,15 +168,11 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 	}
 
 	// Single pass: decode, gap-check (cached per partition), build sub-batch.
-	type accepted struct {
-		record    ingest.IngestRecord
-		watermark map[string]any
-	}
 	gapCache := make(map[string]bool)
-	batch := make([]accepted, 0, len(req.Messages))
+	batch := make([]ingest.IngestRecord, 0, len(req.Messages))
 
-	for _, env := range req.Messages {
-		partKey, err := partitionToKey(env.Partition)
+	for _, msg := range req.Messages {
+		partKey, err := partitionToKey(msg.Partition)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
 		}
@@ -191,25 +186,26 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 			gapCache[partKey] = gapOpen
 		}
 		if !gapOpen {
+			slog.WarnContext(ctx, "backfill message dropped: no open gap for partition",
+				"connector_id", connectorID,
+				"partition", partKey,
+			)
 			continue
 		}
 
 		var wm map[string]any
-		if env.Watermark != nil {
-			wm = env.Watermark.AsMap()
+		if msg.Watermark != nil {
+			wm = msg.Watermark.AsMap()
 		}
-		batch = append(batch, accepted{
-			record: ingest.IngestRecord{
-				Schema: ingest.SchemaKey{
-					LogicalArtifactType: env.GetLogicalArtifactId(),
-					Version:             env.GetSchemaVersion(),
-				},
-				Payload:     env.GetPayload(),
-				ContentType: env.GetContentType(),
-				Partition:   partKey,
-				Watermark:   wm,
+		batch = append(batch, ingest.IngestRecord{
+			Schema: ingest.SchemaKey{
+				LogicalArtifactType: msg.GetLogicalArtifactId(),
+				Version:             msg.GetSchemaVersion(),
 			},
-			watermark: wm,
+			Payload:     msg.GetPayload(),
+			ContentType: msg.GetContentType(),
+			Partition:   partKey,
+			Watermark:   wm,
 		})
 	}
 
@@ -219,12 +215,7 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 		}, nil
 	}
 
-	records := make([]ingest.IngestRecord, len(batch))
-	for i, a := range batch {
-		records[i] = a.record
-	}
-
-	result, err := recv.handler.ingestor.Ingest(ctx, records)
+	result, err := recv.handler.ingestor.Ingest(ctx, batch)
 	if err != nil {
 		if errors.Is(err, ingest.ErrOverloaded) || errors.Is(err, ingest.ErrUnavailable) {
 			return nil, recv.handler.unavailableWithRetry("pipeline unavailable")
@@ -239,12 +230,10 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	// Advance watermark for each individually accepted record.
-	for i, a := range batch {
-		if i >= len(result.Outcomes) || !result.Outcomes[i] || a.watermark == nil {
-			continue
-		}
-		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, a.record.Partition, a.watermark); err != nil {
+	// Reverse scan: last accepted watermark per partition, stop once all partitions covered.
+	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, len(gapCache))
+	for partition, wm := range lastWM {
+		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
 		}
 	}

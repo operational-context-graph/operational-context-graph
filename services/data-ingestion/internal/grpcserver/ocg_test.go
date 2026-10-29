@@ -258,7 +258,7 @@ func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	assert.NotContains(t, st.Message(), secretMsg, "internal error details must not be leaked")
 }
 
-// --- 6.5: partial rejections → OK response; accepted records advance watermark, rejected do not ---
+// --- 6.5: partial rejections → OK response; one advance per partition for accepted records ---
 
 func TestPartialRejectionReturnsOK(t *testing.T) {
 	const rejected = 2
@@ -272,7 +272,7 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected, Outcomes: outcomes}, nil
 	})
 	bf := NewMockBackfiller(t)
-	// Accepted records have watermarks → AdvanceLive called once per accepted record.
+	// Accepted records carry distinct partitions → one AdvanceLive call per partition.
 	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
 	require.NoError(t, err)
@@ -280,17 +280,23 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 
 	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
 	require.NoError(t, err)
+	partA, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	partB, err := structpb.NewStruct(map[string]interface{}{"shard": "b"})
+	require.NoError(t, err)
 	msgs := []*ingestionv1.MessageEnvelope{
-		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("a"), Watermark: wmStruct},
-		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("b"), Watermark: wmStruct},
-		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("c"), Watermark: wmStruct},
-		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("d"), Watermark: wmStruct},
+		// accepted
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("a"), Partition: partA, Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("b"), Partition: partB, Watermark: wmStruct},
+		// rejected
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("c"), Partition: partA, Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("d"), Partition: partB, Watermark: wmStruct},
 	}
 	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(rejected), resp.PartialSuccess.RejectedMessages)
-	// AdvanceLive called only for accepted records (len(msgs)-rejected = 2).
-	bf.AssertNumberOfCalls(t, "AdvanceLive", len(msgs)-rejected)
+	// One advance per distinct accepted partition (partA and partB each accepted once).
+	bf.AssertNumberOfCalls(t, "AdvanceLive", 2)
 }
 
 func TestAllRejectedReturnsOK(t *testing.T) {
