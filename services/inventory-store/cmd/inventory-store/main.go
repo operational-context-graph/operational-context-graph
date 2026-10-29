@@ -15,9 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/operational-context-graph/inventory-store/internal/config"
 	"github.com/operational-context-graph/inventory-store/internal/database"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/adapters"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 
@@ -51,7 +53,13 @@ func run(ctx context.Context) error {
 
 	db := store.NewFromPool(pool)
 
-	srv := httpapi.NewServer(db, ":"+strconv.Itoa(cfg.Server.Port))
+	// Asset read-path switch (additive). OCG_IS_READ_PATH = dao (default) | repo | compare.
+	// When set, wrap the store so asset reads route through the new repository; the wrapper
+	// embeds *store.Store, so all other behaviour is unchanged. The result still satisfies the
+	// interface NewServer expects, so no existing code changes.
+	readPath := adapters.ParseReadPath(os.Getenv("OCG_IS_READ_PATH"))
+	srv := httpapi.NewServer(newRepositoryReader(db, pool, readPath), ":"+strconv.Itoa(cfg.Server.Port))
+	slog.Info("asset read path configured", "path", string(readPath))
 	srvErrC := make(chan error, 1)
 	go func() {
 		slog.Info("starting inventory-store", "addr", srv.Addr)
@@ -73,4 +81,13 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	return nil
+}
+
+// newRepositoryReader builds the asset-read handler for the given path. It always returns a
+// StoreReader that embeds the legacy store; in the default "dao" path it passes every call
+// straight through, so behaviour is identical to passing the bare store. For "repo"/"compare"
+// it routes asset reads to the new PostgresAssetRepository. Returned value satisfies the
+// interface httpapi.NewServer expects.
+func newRepositoryReader(db *store.Store, pool *pgxpool.Pool, path adapters.ReadPath) *adapters.StoreReader {
+	return adapters.NewStoreReader(db, adapters.NewPostgresAssetRepository(pool), path)
 }
