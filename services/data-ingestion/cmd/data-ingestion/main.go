@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Command data-ingestion is the entrypoint for the Data Ingestion service.
 // It wires configuration and runs the HTTP and gRPC servers.
 // Both servers run until the process receives SIGINT or SIGTERM.

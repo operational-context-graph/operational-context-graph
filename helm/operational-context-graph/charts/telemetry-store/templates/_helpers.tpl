@@ -1,7 +1,3 @@
-{{/*
-SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-SPDX-License-Identifier: Apache-2.0
-*/}}
 {{/* Expand the name of the chart. */}}
 {{- define "telemetry-store.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}

@@ -1,7 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
 # Default values for the doris subchart.
 # The Doris Operator watches the DorisCluster CR rendered from these values.
 # Override feSpec/beSpec in the parent chart's values.yaml.

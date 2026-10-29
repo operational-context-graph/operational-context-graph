@@ -1,7 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
 # syntax=docker/dockerfile:1
 
 # Build context must be the repository root so go.work resolves gen/go.
