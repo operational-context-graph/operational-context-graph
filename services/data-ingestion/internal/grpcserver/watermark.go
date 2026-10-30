@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package grpcserver
 
 import "github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
