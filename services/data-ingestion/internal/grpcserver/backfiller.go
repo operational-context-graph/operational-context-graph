@@ -10,10 +10,9 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 )
 
-var _ Backfiller = (*backfill.PostgresBackfiller)(nil) // compile-time interface check
+var _ Backfiller = (*backfill.PostgresBackfiller)(nil)
 
-// Backfiller is the subset of the watermark store needed by the gRPC handlers.
-// All state is persisted to PostgreSQL; there is no in-memory caching.
+// Backfiller is the watermark store interface used by the gRPC handlers.
 // Implementations MUST be safe for concurrent use by multiple goroutines.
 //
 // Commit-ordering invariant: callers MUST invoke AdvanceLive and
