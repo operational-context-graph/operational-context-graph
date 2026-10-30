@@ -71,3 +71,4 @@ clean: ## Clean all build, test, and static analysis artifacts
 	rm -rf $(BUILD_DIR)
 	rm -rf $(COVERAGE_DIR)
 	rm -rf $(CURDIR)/sbom.spdx.json
+	go clean -testcache
