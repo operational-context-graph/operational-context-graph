@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package drain implements the asynchronous delivery half of Data Ingestion: a
 // single process that reads pending rows from the outbox, forms immutable
 // batches, pins them, delivers each through the owning store's StoreWriter, and
