@@ -73,8 +73,8 @@ func (backfiller *PostgresBackfiller) GetWatermark(ctx context.Context, connecto
 // incomplete gap cycle cannot corrupt the next CloseGap via COALESCE.
 func (backfiller *PostgresBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {
 	const q = `
-INSERT INTO data_ingestion_watermarks (connector_id, partition_key, gap_open, updated_at)
-VALUES ($1, $2, true, now())
+INSERT INTO data_ingestion_watermarks (connector_id, partition_key, gap_open)
+VALUES ($1, $2, true)
 ON CONFLICT (connector_id, partition_key)
 DO UPDATE SET gap_open = true, live_frontier = NULL, updated_at = now()`
 
@@ -120,8 +120,8 @@ func (backfiller *PostgresBackfiller) AdvanceLive(ctx context.Context, connector
 	// Single upsert: when no gap is open update committed watermark;
 	// when a gap is open update live_frontier only.
 	const q = `
-INSERT INTO data_ingestion_watermarks (connector_id, partition_key, watermark, gap_open, updated_at)
-VALUES ($1, $2, $3, false, now())
+INSERT INTO data_ingestion_watermarks (connector_id, partition_key, watermark, gap_open)
+VALUES ($1, $2, $3, false)
 ON CONFLICT (connector_id, partition_key) DO UPDATE
    SET watermark     = CASE WHEN data_ingestion_watermarks.gap_open THEN data_ingestion_watermarks.watermark ELSE EXCLUDED.watermark END,
        live_frontier = CASE WHEN data_ingestion_watermarks.gap_open THEN EXCLUDED.watermark                  ELSE data_ingestion_watermarks.live_frontier END,
