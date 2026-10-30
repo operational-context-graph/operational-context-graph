@@ -112,6 +112,21 @@ func (s *artifactTestSnapshot) ReleaseArtifacts(_ context.Context, version strin
 				continue
 			}
 		}
+		if item.Kind == "source-mapping" {
+			detail := s.mappings[item.Revision]
+			if filter.SourceArtifactType != "" && detail.SourceArtifactType != filter.SourceArtifactType || filter.EngineLanguage != "" && detail.EngineLanguage != filter.EngineLanguage || filter.ExecutionProfile != "" && detail.ExecutionProfile != filter.ExecutionProfile {
+				continue
+			}
+			if filter.TargetArtifactType != "" {
+				matched := false
+				for _, transformation := range detail.Transformations {
+					matched = matched || transformation.TargetArtifactType == filter.TargetArtifactType
+				}
+				if !matched {
+					continue
+				}
+			}
+		}
 		if afterKind != nil && (item.Kind < *afterKind || item.Kind == *afterKind && item.Type <= *afterType) {
 			continue
 		}
@@ -236,7 +251,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		require.NotNil(t, body.TargetSchemaVersion)
 		assert.Equal(t, "1.0.0", *body.TargetSchemaVersion)
 		assert.Nil(t, body.SchemaClass)
-		assert.Equal(t, "/v1/releases/1.0.0/schemas/device/source-mapping/package", body.Links["package"])
+		assert.Equal(t, "/v1/releases/1.0.0/source-mappings/device-mapping/package", body.Links["package"])
 	})
 
 	t.Run("immutable reused descriptor omits release links", func(t *testing.T) {
@@ -248,7 +263,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		assert.Equal(t, "/v1/artifacts/rev-context/metadata", body.Dependencies[0].Href)
 		assert.NotContains(t, body.Links, "contexts")
 		assert.NotContains(t, body.Links, "package")
-		assert.NotContains(t, body.Links, "sourceMapping")
+		assert.NotContains(t, body.Links, "sourceMappings")
 		assert.NotContains(t, body.Links, "stores")
 	})
 

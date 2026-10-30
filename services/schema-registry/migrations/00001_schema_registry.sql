@@ -177,31 +177,50 @@ CREATE INDEX storage_catalog_entries_lookup_index
 
 CREATE TABLE schema_registry.source_mapping_details (
     schema_version text COLLATE "C" NOT NULL,
-    mapping_revision text COLLATE "C" PRIMARY KEY,
+    mapping_revision text COLLATE "C" NOT NULL,
     source_artifact_type text COLLATE "C" NOT NULL,
     source_revision text COLLATE "C" NOT NULL,
-    target_artifact_type text COLLATE "C" NOT NULL,
-    target_revision text COLLATE "C" NOT NULL,
     target_schema_version text COLLATE "C" NOT NULL,
-    cardinality text COLLATE "C" NOT NULL,
     engine_language text COLLATE "C" NOT NULL,
     engine_language_version text COLLATE "C" NOT NULL,
     execution_profile text COLLATE "C" NOT NULL,
-    program_name text COLLATE "C" NOT NULL,
-    program_digest text COLLATE "C" NOT NULL,
-    UNIQUE (schema_version, source_artifact_type),
-    CHECK (cardinality IN ('one', 'many')),
-    CHECK (engine_language <> '' AND engine_language_version <> '' AND execution_profile <> ''),
-    CHECK (program_digest ~ '^sha-256:[0-9a-f]{64}$'),
+    condition_program_name text COLLATE "C",
+    condition_program_digest text COLLATE "C",
+    PRIMARY KEY (schema_version, mapping_revision),
+    CHECK (source_artifact_type ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND octet_length(source_artifact_type) <= 255),
+    CHECK (engine_language <> '' AND octet_length(engine_language) <= 255),
+    CHECK (execution_profile <> '' AND octet_length(execution_profile) <= 255),
+    CHECK (engine_language_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'),
+    CHECK (target_schema_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'),
+    CHECK ((condition_program_name IS NULL) = (condition_program_digest IS NULL)),
+    CHECK (condition_program_digest IS NULL OR condition_program_digest ~ '^sha-256:[0-9a-f]{64}$'),
     FOREIGN KEY (schema_version) REFERENCES schema_registry.releases(schema_version) ON DELETE RESTRICT,
     FOREIGN KEY (mapping_revision) REFERENCES schema_registry.artifacts(artifact_revision) ON DELETE RESTRICT,
     FOREIGN KEY (source_revision) REFERENCES schema_registry.artifacts(artifact_revision) ON DELETE RESTRICT,
-    FOREIGN KEY (target_revision) REFERENCES schema_registry.artifacts(artifact_revision) ON DELETE RESTRICT,
-    FOREIGN KEY (mapping_revision, program_name) REFERENCES schema_registry.artifact_resources(artifact_revision, name)
+    FOREIGN KEY (schema_version, mapping_revision) REFERENCES schema_registry.release_artifacts(schema_version, artifact_revision) ON DELETE RESTRICT,
+    FOREIGN KEY (mapping_revision, condition_program_name) REFERENCES schema_registry.artifact_resources(artifact_revision, name)
         DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX source_mapping_details_lookup_index
-    ON schema_registry.source_mapping_details (schema_version, source_artifact_type, target_artifact_type);
+    ON schema_registry.source_mapping_details (schema_version, source_artifact_type, source_revision, mapping_revision);
+
+CREATE TABLE schema_registry.source_mapping_transformations (
+    schema_version text COLLATE "C" NOT NULL,
+    mapping_revision text COLLATE "C" NOT NULL,
+    ordinal integer NOT NULL CHECK (ordinal >= 0 AND ordinal < 10000),
+    target_artifact_type text COLLATE "C" NOT NULL,
+    target_revision text COLLATE "C" NOT NULL,
+    cardinality text COLLATE "C" NOT NULL CHECK (cardinality IN ('one', 'many')),
+    program_name text COLLATE "C" NOT NULL,
+    program_digest text COLLATE "C" NOT NULL CHECK (program_digest ~ '^sha-256:[0-9a-f]{64}$'),
+    PRIMARY KEY (schema_version, mapping_revision, ordinal),
+    CHECK (target_artifact_type ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND octet_length(target_artifact_type) <= 255),
+    FOREIGN KEY (schema_version, mapping_revision) REFERENCES schema_registry.source_mapping_details(schema_version, mapping_revision) ON DELETE RESTRICT,
+    FOREIGN KEY (schema_version, target_revision) REFERENCES schema_registry.release_artifacts(schema_version, artifact_revision) ON DELETE RESTRICT,
+    FOREIGN KEY (mapping_revision, program_name) REFERENCES schema_registry.artifact_resources(artifact_revision, name) ON DELETE RESTRICT
+);
+CREATE INDEX source_mapping_transformations_target_index
+    ON schema_registry.source_mapping_transformations (schema_version, target_artifact_type, mapping_revision);
 
 CREATE TABLE schema_registry.release_projection_commitments (
     schema_version text COLLATE "C" NOT NULL,

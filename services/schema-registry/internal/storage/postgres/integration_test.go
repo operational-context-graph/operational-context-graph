@@ -138,7 +138,7 @@ WHERE namespace.nspname = 'schema_registry'
 		require.NoError(t, err)
 	})
 
-	t.Run("missing references and duplicate mapping source are rejected", func(t *testing.T) {
+	t.Run("missing references fail and shared mapping sources are accepted", func(t *testing.T) {
 		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('9.0.0', 'schema', 'missing', 'unknown-revision')`)
 		require.Error(t, err)
 		insertArtifact(t, ctx, conn, "mapping-one", "mapping-one", "https://registry.test/v1/resources/schema/mapping-one/mapping-one")
@@ -147,15 +147,48 @@ WHERE namespace.nspname = 'schema_registry'
 		insertArtifact(t, ctx, conn, "mapping-target", "mapping-target", "https://registry.test/v1/resources/schema/mapping-target/mapping-target")
 		insertResource(t, ctx, conn, "mapping-one", "program-one")
 		insertResource(t, ctx, conn, "mapping-two", "program-two")
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version, mapping_revision, source_artifact_type, source_revision, target_artifact_type, target_revision, target_schema_version, cardinality, engine_language, engine_language_version, execution_profile, program_name, program_digest) VALUES ('9.0.0', 'mapping-one', 'mapping-source', 'mapping-source', 'mapping-target', 'mapping-target', '9.0.0', 'one', 'language', '1.0.0', 'profile', 'program-one', $1)`, digest('a'))
-		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version, mapping_revision, source_artifact_type, source_revision, target_artifact_type, target_revision, target_schema_version, cardinality, engine_language, engine_language_version, execution_profile, program_name, program_digest) VALUES ('9.0.0', 'mapping-two', 'mapping-source', 'mapping-source', 'mapping-target', 'mapping-target', '9.0.0', 'one', 'language', '1.0.0', 'profile', 'program-two', $1)`, digest('a'))
+		for _, revision := range []string{"mapping-one", "mapping-two", "mapping-source", "mapping-target"} {
+			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version,kind,artifact_type,artifact_revision) VALUES ('9.0.0','schema',$1,$1)`, revision)
+			require.NoError(t, err)
+		}
+		for _, revision := range []string{"mapping-one", "mapping-two"} {
+			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0',$1,'mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`, revision)
+			require.NoError(t, err)
+		}
+		for ordinal := range 2 {
+			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target','mapping-target','one','program-one',$2)`, ordinal, digest('a'))
+			require.NoError(t, err)
+		}
+		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0','mapping-one','mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`)
 		require.Error(t, err)
+		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.source_mapping_details SET condition_program_name = 'missing', condition_program_digest = $1 WHERE schema_version = '9.0.0' AND mapping_revision = 'mapping-two'`, digest('a'))
+		require.Error(t, err)
+		for _, invalid := range []struct {
+			ordinal                      int
+			target, cardinality, program string
+		}{
+			{0, "mapping-target", "one", "program-one"},
+			{2, "missing", "one", "program-one"},
+			{2, "mapping-target", "zero", "program-one"},
+			{2, "mapping-target", "one", "missing"},
+			{-1, "mapping-target", "one", "program-one"},
+			{10000, "mapping-target", "one", "program-one"},
+		} {
+			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target',$2,$3,$4,$5)`, invalid.ordinal, invalid.target, invalid.cardinality, invalid.program, digest('a'))
+			require.Error(t, err)
+		}
 	})
 
 	t.Run("runtime role is read only", func(t *testing.T) {
 		_, err := conn.ExecContext(ctx, "SET ROLE schema_registry_api")
 		require.NoError(t, err)
+		for _, table := range []string{"source_mapping_details", "source_mapping_transformations"} {
+			// These identifiers are a fixed test-owned allowlist, not external input.
+			_, err = conn.ExecContext(ctx, "SELECT * FROM schema_registry."+table+" LIMIT 0")
+			require.NoError(t, err)
+			_, err = conn.ExecContext(ctx, "DELETE FROM schema_registry."+table+" WHERE false")
+			require.Error(t, err)
+		}
 		_, err = conn.ExecContext(ctx, "INSERT INTO schema_registry.registry_state (singleton) VALUES (false)")
 		require.Error(t, err)
 		_, err = conn.ExecContext(ctx, "RESET ROLE")

@@ -17,6 +17,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
@@ -213,40 +214,7 @@ type byteResponse struct {
 	Revision     string
 	ResourceName string
 }
-type descriptorResponse struct {
-	Kind                      string               `json:"kind"`
-	ArtifactType              string               `json:"artifactType"`
-	ArtifactRevision          string               `json:"artifactRevision"`
-	CreatedUnderSchemaVersion string               `json:"createdUnderSchemaVersion"`
-	SchemaClass               *string              `json:"schemaClass,omitempty"`
-	TargetSchemaVersion       *string              `json:"targetSchemaVersion,omitempty"`
-	CanonicalURI              string               `json:"canonicalUri"`
-	Payload                   payloadResponse      `json:"payload"`
-	Resources                 []resourceResponse   `json:"resources"`
-	Dependencies              []dependencyResponse `json:"dependencies"`
-	Extensions                json.RawMessage      `json:"extensions,omitempty"`
-	Links                     links                `json:"links"`
-}
-type payloadResponse struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Href      string `json:"href"`
-}
-type resourceResponse struct {
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Href      string `json:"href"`
-}
-type dependencyResponse struct {
-	Kind             string `json:"kind"`
-	ArtifactType     string `json:"artifactType"`
-	ArtifactRevision string `json:"artifactRevision"`
-	Href             string `json:"href"`
-}
+type descriptorResponse = representation.DescriptorResponse
 
 func validKind(value string) bool {
 	return value == "schema" || value == "context" || value == "source-mapping"
@@ -380,34 +348,7 @@ func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, val
 }
 
 func descriptor(value artifact.Descriptor, selected string) descriptorResponse {
-	item := value.Artifact
-	result := descriptorResponse{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: payloadResponse{item.Payload.MediaType, item.Payload.Digest, item.Payload.Size, "/v1/artifacts/" + item.Revision}, Resources: make([]resourceResponse, 0, len(value.Resources)), Dependencies: make([]dependencyResponse, 0, len(value.Dependencies)), Links: links{"content": "/v1/artifacts/" + item.Revision, "history": "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
-	if selected == "" {
-		result.Links["self"] = "/v1/artifacts/" + item.Revision + "/metadata"
-	} else {
-		result.Links["self"] = "/v1/releases/" + selected + "/artifacts/" + item.Kind + "/" + item.Type
-	}
-	if len(item.Extensions) > 0 {
-		result.Extensions = append(json.RawMessage(nil), item.Extensions...)
-	}
-	for _, resource := range value.Resources {
-		result.Resources = append(result.Resources, resourceResponse{resource.Name, resource.Role, resource.MediaType, resource.Digest, resource.Size, "/v1/artifacts/" + item.Revision + "/resources/" + resource.Name})
-	}
-	for _, dependency := range value.Dependencies {
-		href := "/v1/artifacts/" + dependency.Revision + "/metadata"
-		if selected != "" {
-			href = "/v1/releases/" + selected + "/artifacts/" + dependency.Kind + "/" + dependency.ArtifactType
-		}
-		result.Dependencies = append(result.Dependencies, dependencyResponse{dependency.Kind, dependency.ArtifactType, dependency.Revision, href})
-	}
-	if selected != "" && item.Kind == "schema" {
-		base := "/v1/releases/" + selected + "/schemas/" + item.Type
-		result.Links["contexts"], result.Links["package"], result.Links["sourceMapping"], result.Links["stores"] = base+"/contexts", base+"/package", base+"/source-mapping", base+"/stores"
-	}
-	if selected != "" && item.Kind == "source-mapping" {
-		result.Links["package"] = "/v1/releases/" + selected + "/schemas/" + value.SourceArtifactType + "/source-mapping/package"
-	}
-	return result
+	return representation.BuildDescriptor(value, selected)
 }
 
 func invalidArtifactPathCode(kind string) ErrorCode {
@@ -433,6 +374,8 @@ func (s *Server) writeArtifactValidationError(c *gin.Context, code ErrorCode) {
 func (s *Server) writeArtifactError(c *gin.Context, err error, notFound ErrorCode) {
 	var code ErrorCode
 	switch {
+	case errors.Is(err, artifact.ErrReleaseNotFound):
+		code = ReleaseNotFound
 	case errors.Is(err, postgres.ErrNotFound):
 		code = notFound
 	case errors.Is(err, postgres.ErrInconsistentState):

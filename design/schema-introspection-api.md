@@ -117,56 +117,82 @@ An illustrative context can contain:
 
 ### Source mappings
 
-A _source mapping_ is a schema artifact that describes how to transform records from one source system into the canonical
-data model of the OCG. Both the source record and the canonical data model represent data in JSON format. JSON schemas
-are used to define the structure, types, and constraints of the data in both the source and canonical models. That is, a
-source mapping defines how the JSON structure of the source record should be transformed (mapped) into the JSON structure
-of the canonical data model.
+A _source mapping_ describes how to transform source records into canonical OCG records. JSON schemas define both record
+formats. One source record can produce records of different canonical types. For example, one mapping can produce an
+entity record and edge records describing its relationships.
+
+Several source mappings can accept the same source schema revision within one release. Each mapping can define a
+condition that determines whether it applies to a source record. For example, the NetBox `/api/dcim/devices/` endpoint
+returns records for different physical and logical devices. The source record's `device_type` property distinguishes
+device types. The canonical model uses explicit entity types such as `Chassis`, `NetworkDevice`, and `LoadBalancer`,
+rather than one generic `Device` type. Separate mappings accept the same source schema but check different `device_type`
+values before producing their canonical records.
 
 The source mapping format can accommodate different execution engines and languages for defining the mapping logic. This
-allows the transformation logic to evolve over time. A full source mapping revision contains two files:
+allows the transformation logic to evolve over time. A full source mapping revision contains the following files:
 
-- The source mapping descriptor contains the metadata and schema information. It is the primary artifact payload.
-- The transformation program contains the mapping logic. It is an additional resource of the same artifact revision.
+- The source mapping descriptor, which contains metadata and schema references as the primary artifact payload.
+- An optional condition program, stored as an additional resource of the same artifact revision.
+- One or more transformation programs, stored as additional resources of the same artifact revision.
 
 The source mapping descriptor is a JSON document defining the metadata of the mapping:
 
-- `"formatVersion"`: The version of the source mapping descriptor format used by the source mapping descriptor.
-- `"id"`: An identifier for the source mapping.
-- `"sourceSchema"`: The JSON schema describing the structure of the source data. The specific version of the JSON schema
-  can be specified by either the artifact revision (`"revision"`) or the schema version (`"version"`).
-- `"targetSchema"`: The JSON schema describing the structure of the target (canonical) data.
-- `"cardinality"`: The cardinality of the mapping (e.g., `"one"` or `"many"`).
-- `"engine"`: The engine the reference transformation program is intended to be executed with, specifying the language
-  used to define the transformation logic, the language version, and the execution profile to be used by the execution
-  engine. The execution profile defines, for example, what custom, user-defined functions are allowed during the execution
-  of the transformation logic.
-- `"programRef"`: A reference to the transformation program file.
-- `"programDigest"`: A digest of the transformation program file for verification.
+- `formatVersion`: The version of the source mapping descriptor format.
+- `id`: The logical artifact type of the source mapping, independent of its source schema's logical artifact type.
+- `sourceSchema`: The source JSON Schema reference, using `id` and either `revision` or `version`.
+- `engine`: The language, language version, and execution profile shared by the condition and transformation programs.
+  The execution profile defines allowed custom functions.
+- `programs`: The optional `condition` entry and the non-empty `transformations` array.
+
+Each program entry contains `programRef` and `programDigest`. These fields identify an additional resource and verify its
+exact bytes. Each transformation also contains its own `targetSchema` reference, using `id` and either `revision` or
+`version`. There is no top-level `targetSchema`, `programRef`, or `programDigest`.
 
 ```json
 {
   "$schema": "https://schemas.example.org/ocg/source-mapping-artifact-1.0.json",
   "formatVersion": "1.0.0",
   "id": "example-cmdb-device",
-  "sourceSchema": {"id": "example-cmdb-device", "revision": "01KABC"},
-  "targetSchema": {"id": "device", "version": "2.4.0"},
-  "cardinality": "one",
+  "sourceSchema": {"id": "example-cmdb-device", "revision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"},
   "engine": {
     "language": "ocg-dsl",
     "languageVersion": "1.0.0",
     "executionProfile": "ocg-custom-transformations"
   },
-  "programRef": "example-cmdb-device-transformation.json",
-  "programDigest": "sha-256:1ca92..."
+  "programs": {
+    "condition": {
+      "programRef": "example-cmdb-device-condition.ocgdsl",
+      "programDigest": "sha-256:2ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3"
+    },
+    "transformations": [
+      {
+        "cardinality": "one",
+        "targetSchema": {"id": "device", "version": "2.4.0"},
+        "programRef": "example-cmdb-device-transformation.json",
+        "programDigest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3"
+      },
+      {
+        "cardinality": "one",
+        "targetSchema": {"id": "located-in", "version": "2.4.0"},
+        "programRef": "example-cmdb-device-location.json",
+        "programDigest": "sha-256:3ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3"
+      }
+    ]
+  }
 }
 ```
 
-The transformation program is a separate file that uses the language-specific format.
+Each program is a separate file in its language-specific format. This example produces a `device` entity and a
+`located-in` edge from one source record. The registry resolves each target independently. The illustrative `device`
+schema is independent of the specialized device types in the NetBox example.
 
-Within one schema release, at most one source mapping can reference a given source schema logical artifact type. A release
-can omit a mapping for a source schema. This invariant gives Data Ingestion one deterministic mapping lookup for the pair
-`(schema version, source artifact type)`.
+Each transformation program defines how much output records it produces when executed, as indicated by its `cardinality`
+property. `cardinality: one` means a transformation produces one canonical record when it is executed. `cardinality: many`
+allows multiple records per transformation. A skipped mapping produces no records regardless of cardinality.
+
+The pair `(schema version, source artifact type)` identifies a deterministic set of candidate mappings, not one mapping.
+A release can contain zero, one, or several candidates. The registry exposes the complete set without evaluating
+conditions. Condition evaluation belongs to the source mapping execution engine, not the introspection API.
 
 ### Release manifests
 
@@ -327,19 +353,25 @@ An additional resource contains the same four byte descriptor fields and two mor
 | `name` | string | Yes | Name unique within the artifact revision |
 | `role` | string | Yes | Registered purpose of the resource |
 
-A source mapping stores its descriptor as `payload` and its transformation program as a resource with role `program`.
-A source mapping MUST contain exactly one resource with that role. The resource digest MUST equal `programDigest` in the
-mapping descriptor after both documents are parsed. The resolved `programRef` MUST equal that resource's `name`.
-Resource names are manifest-local identifiers, not paths resolved against the retrieval URI. The descriptor `id` MUST
-equal the artifact entry's `artifactType`. The descriptor's source schema and target schema references MUST resolve to
-dependency entries with the same logical identities and revisions. A revision-based descriptor reference MUST equal the
-dependency revision. A version-based target reference MUST equal `targetSchemaVersion`, and its resolved schema revision
-MUST occur in `dependencies`. This makes both files part of one immutable source-mapping revision without creating a
-second logical artifact.
+A source mapping stores its descriptor as `payload`. Its condition and transformation programs are resources with role
+`program`. The descriptor MUST contain a non-empty `programs.transformations` array and MAY contain `programs.condition`.
+Every program entry MUST resolve `programRef` to exactly one resource's `name` within the same artifact revision. That
+resource MUST have role `program`, and its digest MUST equal the entry's `programDigest`. Every resource with role
+`program` MUST be referenced by the descriptor. Repeated references to the same resource do not duplicate that resource.
 
-Within one manifest, no two source-mapping entries can resolve `sourceSchema` to the same schema logical artifact type.
-The publisher and importer MUST reject a release that violates this rule. The rule uses the resolved source schema rather
-than the source-mapping artifact type because those identifiers can differ.
+Resource names identify resources within an artifact revision. That is, they are manifest-local identifiers, not paths
+resolved against the retrieval URI. The descriptor `id` MUST equal the artifact entry's `artifactType`. The descriptor's
+source schema and every transformation target schema MUST resolve to dependency entries with matching logical identities
+and revisions. A revision-based descriptor reference MUST equal the dependency revision. A version-based target reference
+MUST equal `targetSchemaVersion`. Its resolved schema revision MUST occur in `dependencies`. Condition and transformation
+program dependencies also belong to the release closure.
+
+The descriptor and all referenced programs form one immutable source-mapping revision. Changing a condition, a
+transformation, or a target reference creates a new revision. Program resources do not create separate logical artifacts.
+
+Several source-mapping entries MAY resolve `sourceSchema` to the same schema logical artifact type and selected revision.
+Each mapping MUST retain its own unique logical artifact type. Publishers and importers MUST NOT reject mappings solely
+because they share a source schema or have overlapping conditions.
 
 ##### Artifact dependencies
 
@@ -511,6 +543,10 @@ Adding one is additive unless it changes the interpretation or destination of ex
 breaking. Updating a URI mapping is breaking. A source mapping behavior change is breaking unless validation in the
 Schema Authoring environment establishes that all previously valid inputs have equivalent canonical outputs.
 
+Source mapping behavior includes condition selection and the combined output of all applicable mappings and transformations.
+Adding a mapping for an existing source schema is not automatically additive. Changing a condition can change which
+canonical records ingestion produces, even when every target schema remains unchanged.
+
 When the first release contains `changes`, all change arrays MUST be empty and compatibility MUST be `initial`. For later
 releases that contain `changes`, the change arrays MUST exactly equal a comparison with the manifest identified by
 `previousRelease`. The textual `summary` is descriptive and is not part of this comparison. A release with no effective
@@ -570,7 +606,8 @@ The publisher and importer enforce these invariants after structural validation:
 - Every digest matches the bytes and every size matches the byte length before publication succeeds.
 - Every dependency, binding, and catalog reference resolves inside the same manifest.
 - Every source mapping targets this release or an ancestor and passes current-release validation.
-- At most one source mapping resolves from each source schema logical artifact type.
+- Every source mapping resolves its source and all transformation targets to the required schema classifications.
+- Every condition and transformation program reference matches a resource name, role, and digest in its mapping revision.
 - Every parsed artifact reference agrees with its declared dependency, resource, binding, and catalog metadata.
 - Every external runtime reference is represented by an artifact, resource, dependency, or URI catalog entry.
 - When `changes` is present, its machine-readable fields match the predecessor and the schema version increment matches
@@ -650,6 +687,22 @@ publisher serializes the same data with JCS before it computes the manifest dige
       "dependencies": []
     },
     {
+      "kind": "schema",
+      "artifactType": "located-in",
+      "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "createdUnderSchemaVersion": "2.1.0",
+      "schemaClass": "edge-type",
+      "canonicalUri": "https://schemas.example.org/resources/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "payload": {
+        "mediaType": "application/schema+json",
+        "digest": "sha-256:d14ae46a31d223a7030ed3f04e8944d634eefcab35f84b357f11d9a02d884a01",
+        "size": 1824,
+        "bundlePath": "artifacts/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6.json"
+      },
+      "resources": [],
+      "dependencies": []
+    },
+    {
       "kind": "source-mapping",
       "artifactType": "example-cmdb-device",
       "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
@@ -664,6 +717,22 @@ publisher serializes the same data with JCS before it computes the manifest dige
       },
       "resources": [
         {
+          "name": "example-cmdb-device-condition.ocgdsl",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+ocgdsl",
+          "digest": "sha-256:2ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 348,
+          "bundlePath": "artifacts/source-mapping/example-cmdb-device/example-cmdb-device-condition.ocgdsl"
+        },
+        {
+          "name": "example-cmdb-device-location.json",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+          "digest": "sha-256:3ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 1024,
+          "bundlePath": "artifacts/source-mapping/example-cmdb-device/example-cmdb-device-location.json"
+        },
+        {
           "name": "example-cmdb-device-transformation.json",
           "role": "program",
           "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
@@ -675,13 +744,18 @@ publisher serializes the same data with JCS before it computes the manifest dige
       "dependencies": [
         {
           "kind": "schema",
+          "artifactType": "device",
+          "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F"
+        },
+        {
+          "kind": "schema",
           "artifactType": "example-cmdb-device",
           "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"
         },
         {
           "kind": "schema",
-          "artifactType": "device",
-          "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F"
+          "artifactType": "located-in",
+          "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6"
         }
       ]
     }
@@ -712,6 +786,10 @@ publisher serializes the same data with JCS before it computes the manifest dige
       "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"
     },
     {
+      "uri": "https://schemas.example.org/resources/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6"
+    },
+    {
       "uri": "https://schemas.example.org/resources/source-mapping/example-cmdb-device/01K4Q82H6BP2R6M7MA9W5K3Q1T",
       "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T"
     }
@@ -720,6 +798,13 @@ publisher serializes the same data with JCS before it computes the manifest dige
     {
       "kind": "schema",
       "artifactType": "device",
+      "stores": [
+        "data-center-inventory"
+      ]
+    },
+    {
+      "kind": "schema",
+      "artifactType": "located-in",
       "stores": [
         "data-center-inventory"
       ]
@@ -877,10 +962,12 @@ Version `v1` defines these resource methods:
 | `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/content` | Get the exact JSON Schema bytes |
 | `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/contexts` | List contexts bound to a selected schema revision |
 | `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/package` | Get a schema and its contexts in one JSON document |
-| `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mapping` | Get the source mapping resolved for a source schema |
-| `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mapping/package` | Get all resources needed to validate, translate, and route a source record |
+| `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mappings` | List source mappings for a source schema |
+| `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mappings/packages` | List source mapping packages for a source schema |
 | `GET /v1/releases/{schemaVersion}/schemas/{artifactType}/stores` | Get the OCG stores assigned to a logical schema |
 | `GET /v1/releases/{schemaVersion}/source-mappings` | List source mappings and filter them by source or target schema |
+| `GET /v1/releases/{schemaVersion}/source-mappings/{artifactType}` | Get one release-selected source mapping artifact |
+| `GET /v1/releases/{schemaVersion}/source-mappings/{artifactType}/package` | Get one source mapping package |
 | `GET /v1/releases/{schemaVersion}/resolve?uri={uri}` | Resolve a release-scoped URI or IRI |
 | `GET /v1/artifacts/{artifactRevision}/metadata` | Get metadata for one immutable artifact revision |
 | `GET /v1/artifacts/{artifactRevision}` | Get the exact primary payload of an artifact revision |
@@ -893,7 +980,9 @@ Version `v1` defines these resource methods:
 The initial `{kind}` values are `schema`, `context`, and `source-mapping`. An unsupported kind produces a `400` response.
 
 For the schema-nested source-mapping resources, `{artifactType}` identifies the source schema logical artifact type. The
-resolved source mapping can have a different logical artifact type, which the response exposes in its metadata.
+resolved source mappings can have different logical artifact types, which their metadata exposes.
+For the direct source-mapping metadata and package resources, `{artifactType}` identifies the mapping's own logical
+artifact type.
 
 `{artifactRevision}` is opaque. Version `v1` restricts it to the URI-safe artifact revision syntax defined in this
 document. Clients MUST copy it without interpreting or normalizing it. `{resourceName}` is a single percent-encoded path
@@ -913,7 +1002,7 @@ An artifact descriptor represents one immutable revision. It contains these fiel
 | `artifactRevision` | string | Yes | Opaque immutable revision |
 | `createdUnderSchemaVersion` | string | Yes | First release that selected this revision |
 | `schemaClass` | string | For `schema` | Registered schema classification |
-| `targetSchemaVersion` | string | For `source-mapping` | Canonical schema version validated by the mapping |
+| `targetSchemaVersion` | string | For `source-mapping` | Canonical release targeted by all transformations |
 | `canonicalUri` | string | Yes | Absolute immutable URI for the primary payload |
 | `payload` | object | Yes | Primary byte descriptor and retrieval link |
 | `resources` | array | Yes | Additional byte descriptors and retrieval links |
@@ -929,8 +1018,9 @@ Each dependency contains `kind`, `artifactType`, `artifactRevision`, and `href`.
 revision metadata.
 
 The `links` object contains `self`, `content`, and `history`. A schema descriptor can also contain `contexts`, `package`,
-`sourceMapping`, and `stores`. A source-mapping descriptor also contains `package`. Clients MUST use these links instead
-of modifying the `self` URI.
+`sourceMappings`, and `stores`. A release-scoped source-mapping descriptor also contains `package`. Revision metadata
+remains release-independent and has no package link. Clients MUST follow the returned links instead of modifying the
+`self` URI.
 
 The registry MUST return an artifact descriptor whose bound values match the release manifest. The API MUST NOT add
 mutable metadata to the artifact revision representation.
@@ -1146,10 +1236,10 @@ Each item is an artifact descriptor with schema relationship links. The initial 
 `GET /v1/releases/{schemaVersion}/schemas/{artifactType}` resolves the logical schema through one release. It returns the
 schema descriptor and links to its content, associated contexts, source mappings, package, stores, and history.
 
-The `sourceMapping` link points to
-`/v1/releases/{schemaVersion}/schemas/{artifactType}/source-mapping`. This link resolves the mapping that accepts records
-conforming to this schema. It does not assume that a source mapping has the same logical artifact type as its source
-schema.
+The `sourceMappings` link points to
+`/v1/releases/{schemaVersion}/source-mappings?sourceArtifactType={artifactType}`. It discovers all mappings that accept
+records conforming to the selected schema revision. It does not assume that a source mapping has the same logical artifact
+type as its source schema.
 
 ##### Get JSON Schema content
 
@@ -1245,37 +1335,45 @@ does not accept an API-generated JSON representation.
 | Parameter | Meaning |
 | --- | --- |
 | `sourceArtifactType` | Mapping source schema logical artifact type |
-| `targetArtifactType` | Mapping target schema logical artifact type |
+| `targetArtifactType` | Logical artifact type targeted by at least one transformation |
 | `engineLanguage` | `engine.language` in the mapping descriptor |
 | `executionProfile` | `engine.executionProfile` in the mapping descriptor |
 
-Filters combine with logical `AND`. The registry resolves `sourceSchema` and `targetSchema` references during import. The
-query compares the resolved schema dependency, not only the text in the mapping descriptor.
+Filters combine with logical `AND`. The registry resolves `sourceSchema` and every transformation's `targetSchema` during
+import. Queries compare resolved schema dependencies, not only descriptor text. A target filter matches a mapping once,
+even when several transformations target that schema. Matching returns the complete mapping, not a filtered transformation
+list.
 
-The source-schema uniqueness invariant means that `sourceArtifactType` matches zero or one item. The collection remains
-useful for catalog discovery, target-schema queries, and engine queries. Data Ingestion SHOULD use the direct
-source-schema-keyed resource instead of this collection.
+`sourceArtifactType` can match zero, one, or several mappings for the selected source schema revision. Data Ingestion
+uses this collection to discover all candidates and follows every page before evaluating mapping conditions. The registry
+does not filter candidates based on source-record values. Each item's metadata and package links select that mapping
+explicitly.
 
 When `sourceArtifactType` or `targetArtifactType` is present, the named schema MUST exist in the selected release. An
 unknown schema produces `404 Schema Not In Release`. An existing schema with no matching mappings produces `200 OK` with
 an empty `items` array.
 
-Each item contains the common source-mapping artifact descriptor and these parsed fields:
+Each item uses the shared source mapping artifact model. The direct metadata endpoint returns the same model as one
+object. Schema-nested metadata collections and the `mapping` field in packages MUST also use this model.
+The model contains the complete common source-mapping artifact descriptor and these additional fields:
 
 | Field | JSON type | Description |
 | --- | --- | --- |
 | `sourceSchema` | object | Logical type, exact revision, and links for the resolved source schema |
-| `targetSchema` | object | Logical type, exact revision, target schema version, and links for the target schema |
-| `cardinality` | string | Mapping output cardinality |
 | `engine` | object | Language, language version, and execution profile |
-| `program` | object | Name, role, media type, digest, size, and immutable retrieval link |
+| `programs` | object | Optional condition and non-empty transformation program list with resolved targets |
 
-`sourceSchema` and `targetSchema` each contain `artifactType`, `artifactRevision`, `metadata`, and `content` links. The
-`targetSchema` object also contains `schemaVersion` from `targetSchemaVersion`. The links remain scoped to the requested
-release when that release selects the referenced revision.
+`programs.condition`, when present, contains `name`, `role`, `mediaType`, `digest`, `size`, and `href`. Each
+`programs.transformations` entry contains those same resource descriptor fields, the output `cardinality`, and a resolved
+`targetSchema`. The array preserves the descriptor's transformation order.
 
-The `program` object MUST identify the resource whose role is `program`. Its values MUST match both the manifest resource
-descriptor and the mapping descriptor's `programRef` and `programDigest`.
+Each program's `name` MUST equal its descriptor entry's `programRef`. Its `digest` MUST equal that entry's `programDigest`.
+All six resource descriptor fields MUST match the corresponding item in the common descriptor's `resources` array.
+`href` retrieves the program from the mapping's immutable revision. Condition and transformation resources retain role
+`program`. The API uses `name` and `digest`, not the stored descriptor's `programRef` and `programDigest` field names.
+
+`sourceSchema` and each transformation's `targetSchema` use the same fields: `artifactType`, `artifactRevision`, and
+`content`. The `content` link is scoped to the requested release.
 
 For example, a client can filter the source-mapping catalog by one incoming source-record type with:
 
@@ -1299,30 +1397,55 @@ Accept: application/json
         "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
         "content": "/v1/releases/2.4.0/schemas/example-cmdb-device/content"
       },
-      "targetSchema": {
-        "artifactType": "device",
-        "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
-        "schemaVersion": "2.4.0",
-        "content": "/v1/releases/2.4.0/schemas/device/content"
-      },
-      "cardinality": "one",
       "engine": {
         "language": "ocg-dsl",
         "languageVersion": "1.0.0",
         "executionProfile": "ocg-custom-transformations"
       },
-      "program": {
-        "name": "example-cmdb-device-transformation.json",
-        "role": "program",
-        "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
-        "digest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
-        "size": 1584,
-        "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-transformation.json"
+      "programs": {
+        "condition": {
+          "name": "example-cmdb-device-condition.ocgdsl",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+ocgdsl",
+          "digest": "sha-256:2ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 348,
+          "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-condition.ocgdsl"
+        },
+        "transformations": [
+          {
+            "name": "example-cmdb-device-transformation.json",
+            "role": "program",
+            "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+            "digest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+            "size": 1584,
+            "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-transformation.json",
+            "targetSchema": {
+              "artifactType": "device",
+              "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
+              "content": "/v1/releases/2.4.0/schemas/device/content"
+            },
+            "cardinality": "one"
+          },
+          {
+            "name": "example-cmdb-device-location.json",
+            "role": "program",
+            "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+            "digest": "sha-256:3ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+            "size": 1024,
+            "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-location.json",
+            "targetSchema": {
+              "artifactType": "located-in",
+              "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+              "content": "/v1/releases/2.4.0/schemas/located-in/content"
+            },
+            "cardinality": "one"
+          }
+        ]
       },
       "links": {
-        "self": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mapping",
+        "self": "/v1/releases/2.4.0/source-mappings/example-cmdb-device",
         "content": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T",
-        "package": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mapping/package",
+        "package": "/v1/releases/2.4.0/source-mappings/example-cmdb-device/package",
         "history": "/v1/artifact-kinds/source-mapping/example-cmdb-device/history"
       }
     }
@@ -1339,148 +1462,318 @@ common artifact descriptor.
 
 ##### Get source mapping metadata
 
-`GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mapping` returns the source mapping whose resolved source
-schema has the logical artifact type `{artifactType}`. It uses the same enriched representation as a source-mapping
-collection item. The response contains the mapping's own `artifactType` and `artifactRevision`. It also contains the
-resolved source schema, target schema, engine, cardinality, and program resource.
+`GET /v1/releases/{schemaVersion}/source-mappings/{artifactType}` returns the source mapping selected by the release.
+The path identifies the mapping's own logical artifact type, not its source schema's logical artifact type.
 
-The resource returns `404 Schema Not In Release` when the release does not select the requested source schema. It returns
-`404 Source Mapping Not In Release` when the source schema exists but has no source mapping. The mapping descriptor and
-transformation program remain separate byte resources. The client retrieves them through the immutable `payload.href`
-and `program.href` links.
+The response uses `application/json` and the shared source mapping artifact model defined above. Its body MUST match
+the corresponding `items` entry from either source-mapping metadata collection for the same release.
+The endpoint returns the artifact object directly, without an `items` array or pagination fields.
+Its `schemaVersion` identifies the selected release. Its `self` and `package` links point to the direct endpoints.
 
-For example, this path uses `example-cmdb-device` as the source schema type. The selected source-mapping artifact can have
-a different logical artifact type:
+Every release-scoped source-mapping artifact MUST use these links, including artifacts in collections and packages:
+
+- `self`: `/v1/releases/{schemaVersion}/source-mappings/{artifactType}`.
+- `package`: `/v1/releases/{schemaVersion}/source-mappings/{artifactType}/package`.
+
+Both links use the mapping's own logical artifact type and the selected release. They return single objects, not filtered
+collections. This rule also applies to source mappings returned by generic release artifact endpoints.
+
+The endpoint returns `404 Artifact Not In Release` with code `artifact-not-in-release` when the release does not select
+the requested source mapping. It does not evaluate mapping conditions.
+
+##### List source mapping metadata
+
+`GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mappings` lists the source mappings whose resolved
+source schema has the logical artifact type `{artifactType}`. Each item uses the enriched representation defined for
+source mapping discovery. Each item MUST use the same source mapping artifact model as the direct metadata endpoint.
+It contains the mapping's identity, source schema, engine, cardinality, optional condition, and all transformations
+with their resolved targets.
+
+The endpoint MUST accept the optional exact-match filter `sourceMappingArtifactType`. The filter compares the mapping's
+own `artifactType`, not its source schema's logical artifact type. A mapping selected by the release but associated
+with another source schema does not match the filter. An unknown, well-formed mapping type also produces an empty
+collection. A malformed filter produces `400 Invalid Query Parameter`.
+
+The schema-nested metadata and package collection endpoints share these collection and filtering rules:
+
+- Both endpoints MUST use the common collection envelope: `schemaVersion`, `items`, `nextCursor`, and `links`.
+- Both endpoints MUST support the common `limit` and `cursor` pagination parameters.
+- Both endpoints MUST restrict results to mappings for the source schema revision selected by the requested release.
+- Both endpoints MUST accept the optional exact-match filter `sourceMappingArtifactType`, using logical artifact type syntax.
+- Without the filter, both endpoints MUST list all candidate mappings, subject to pagination.
+- With a matching filter, both endpoints MUST return an `items` array containing exactly one mapping or package.
+- With no matching mappings, both endpoints MUST return `200 OK` with empty `items` and `nextCursor: null`.
+- With an unknown source schema, both endpoints MUST return `404 Schema Not In Release`.
+
+The response shape MUST NOT change when zero, one, or several mappings match. The registry does not evaluate mapping
+conditions while filtering results.
+
+Metadata items use ascending `artifactType` order. Package items use the same order through `mapping.artifactType`.
+Cursors bind the source schema, filter, and selected release under the common pagination rules. Clients follow every
+page to retrieve all candidate mappings or packages.
+
+The descriptor and all programs remain separate immutable byte resources. Clients retrieve the descriptor through
+`payload.href`. They retrieve each condition or transformation through its `href` or the matching `resources` entry.
+
+For example, this request filters mappings for the `example-cmdb-device` source schema by one mapping's logical artifact
+type. A matching filter still returns a collection:
 
 ```http
-GET /v1/releases/2.4.0/schemas/example-cmdb-device/source-mapping HTTP/1.1
+GET /v1/releases/2.4.0/schemas/example-cmdb-device/source-mappings?sourceMappingArtifactType=example-cmdb-device HTTP/1.1
 Host: schemas.example.org
 Accept: application/json
 ```
 
-##### Get a source mapping package
-
-`GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mapping/package` returns the mapping metadata,
-transformation program, source schema, target schema, and target store assignment for the mapping resolved by the source schema
-`{artifactType}`. Data Ingestion uses this resource to retrieve everything it needs to validate, translate, and route the
-source record in one request.
-
-The response uses `application/json`. It contains:
-
-| Field | JSON type | Description |
-| --- | --- | --- |
-| `schemaVersion` | string | Release used to resolve the source mapping |
-| `mapping` | object | Complete enriched source-mapping metadata |
-| `program` | object | Exact transformation program bytes and their resource descriptor |
-| `sourceSchema` | object | Complete metadata and JSON Schema document for the source record |
-| `targetSchema` | object | Complete metadata and JSON Schema document for the translated record |
-| `targetStores` | array | OCG store identifiers assigned to the target schema in this release |
-| `links` | object | Links to this package and the separate immutable resources |
-
-`program` contains `name`, `role`, `mediaType`, `digest`, `size`, and `content`. Its `content` value is the Base64 encoding
-from RFC 4648 section 4 of the exact stored bytes. The Base64 text MUST use canonical padding when required. It MUST NOT
-contain whitespace or line breaks.
-
-Base64 encoding allows the package to contain a program in any registered media type. It also preserves exact bytes for
-digest verification. A client decodes `program.content`, verifies `size` and `digest`, then parses or compiles the bytes
-according to `mediaType` and the mapping's `engine` object.
-
-`sourceSchema` and `targetSchema` each contain `metadata` and `document`. `metadata` is the complete common artifact
-descriptor for the exact schema revision. `document` is the JSON value parsed from that schema's payload. It can be an
-object or boolean. The registry MUST preserve the parsed JSON value when it embeds the document. Clients that need the
-exact schema bytes can retrieve them through the corresponding link.
-
-The source schema revision MUST equal the mapping's resolved `sourceSchema.artifactRevision`. The target schema revision
-MUST equal the mapping's resolved `targetSchema.artifactRevision`. Both revisions MUST be selected by the requested
-release. This keeps source validation, translation, and target validation within one release.
-
-`targetStores` MUST equal the `stores` array in the release's storage entry for the resolved target schema logical type.
-The array contains one or more registered store identifiers in ascending order. The registry MUST reject the package
-request with `500 Internal Server Error` if an activated release lacks this required storage entry. A valid importer
-rejects such a release before the registry write, so this response indicates inconsistent registry storage.
-
 ```json
 {
   "schemaVersion": "2.4.0",
-  "mapping": {
-    "kind": "source-mapping",
-    "artifactType": "example-cmdb-device",
-    "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
-    "sourceSchema": {
+  "items": [
+    {
+      "schemaVersion": "2.4.0",
+      "kind": "source-mapping",
       "artifactType": "example-cmdb-device",
-      "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"
-    },
-    "targetSchema": {
-      "artifactType": "device",
-      "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
-      "schemaVersion": "2.4.0"
-    },
-    "cardinality": "one",
-    "engine": {
-      "language": "ocg-dsl",
-      "languageVersion": "1.0.0",
-      "executionProfile": "ocg-custom-transformations"
+      "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
+      "links": {
+        "self": "/v1/releases/2.4.0/source-mappings/example-cmdb-device",
+        "package": "/v1/releases/2.4.0/source-mappings/example-cmdb-device/package"
+      }
     }
-  },
-  "sourceSchema": {
-    "metadata": {
-      "kind": "schema",
-      "artifactType": "example-cmdb-device",
-      "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
-      "schemaClass": "source-record"
-    },
-    "document": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$id": "https://schemas.example.org/resources/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE",
-      "type": "object"
-    }
-  },
-  "targetSchema": {
-    "metadata": {
-      "kind": "schema",
-      "artifactType": "device",
-      "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
-      "schemaClass": "entity-type"
-    },
-    "document": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$id": "https://schemas.example.org/resources/schema/device/01K4Q7S2YV4B5MC7B8G8DCDR5F",
-      "type": "object"
-    }
-  },
-  "targetStores": [
-    "data-center-inventory"
   ],
-  "program": {
-    "name": "example-cmdb-device-transformation.json",
-    "role": "program",
-    "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
-    "digest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
-    "size": 1584,
-    "content": "eyIkc2NoZW1hIjoiaHR0cHM6Ly9zY2hlbWFzLmV4YW1wbGUub3JnLy4uLiJ9"
-  },
+  "nextCursor": null,
   "links": {
-    "self": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mapping/package",
-    "mapping": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mapping",
-    "descriptor": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T",
-    "program": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-transformation.json",
-    "sourceSchema": "/v1/releases/2.4.0/schemas/example-cmdb-device/content",
-    "targetSchema": "/v1/releases/2.4.0/schemas/device/content",
-    "targetStores": "/v1/releases/2.4.0/schemas/device/stores"
+    "self": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mappings?sourceMappingArtifactType=example-cmdb-device"
   }
 }
 ```
 
-`mapping` and both schema `metadata` objects in this example are abbreviated. The actual response MUST include the
-complete enriched source-mapping representation and complete common artifact descriptors.
+The example abbreviates the item. Actual items MUST include the complete enriched source-mapping representation from
+source mapping discovery.
 
-The package resolves the program from the immutable source-mapping revision. It resolves both schema documents from the
-mapping's exact dependencies and the target stores from the same release. The response `ETag` identifies the complete
-package representation. The client MUST use `program.digest` to verify the decoded program bytes. Clients that need the
-exact source-mapping descriptor bytes can retrieve them through `links.descriptor`.
+##### Get a source mapping package
 
-The package uses the same `404` behavior as the direct source-mapping resource. It returns `406 Not Acceptable` if the
-client does not accept `application/json`.
+`GET /v1/releases/{schemaVersion}/source-mappings/{artifactType}/package` returns the package for one release-selected
+source mapping. The path identifies the mapping's own logical artifact type.
+
+The response uses `application/json` and the shared source mapping package model defined below. Its body MUST match
+the corresponding `items` entry from the schema-nested package collection for the same release.
+The endpoint returns the package object directly, without a collection envelope or pagination fields.
+Its `schemaVersion` identifies the selected release. Its `ETag` identifies the complete package representation.
+
+The endpoint returns `404 Artifact Not In Release` with code `artifact-not-in-release` when the release does not select
+the requested source mapping. The package model's integrity and storage validation rules apply to this endpoint.
+It returns `406 Not Acceptable` if the client does not accept `application/json`.
+
+##### List source mapping packages
+
+`GET /v1/releases/{schemaVersion}/schemas/{artifactType}/source-mappings/packages` lists the packages for the source
+mappings whose resolved source schema has the logical artifact type `{artifactType}`. Each package contains one mapping's
+metadata, optional condition program, all transformation programs, source schema, target schemas, and target store
+identifiers.
+
+The optional `sourceMappingArtifactType` filter restricts the collection to one mapping's package when it matches.
+Without the filter, Data Ingestion retrieves all candidates' packages by following every page. Ingestion evaluates
+conditions after retrieval and applies every matching mapping.
+
+The response uses `application/json` and the common collection envelope. Each `items` entry MUST use the same source
+mapping package model as the direct package endpoint. The shared model contains these fields:
+
+| Field | JSON type | Description |
+| --- | --- | --- |
+| `schemaVersion` | string | Release used to resolve the source mapping; identical to the collection's `schemaVersion` when listed |
+| `mapping` | object | Complete shared source mapping artifact model for the selected release |
+| `schemas` | array | Source schema and every distinct transformation target, with complete metadata and parsed documents |
+| `targetStores` | array | Distinct OCG store identifiers used by all transformation targets in this release |
+| `programs` | array | Exact bytes and resource descriptors for the condition and every transformation program |
+| `links` | object | Links to this package and the separate immutable resources |
+
+Each package's `links.self` MUST point to `/v1/releases/{schemaVersion}/source-mappings/{artifactType}/package`.
+Its `links.mapping` MUST point to `/v1/releases/{schemaVersion}/source-mappings/{artifactType}`.
+Both links use the mapping's own logical artifact type, including when the package appears in a collection.
+The embedded `mapping` uses the artifact model's direct `self` and `package` links.
+Collection-level `links.self` continues to identify the requested collection, including its filters and pagination parameters.
+
+Each `programs` item contains `name`, `role`, `mediaType`, `digest`, `size`, and `content`. Its `content` value uses
+Base64 encoding from RFC 4648 section 4 for the exact stored bytes. The text MUST use canonical padding when required.
+It MUST NOT contain whitespace or line breaks.
+
+Base64 encoding allows the package to contain a program in any registered media type. It also preserves exact bytes for
+digest verification. A client decodes each item's `content`, verifies `size` and `digest`, then parses or compiles the bytes
+according to `mediaType` and the mapping's `engine` object.
+
+Within each package, `mapping.programs` describes program targets. The package's `programs` array contains their exact
+bytes. Every condition and transformation program `name` MUST match exactly one item's `name`. Every item MUST match the
+resource descriptor in the immutable mapping revision. The array contains each referenced resource once, sorted by `name`.
+An absent condition adds no condition item. Several transformations can reference the same resource without duplicating its
+bytes.
+
+Each `schemas` item contains `metadata` and `document`. `metadata` is the complete common artifact descriptor for the exact
+schema revision. `document` is the parsed JSON Schema payload and can be an object or Boolean. The registry MUST preserve
+the parsed value. Clients needing exact schema bytes use the metadata's payload link.
+
+The array MUST contain the mapping's resolved source schema and every transformation's resolved target schema. It MUST
+contain each distinct revision once. The source schema appears first, followed by targets sorted by `artifactType`, then
+`artifactRevision`. Every embedded revision MUST match the mapping reference and the selected release. Multiple
+transformations targeting the same schema share one schema entry.
+
+The registry MUST return `500 Internal Server Error` with code `inconsistent-registry-state` if any returned package's
+target lacks its required storage entry. The registry MUST NOT return a partial package or collection page after this failure.
+A valid importer rejects such a release before the registry write.
+
+For example, a matching `sourceMappingArtifactType` filter returns one package inside the collection:
+
+```json
+{
+  "schemaVersion": "2.4.0",
+  "items": [
+    {
+      "schemaVersion": "2.4.0",
+      "mapping": {
+        "schemaVersion": "2.4.0",
+        "kind": "source-mapping",
+        "artifactType": "example-cmdb-device",
+        "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
+        "sourceSchema": {
+          "artifactType": "example-cmdb-device",
+          "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
+          "metadata": "/v1/releases/2.4.0/schemas/example-cmdb-device",
+          "content": "/v1/releases/2.4.0/schemas/example-cmdb-device/content"
+        },
+        "engine": {
+          "language": "ocg-dsl",
+          "languageVersion": "1.0.0",
+          "executionProfile": "ocg-custom-transformations"
+        },
+        "programs": {
+          "condition": {
+            "name": "example-cmdb-device-condition.ocgdsl",
+            "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-condition.ocgdsl"
+          },
+          "transformations": [
+            {
+              "name": "example-cmdb-device-transformation.json",
+              "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-transformation.json",
+              "targetSchema": {
+                "artifactType": "device",
+                "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
+                "metadata": "/v1/releases/2.4.0/schemas/device",
+                "content": "/v1/releases/2.4.0/schemas/device/content"
+              },
+              "cardinality": "one"
+            },
+            {
+              "name": "example-cmdb-device-location.json",
+              "href": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T/resources/example-cmdb-device-location.json",
+              "targetSchema": {
+                "artifactType": "located-in",
+                "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+                "metadata": "/v1/releases/2.4.0/schemas/located-in",
+                "content": "/v1/releases/2.4.0/schemas/located-in/content"
+              },
+              "cardinality": "one"
+            }
+          ]
+        },
+        "links": {
+          "self": "/v1/releases/2.4.0/source-mappings/example-cmdb-device",
+          "package": "/v1/releases/2.4.0/source-mappings/example-cmdb-device/package"
+        }
+      },
+      "schemas": [
+        {
+          "metadata": {
+            "kind": "schema",
+            "artifactType": "example-cmdb-device",
+            "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
+            "schemaClass": "source-record"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://schemas.example.org/resources/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE",
+            "type": "object"
+          }
+        },
+        {
+          "metadata": {
+            "kind": "schema",
+            "artifactType": "device",
+            "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
+            "schemaClass": "entity-type"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://schemas.example.org/resources/schema/device/01K4Q7S2YV4B5MC7B8G8DCDR5F",
+            "type": "object"
+          }
+        },
+        {
+          "metadata": {
+            "kind": "schema",
+            "artifactType": "located-in",
+            "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+            "schemaClass": "edge-type"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://schemas.example.org/resources/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+            "type": "object"
+          }
+        }
+      ],
+      "targetStores": [
+        "data-center-inventory"
+      ],
+      "programs": [
+        {
+          "name": "example-cmdb-device-condition.ocgdsl",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+ocgdsl",
+          "digest": "sha-256:2ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 348,
+          "content": "dHJ1ZQ=="
+        },
+        {
+          "name": "example-cmdb-device-location.json",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+          "digest": "sha-256:3ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 1024,
+          "content": "eyJydWxlcyI6W119"
+        },
+        {
+          "name": "example-cmdb-device-transformation.json",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+          "digest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 1584,
+          "content": "eyIkc2NoZW1hIjoiaHR0cHM6Ly9zY2hlbWFzLmV4YW1wbGUub3JnLy4uLiJ9"
+        }
+      ],
+      "links": {
+        "self": "/v1/releases/2.4.0/source-mappings/example-cmdb-device/package",
+        "mapping": "/v1/releases/2.4.0/source-mappings/example-cmdb-device",
+        "descriptor": "/v1/artifacts/01K4Q82H6BP2R6M7MA9W5K3Q1T",
+        "sourceMappings": "/v1/releases/2.4.0/source-mappings?sourceArtifactType=example-cmdb-device"
+      }
+    }
+  ],
+  "nextCursor": null,
+  "links": {
+    "self": "/v1/releases/2.4.0/schemas/example-cmdb-device/source-mappings/packages?sourceMappingArtifactType=example-cmdb-device"
+  }
+}
+```
+
+`mapping` and schema metadata are abbreviated. Actual responses MUST contain complete enriched mapping metadata, including
+program digests and retrieval links, and complete schema descriptors. The program content strings illustrate Base64
+encoding only; they abbreviate the program bytes and do not match the illustrative sizes or digests.
+
+Each package resolves every program from its immutable mapping revision. It resolves all schemas from that mapping's
+exact dependencies and all target stores from the selected release. The response `ETag` identifies the complete
+collection page, including all returned packages and pagination metadata. Clients MUST verify each decoded program using
+that item's `size` and `digest`. Clients needing exact descriptor bytes use the package's `links.descriptor`.
+
+The package collection uses the same filter, pagination, and empty-result behavior as the metadata collection. It returns
+`406 Not Acceptable` if the client does not accept `application/json`.
 
 #### Store lookup
 
@@ -1652,7 +1945,6 @@ Version `v1` defines these error codes.
 | `artifact-not-found` | `404` | The artifact revision or supplied artifact coordinates do not exist. Retrying unchanged does not succeed. |
 | `resource-not-found` | `404` | The artifact does not contain the requested additional resource. Retrying unchanged does not succeed. |
 | `schema-not-in-release` | `404` | The release does not select the requested logical schema. Retrying unchanged does not succeed. |
-| `source-mapping-not-in-release` | `404` | The source schema exists but has no source mapping in the release. Retrying unchanged does not succeed. |
 | `uri-not-in-release` | `404` | The release URI catalog does not contain the requested URI or IRI. Retrying unchanged does not succeed. |
 | `logical-artifact-not-found` | `404` | No activated release has selected the requested logical artifact. Retrying can succeed after a future activation. |
 | `not-acceptable` | `406` | The API cannot produce a representation accepted by the client. Retrying with a supported `Accept` value can succeed. |

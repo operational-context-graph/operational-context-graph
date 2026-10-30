@@ -5,6 +5,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
 )
@@ -433,10 +435,15 @@ func (s *Snapshot) ReleaseArtifacts(ctx context.Context, schemaVersion string, f
 	if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionArtifact); err != nil {
 		return nil, err
 	}
+	if filter.Kind == "source-mapping" {
+		if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionSourceMapping); err != nil {
+			return nil, err
+		}
+	}
 	const query = `
 SELECT a.artifact_revision, a.kind, a.artifact_type, a.created_under_schema_version,
        a.schema_class, a.target_schema_version, a.canonical_uri, a.payload_media_type,
-       a.payload_digest, a.payload_size, a.payload_bytes, a.extensions
+       a.payload_digest, a.payload_size, NULL::bytea, a.extensions
 FROM schema_registry.release_artifacts AS ra
 JOIN schema_registry.releases AS rel ON rel.schema_version = ra.schema_version
 JOIN schema_registry.artifacts AS a ON a.artifact_revision = ra.artifact_revision
@@ -450,9 +457,13 @@ WHERE ra.schema_version = $1 AND rel.activated_sequence IS NOT NULL
      WHERE dependency.artifact_revision = a.artifact_revision
        AND dependency.dependency_revision = $7
    ))
+    AND ($8::text = '' OR EXISTS (SELECT 1 FROM schema_registry.source_mapping_details AS detail WHERE detail.schema_version = $1 AND detail.mapping_revision = a.artifact_revision AND detail.source_artifact_type = $8))
+    AND ($9::text = '' OR EXISTS (SELECT 1 FROM schema_registry.source_mapping_transformations AS transformation WHERE transformation.schema_version = $1 AND transformation.mapping_revision = a.artifact_revision AND transformation.target_artifact_type = $9))
+    AND ($10::text = '' OR EXISTS (SELECT 1 FROM schema_registry.source_mapping_details AS detail WHERE detail.schema_version = $1 AND detail.mapping_revision = a.artifact_revision AND detail.engine_language = $10))
+    AND ($11::text = '' OR EXISTS (SELECT 1 FROM schema_registry.source_mapping_details AS detail WHERE detail.schema_version = $1 AND detail.mapping_revision = a.artifact_revision AND detail.execution_profile = $11))
 ORDER BY ra.kind COLLATE "C", ra.artifact_type COLLATE "C"
-LIMIT $8`
-	return scanArtifacts(ctx, s.tx, query, schemaVersion, afterKind, afterType, filter.Kind, filter.ArtifactType, filter.SchemaClass, filter.DependsOnRevision, limit)
+LIMIT $12`
+	return scanArtifacts(ctx, s.tx, query, schemaVersion, afterKind, afterType, filter.Kind, filter.ArtifactType, filter.SchemaClass, filter.DependsOnRevision, filter.SourceArtifactType, filter.TargetArtifactType, filter.EngineLanguage, filter.ExecutionProfile, limit)
 }
 
 // ArtifactHistory returns every activated selection for a logical identity.
@@ -495,6 +506,17 @@ LIMIT $5`
 	return history, nil
 }
 
+// ReleaseArtifactMetadata reads a selected descriptor without loading its payload bytes.
+func (s *Snapshot) ReleaseArtifactMetadata(ctx context.Context, version, kind, artifactType string) (model.Artifact, error) {
+	if err := s.VerifyProjection(ctx, version, model.ProjectionArtifact); err != nil {
+		return model.Artifact{}, err
+	}
+	const query = `SELECT a.artifact_revision,a.kind,a.artifact_type,a.created_under_schema_version,a.schema_class,a.target_schema_version,a.canonical_uri,a.payload_media_type,a.payload_digest,a.payload_size,NULL::bytea,a.extensions
+FROM schema_registry.release_artifacts AS selection JOIN schema_registry.artifacts AS a ON a.artifact_revision = selection.artifact_revision
+WHERE selection.schema_version = $1 AND selection.kind = $2 AND selection.artifact_type = $3`
+	return scanArtifact(s.tx.QueryRow(ctx, query, version, kind, artifactType))
+}
+
 // Resources returns ordered named resources for an immutable artifact revision.
 func (s *Snapshot) Resources(ctx context.Context, revision string) ([]model.Resource, error) {
 	if err := requireReachableArtifact(ctx, s.tx, revision); err != nil {
@@ -505,7 +527,7 @@ func (s *Snapshot) Resources(ctx context.Context, revision string) ([]model.Reso
 	}
 	const query = `
 SELECT resource.artifact_revision, resource.name, resource.role, resource.media_type,
-       resource.digest, resource.size, resource.bytes
+       resource.digest, resource.size
 FROM schema_registry.artifact_resources AS resource
 JOIN schema_registry.activated_revision_reachability AS reachable
   ON reachable.artifact_revision = resource.artifact_revision
@@ -519,11 +541,11 @@ ORDER BY resource.role COLLATE "C", resource.name COLLATE "C"`
 	resources := make([]model.Resource, 0)
 	for rows.Next() {
 		var resource model.Resource
-		if err := rows.Scan(&resource.ArtifactRevision, &resource.Name, &resource.Role, &resource.MediaType, &resource.Digest, &resource.Size, &resource.Bytes); err != nil {
+		if err := rows.Scan(&resource.ArtifactRevision, &resource.Name, &resource.Role, &resource.MediaType, &resource.Digest, &resource.Size); err != nil {
 			return nil, fmt.Errorf("scan artifact resource: %w", err)
 		}
 		resources = append(resources, resource)
-		if !validBytes(resource.Bytes, resource.Size, resource.Digest) {
+		if resource.Size < 0 || resource.Size > artifact.MaxArtifactBytes || !artifact.ValidDigest(resource.Digest) {
 			return nil, ErrInconsistentState
 		}
 	}
@@ -607,22 +629,26 @@ WHERE selection.artifact_revision = $1 AND release.activated_sequence IS NOT NUL
 		return fmt.Errorf("find artifact release selections: %w", err)
 	}
 	defer rows.Close()
-	found := false
+	versions := make([]string, 0)
 	for rows.Next() {
 		var schemaVersion string
 		if err := rows.Scan(&schemaVersion); err != nil {
 			return fmt.Errorf("scan artifact release selection: %w", err)
 		}
-		found = true
-		if err := s.VerifyProjection(ctx, schemaVersion, family); err != nil {
-			return err
-		}
+		versions = append(versions, schemaVersion)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate artifact release selections: %w", err)
 	}
-	if !found {
+	// pgx permits only one active query on this transaction's connection.
+	rows.Close()
+	if len(versions) == 0 {
 		return ErrNotFound
+	}
+	for _, schemaVersion := range versions {
+		if err := s.VerifyProjection(ctx, schemaVersion, family); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -710,31 +736,13 @@ ORDER BY store COLLATE "C"`
 	return entries, nil
 }
 
-// SourceMapping returns the single resolved mapping for a selected source schema.
-func (s *Snapshot) SourceMapping(ctx context.Context, schemaVersion, sourceArtifactType string) (model.SourceMappingDetail, error) {
-	if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionSourceMapping); err != nil {
+// SourceMapping resolves a mapping by its own logical artifact type.
+func (s *Snapshot) SourceMapping(ctx context.Context, schemaVersion, mappingType string) (model.SourceMappingDetail, error) {
+	item, err := s.ReleaseArtifact(ctx, schemaVersion, "source-mapping", mappingType)
+	if err != nil {
 		return model.SourceMappingDetail{}, err
 	}
-	const query = `
-	SELECT detail.schema_version, detail.mapping_revision, detail.source_artifact_type, detail.source_revision,
-	       detail.target_artifact_type, detail.target_revision, detail.target_schema_version, detail.cardinality,
-	       detail.engine_language, detail.engine_language_version, detail.execution_profile, detail.program_name, detail.program_digest
-FROM schema_registry.source_mapping_details AS detail
-JOIN schema_registry.releases AS release ON release.schema_version = detail.schema_version
-WHERE detail.schema_version = $1 AND detail.source_artifact_type = $2 AND release.activated_sequence IS NOT NULL`
-	var detail model.SourceMappingDetail
-	err := s.tx.QueryRow(ctx, query, schemaVersion, sourceArtifactType).Scan(
-		&detail.SchemaVersion, &detail.MappingRevision, &detail.SourceArtifactType, &detail.SourceRevision,
-		&detail.TargetArtifactType, &detail.TargetRevision, &detail.TargetSchemaVersion, &detail.Cardinality,
-		&detail.EngineLanguage, &detail.EngineLanguageVersion, &detail.ExecutionProfile, &detail.ProgramName, &detail.ProgramDigest,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return model.SourceMappingDetail{}, ErrNotFound
-	}
-	if err != nil {
-		return model.SourceMappingDetail{}, fmt.Errorf("read source mapping: %w", err)
-	}
-	return detail, nil
+	return s.SourceMappingByRevision(ctx, schemaVersion, item.Revision)
 }
 
 // SourceMappingByRevision returns resolved details for one selected mapping revision.
@@ -744,22 +752,49 @@ func (s *Snapshot) SourceMappingByRevision(ctx context.Context, schemaVersion, r
 	}
 	const query = `
 	SELECT detail.schema_version, detail.mapping_revision, detail.source_artifact_type, detail.source_revision,
-	       detail.target_artifact_type, detail.target_revision, detail.target_schema_version, detail.cardinality,
-	       detail.engine_language, detail.engine_language_version, detail.execution_profile, detail.program_name, detail.program_digest
+	       detail.target_schema_version, detail.engine_language, detail.engine_language_version, detail.execution_profile,
+	       coalesce(detail.condition_program_name, ''), coalesce(detail.condition_program_digest, '')
 FROM schema_registry.source_mapping_details AS detail
 JOIN schema_registry.releases AS release ON release.schema_version = detail.schema_version
 WHERE detail.schema_version = $1 AND detail.mapping_revision = $2 AND release.activated_sequence IS NOT NULL`
 	var detail model.SourceMappingDetail
+	var condition model.ProgramBinding
 	err := s.tx.QueryRow(ctx, query, schemaVersion, revision).Scan(
 		&detail.SchemaVersion, &detail.MappingRevision, &detail.SourceArtifactType, &detail.SourceRevision,
-		&detail.TargetArtifactType, &detail.TargetRevision, &detail.TargetSchemaVersion, &detail.Cardinality,
-		&detail.EngineLanguage, &detail.EngineLanguageVersion, &detail.ExecutionProfile, &detail.ProgramName, &detail.ProgramDigest,
+		&detail.TargetSchemaVersion, &detail.EngineLanguage, &detail.EngineLanguageVersion, &detail.ExecutionProfile,
+		&condition.ProgramName, &condition.ProgramDigest,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.SourceMappingDetail{}, ErrNotFound
 	}
 	if err != nil {
 		return model.SourceMappingDetail{}, fmt.Errorf("read source mapping revision: %w", err)
+	}
+	if condition.ProgramName != "" {
+		detail.Condition = &condition
+	}
+	rows, err := s.tx.Query(ctx, `SELECT ordinal, target_artifact_type, target_revision, cardinality, program_name, program_digest FROM schema_registry.source_mapping_transformations WHERE schema_version = $1 AND mapping_revision = $2 ORDER BY ordinal`, schemaVersion, revision)
+	if err != nil {
+		return model.SourceMappingDetail{}, fmt.Errorf("read mapping transformations: %w", err)
+	}
+	defer rows.Close()
+	detail.Transformations = make([]model.MappingTransformation, 0)
+	for rows.Next() {
+		var ordinal int
+		var transformation model.MappingTransformation
+		if err := rows.Scan(&ordinal, &transformation.TargetArtifactType, &transformation.TargetRevision, &transformation.Cardinality, &transformation.ProgramName, &transformation.ProgramDigest); err != nil {
+			return model.SourceMappingDetail{}, fmt.Errorf("scan mapping transformation: %w", err)
+		}
+		if ordinal != len(detail.Transformations) {
+			return model.SourceMappingDetail{}, ErrInconsistentState
+		}
+		detail.Transformations = append(detail.Transformations, transformation)
+	}
+	if err := rows.Err(); err != nil {
+		return model.SourceMappingDetail{}, fmt.Errorf("iterate mapping transformations: %w", err)
+	}
+	if len(detail.Transformations) == 0 {
+		return model.SourceMappingDetail{}, ErrInconsistentState
 	}
 	return detail, nil
 }
@@ -834,29 +869,76 @@ func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.
 		if err != nil {
 			return nil, fmt.Errorf("parse source-mapping descriptor: %w", ErrInconsistentState)
 		}
-		sourceRevision, targetRevision, foundProgram := "", "", false
-		for _, dependency := range item.Dependencies {
-			if dependency.Kind != "schema" {
-				continue
-			}
-			if dependency.Type == descriptor.SourceSchema.ID {
-				sourceRevision = dependency.Revision
-			}
-			if dependency.Type == descriptor.TargetSchema.ID {
-				targetRevision = dependency.Revision
-			}
+		derived, err := mappingDescriptorProjection(value, item, descriptor)
+		if err != nil {
+			return nil, err
 		}
-		for _, resource := range item.Resources {
-			if resource.Name == descriptor.ProgramRef && resource.Digest == descriptor.ProgramDigest {
-				foundProgram = true
-			}
-		}
-		if sourceRevision == "" || targetRevision == "" || !foundProgram {
-			return nil, ErrInconsistentState
-		}
-		rows = append(rows, projectionRow(item.Revision, descriptor.SourceSchema.ID, sourceRevision, descriptor.TargetSchema.ID, targetRevision, item.TargetSchema, descriptor.Cardinality, descriptor.Engine.Language, descriptor.Engine.LanguageVersion, descriptor.Engine.ExecutionProfile, descriptor.ProgramRef, descriptor.ProgramDigest))
+		rows = append(rows, derived...)
 	}
 	sort.Strings(rows)
+	return rows, nil
+}
+
+func mappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
+	if descriptor.ID != item.Type {
+		return nil, ErrInconsistentState
+	}
+	resolve := func(reference sourcemapping.SchemaReference, canonical bool) (string, error) {
+		for _, dependency := range item.Dependencies {
+			if dependency.Kind != "schema" || dependency.Type != reference.ID {
+				continue
+			}
+			if reference.Revision != "" && reference.Revision != dependency.Revision || canonical && reference.Version != "" && reference.Version != item.TargetSchema {
+				return "", ErrInconsistentState
+			}
+			for _, selected := range value.Artifacts {
+				if selected.Kind == dependency.Kind && selected.Type == dependency.Type && selected.Revision == dependency.Revision {
+					if canonical && selected.SchemaClass != "entity-type" && selected.SchemaClass != "identifier-type" && selected.SchemaClass != "edge-type" {
+						return "", ErrInconsistentState
+					}
+					return dependency.Revision, nil
+				}
+			}
+		}
+		return "", ErrInconsistentState
+	}
+	referenced := make(map[string]bool)
+	bind := func(reference sourcemapping.ProgramReference) error {
+		for _, resource := range item.Resources {
+			if resource.Name == reference.ProgramRef && resource.Role == "program" && resource.Digest == reference.ProgramDigest {
+				referenced[resource.Name] = true
+				return nil
+			}
+		}
+		return ErrInconsistentState
+	}
+	source, err := resolve(descriptor.SourceSchema, false)
+	if err != nil {
+		return nil, err
+	}
+	conditionName, conditionDigest := "", ""
+	if condition := descriptor.Programs.Condition; condition != nil {
+		if err := bind(*condition); err != nil {
+			return nil, err
+		}
+		conditionName, conditionDigest = condition.ProgramRef, condition.ProgramDigest
+	}
+	rows := []string{projectionRow("mapping", item.Revision, descriptor.SourceSchema.ID, source, item.TargetSchema, descriptor.Engine.Language, descriptor.Engine.LanguageVersion, descriptor.Engine.ExecutionProfile, conditionName, conditionDigest)}
+	for ordinal, transformation := range descriptor.Programs.Transformations {
+		target, err := resolve(transformation.TargetSchema, true)
+		if err != nil {
+			return nil, err
+		}
+		if err := bind(transformation.ProgramReference); err != nil {
+			return nil, err
+		}
+		rows = append(rows, projectionRow("transformation", item.Revision, strconv.Itoa(ordinal), transformation.TargetSchema.ID, target, transformation.Cardinality, transformation.ProgramRef, transformation.ProgramDigest, "", ""))
+	}
+	for _, resource := range item.Resources {
+		if resource.Role == "program" && !referenced[resource.Name] {
+			return nil, ErrInconsistentState
+		}
+	}
 	return rows, nil
 }
 
@@ -1012,13 +1094,48 @@ func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family
 	values := make([]string, 0)
 	for rows.Next() {
 		var value string
-		if err := rows.Scan(&value); err != nil {
+		var fields []string
+		var err error
+		if family == model.ProjectionSourceMapping {
+			err = rows.Scan(&fields)
+			value = projectionRow(fields...)
+		} else {
+			err = rows.Scan(&value)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("scan %s projection: %w", family, err)
+		}
+		if family == model.ProjectionArtifact {
+			fields := strings.Split(value, ":")
+			if len(fields) != 11 {
+				return nil, ErrInconsistentState
+			}
+			if fields[10] != "" {
+				raw, err := hex.DecodeString(fields[10])
+				if err != nil {
+					return nil, ErrInconsistentState
+				}
+				decoder := json.NewDecoder(bytes.NewReader(raw))
+				decoder.UseNumber()
+				var extensions any
+				if err := decoder.Decode(&extensions); err != nil {
+					return nil, ErrInconsistentState
+				}
+				canonical, err := json.Marshal(extensions)
+				if err != nil {
+					return nil, ErrInconsistentState
+				}
+				fields[10] = hex.EncodeToString(canonical)
+				value = strings.Join(fields, ":")
+			}
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate %s projection: %w", family, err)
+	}
+	if family == model.ProjectionSourceMapping {
+		sort.Strings(values)
 	}
 	return values, nil
 }
@@ -1040,7 +1157,8 @@ func projectionQuery(family model.ProjectionFamily) (string, error) {
 	case model.ProjectionStorage:
 		return `SELECT array_to_string(ARRAY[encode(convert_to(artifact_type, 'UTF8'), 'hex'),encode(convert_to(store, 'UTF8'), 'hex')], ':') FROM schema_registry.storage_catalog_entries WHERE schema_version = $1 ORDER BY artifact_type COLLATE "C", store COLLATE "C"`, nil
 	case model.ProjectionSourceMapping:
-		return `SELECT array_to_string(ARRAY[encode(convert_to(mapping_revision, 'UTF8'), 'hex'),encode(convert_to(source_artifact_type, 'UTF8'), 'hex'),encode(convert_to(source_revision, 'UTF8'), 'hex'),encode(convert_to(target_artifact_type, 'UTF8'), 'hex'),encode(convert_to(target_revision, 'UTF8'), 'hex'),encode(convert_to(target_schema_version, 'UTF8'), 'hex'),encode(convert_to(cardinality, 'UTF8'), 'hex'),encode(convert_to(engine_language, 'UTF8'), 'hex'),encode(convert_to(engine_language_version, 'UTF8'), 'hex'),encode(convert_to(execution_profile, 'UTF8'), 'hex'),encode(convert_to(program_name, 'UTF8'), 'hex'),encode(convert_to(program_digest, 'UTF8'), 'hex')], ':') FROM schema_registry.source_mapping_details WHERE schema_version = $1 ORDER BY source_artifact_type COLLATE "C"`, nil
+		return `SELECT ARRAY['mapping', mapping_revision, source_artifact_type, source_revision, target_schema_version, engine_language, engine_language_version, execution_profile, coalesce(condition_program_name, ''), coalesce(condition_program_digest, '')] FROM schema_registry.source_mapping_details WHERE schema_version = $1
+UNION ALL SELECT ARRAY['transformation', mapping_revision, ordinal::text, target_artifact_type, target_revision, cardinality, program_name, program_digest, '', ''] FROM schema_registry.source_mapping_transformations WHERE schema_version = $1`, nil
 	default:
 		return "", fmt.Errorf("unknown projection family %q", family)
 	}
@@ -1132,7 +1250,7 @@ func scanArtifacts(ctx context.Context, tx pgx.Tx, query string, arguments ...an
 		if err != nil {
 			return nil, err
 		}
-		if !validBytes(artifact.Payload.Bytes, artifact.Payload.Size, artifact.Payload.Digest) {
+		if artifact.Payload.Bytes != nil && !validBytes(artifact.Payload.Bytes, artifact.Payload.Size, artifact.Payload.Digest) {
 			return nil, ErrInconsistentState
 		}
 		artifacts = append(artifacts, artifact)

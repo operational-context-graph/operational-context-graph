@@ -27,7 +27,6 @@ const (
 	ArtifactNotFound          ErrorCode = "artifact-not-found"
 	ResourceNotFound          ErrorCode = "resource-not-found"
 	SchemaNotInRelease        ErrorCode = "schema-not-in-release"
-	SourceMappingNotInRelease ErrorCode = "source-mapping-not-in-release"
 	URINotInRelease           ErrorCode = "uri-not-in-release"
 	LogicalArtifactNotFound   ErrorCode = "logical-artifact-not-found"
 	NotAcceptable             ErrorCode = "not-acceptable"
@@ -46,7 +45,7 @@ type errorDefinition struct {
 
 var errorCatalog = map[ErrorCode]errorDefinition{
 	InvalidRequest: {400, "The request is malformed.", false}, InvalidQueryParameter: {400, "A query parameter is invalid.", false}, InvalidFilterCombination: {400, "The supplied filters cannot be combined.", false}, UnsupportedArtifactKind: {400, "The requested artifact kind is not supported.", false}, UnsupportedSchemaClass: {400, "The requested schema class is not supported.", false}, InvalidCursor: {400, "The cursor is invalid.", true}, VersionsNotComparable: {400, "The selected versions cannot be compared.", false},
-	ReleaseNotFound: {404, "The selected release was not found.", true}, ArtifactNotInRelease: {404, "The selected release does not contain the requested artifact.", false}, ArtifactNotFound: {404, "The requested artifact was not found.", true}, ResourceNotFound: {404, "The requested resource was not found.", false}, SchemaNotInRelease: {404, "The selected release does not contain the requested schema.", false}, SourceMappingNotInRelease: {404, "The selected release does not contain the requested source mapping.", false}, URINotInRelease: {404, "The selected release does not contain the requested URI.", false}, LogicalArtifactNotFound: {404, "The requested logical artifact was not found.", true},
+	ReleaseNotFound: {404, "The selected release was not found.", true}, ArtifactNotInRelease: {404, "The selected release does not contain the requested artifact.", false}, ArtifactNotFound: {404, "The requested artifact was not found.", true}, ResourceNotFound: {404, "The requested resource was not found.", false}, SchemaNotInRelease: {404, "The selected release does not contain the requested schema.", false}, URINotInRelease: {404, "The selected release does not contain the requested URI.", false}, LogicalArtifactNotFound: {404, "The requested logical artifact was not found.", true},
 	NotAcceptable: {406, "No acceptable representation is available.", true}, ReadLimitExceeded: {429, "The read limit has been exceeded.", true}, InconsistentRegistryState: {500, "The registry state is inconsistent.", true}, InternalError: {500, "An internal error occurred.", true}, NoActiveRelease: {503, "No active release is available.", true}, RegistryUnavailable: {503, "The registry is unavailable.", true},
 }
 

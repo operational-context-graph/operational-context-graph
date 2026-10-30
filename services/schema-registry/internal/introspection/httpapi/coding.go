@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 )
 
 type ContentCoding string
@@ -22,7 +24,7 @@ const (
 	Gzip     ContentCoding = "gzip"
 
 	// MaxIdentityRepresentationBytes is the version 1 identity JSON limit.
-	MaxIdentityRepresentationBytes = 64 * 1024 * 1024
+	MaxIdentityRepresentationBytes = representation.MaxGeneratedJSONBytes
 )
 
 var ErrRepresentationTooLarge = errors.New("identity representation exceeds 64 MiB")

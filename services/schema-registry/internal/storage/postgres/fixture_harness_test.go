@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -18,14 +19,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/releasevalidation"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
 )
 
 const fixtureOrigin = "https://registry.example.test"
 
-// registryFixture is a complete, format-validated candidate release. All data
-// reaches PostgreSQL only after the shared format validator accepts it.
+// registryFixture is a complete, application-validated candidate release.
+// All data reaches PostgreSQL only after application validation accepts it.
 type registryFixture struct {
 	name      string
 	version   string
@@ -35,11 +39,11 @@ type registryFixture struct {
 
 func TestFixtureCatalogPassesSharedValidation(t *testing.T) {
 	fixtures := fixtureCatalog(t)
-	require.Len(t, fixtures, 9)
+	require.Len(t, fixtures, 10)
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
 			parsed, validationContext := fixtureManifest(t, fixture)
-			require.NoError(t, parsed.Validate(validationContext))
+			require.NoError(t, releasevalidation.Validate(parsed, validationContext))
 		})
 	}
 }
@@ -135,7 +139,44 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 		name: "maximum-serviceable", version: "7.0.0",
 		artifacts: []artifact.Artifact{fixtureSchema("maximum-resource", "rev-maximum-resource-v1", "7.0.0", []byte("true"), []artifact.Resource{fixtureResource("maximum", "auxiliary", "application/octet-stream", make([]byte, artifact.MaxArtifactBytes))})},
 	}
-	return []registryFixture{initial, multi, rollback, inactive, booleanSchema, emptyByte, exactSize, many, maximumServiceable}
+	return []registryFixture{initial, multi, rollback, inactive, booleanSchema, emptyByte, exactSize, many, maximumServiceable, candidateFixture(t)}
+}
+
+func candidateFixture(t testing.TB) registryFixture {
+	t.Helper()
+	version := "8.0.0"
+	source := fixtureSchema("candidate-source", "candidate-source-r1", version, []byte("true"), nil)
+	source.SchemaClass = artifact.SchemaClassSource
+	entity := fixtureSchema("candidate-entity", "candidate-entity-r1", version, []byte(`{"type":"object"}`), nil)
+	edge := fixtureSchema("candidate-edge", "candidate-edge-r1", version, []byte("false"), nil)
+	edge.SchemaClass = artifact.SchemaClassEdge
+	result := registryFixture{name: "multi-candidate", version: version, artifacts: []artifact.Artifact{edge, entity, source}}
+	for index := range 2 {
+		name := fmt.Sprintf("candidate-mapping-%d", index)
+		program := fixtureResource("shared.bin", "program", "application/vnd.example.program", []byte{0, 255, 1})
+		program.BundlePath = "mappings/" + name + "/shared.bin"
+		transformations := []any{map[string]any{"programRef": program.Name, "programDigest": program.Digest, "cardinality": "one", "targetSchema": map[string]any{"id": entity.Type, "revision": entity.Revision}}}
+		resources := []artifact.Resource{program}
+		programs := map[string]any{"transformations": transformations}
+		if index == 0 {
+			condition := fixtureResource("condition.bin", "program", "application/octet-stream", []byte("opaque condition"))
+			condition.BundlePath = "mappings/" + name + "/condition.bin"
+			resources = []artifact.Resource{condition, program}
+			programs["condition"] = map[string]any{"programRef": condition.Name, "programDigest": condition.Digest}
+			programs["transformations"] = append(transformations, map[string]any{"programRef": program.Name, "programDigest": program.Digest, "cardinality": "many", "targetSchema": map[string]any{"id": edge.Type, "revision": edge.Revision}}, transformations[0])
+		}
+		data, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": name, "sourceSchema": map[string]any{"id": source.Type, "revision": source.Revision}, "engine": map[string]any{"language": "publisher-engine", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"}, "programs": programs})
+		require.NoError(t, err)
+		dependencies := []artifact.Dependency{{Kind: artifact.KindSchema, Type: entity.Type, Revision: entity.Revision}, {Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}}
+		if index == 0 {
+			dependencies = append([]artifact.Dependency{{Kind: artifact.KindSchema, Type: edge.Type, Revision: edge.Revision}}, dependencies...)
+		}
+		result.artifacts = append(result.artifacts, artifact.Artifact{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1", CreatedUnder: version, TargetSchema: version, CanonicalURI: fixtureOrigin + "/v1/resources/source-mapping/" + name + "/" + name + "-r1", Payload: fixtureDescriptor(data, sourcemapping.DescriptorMediaType, "mappings/"+name+"/descriptor.json"), PayloadBytes: data, Resources: resources, Dependencies: dependencies})
+		if index == 0 {
+			result.artifacts[len(result.artifacts)-1].Extensions = map[string]any{"org.example.test": map[string]any{"approved": true, "note": "<accepted>", "nested": []any{"first", "second"}}}
+		}
+	}
+	return result
 }
 
 func fixtureSchema(artifactType, revision, created string, payload []byte, resources []artifact.Resource) artifact.Artifact {
@@ -161,8 +202,37 @@ func fixtureDescriptor(bytes []byte, mediaType, bundlePath string) artifact.Desc
 func validatedFixture(t *testing.T, fixture registryFixture) manifest.Release {
 	t.Helper()
 	parsed, context := fixtureManifest(t, fixture)
-	require.NoError(t, parsed.Validate(context), fixture.name)
+	require.NoError(t, releasevalidation.Validate(parsed, context), fixture.name)
 	return manifest.Release{Manifest: parsed, Digest: fixtureDigest(parsed.Raw)}
+}
+
+func TestFixtureAcceptanceRejectsOversizedPackageBeforeDatabaseAccess(t *testing.T) {
+	fixture := candidateFixture(t)
+	mapping := &fixture.artifacts[3]
+	data := make([]byte, artifact.MaxArtifactBytes)
+	mapping.Resources = []artifact.Resource{
+		fixtureResource("a.bin", "program", "application/octet-stream", data),
+		fixtureResource("b.bin", "program", "application/octet-stream", data),
+		fixtureResource("c.bin", "program", "application/octet-stream", data),
+	}
+	var descriptor map[string]any
+	require.NoError(t, json.Unmarshal(mapping.PayloadBytes, &descriptor))
+	programs := descriptor["programs"].(map[string]any)
+	programs["condition"] = map[string]any{"programRef": "a.bin", "programDigest": mapping.Resources[0].Digest}
+	for index, raw := range programs["transformations"].([]any) {
+		transformation := raw.(map[string]any)
+		resource := mapping.Resources[index%2+1]
+		transformation["programRef"], transformation["programDigest"] = resource.Name, resource.Digest
+	}
+	payload, err := json.Marshal(descriptor)
+	require.NoError(t, err)
+	mapping.PayloadBytes = payload
+	mapping.Payload = fixtureDescriptor(payload, mapping.Payload.MediaType, mapping.Payload.BundlePath)
+	parsed, validationContext := fixtureManifest(t, fixture)
+	require.NoError(t, parsed.Validate(validationContext), "the release remains valid independently of API limits")
+	// A nil database makes an accidental transaction attempt fail this regression.
+	_, err = loadValidatedFixture(t, context.Background(), nil, fixture)
+	require.ErrorIs(t, err, representation.ErrTooLarge)
 }
 
 func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, manifest.Context) {
@@ -176,16 +246,38 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 		for _, resource := range item.Resources {
 			resourceEntries = append(resourceEntries, descriptorMap(resource.Descriptor, map[string]any{"name": resource.Name, "role": resource.Role}))
 		}
-		entries = append(entries, map[string]any{
+		dependencies := make([]map[string]any, 0, len(item.Dependencies))
+		for _, dependency := range item.Dependencies {
+			dependencies = append(dependencies, map[string]any{"kind": dependency.Kind, "artifactType": dependency.Type, "artifactRevision": dependency.Revision})
+		}
+		entry := map[string]any{
 			"kind": item.Kind, "artifactType": item.Type, "artifactRevision": item.Revision,
-			"createdUnderSchemaVersion": item.CreatedUnder, "schemaClass": item.SchemaClass,
-			"canonicalUri": item.CanonicalURI, "payload": descriptorMap(item.Payload, nil),
-			"resources": resourceEntries, "dependencies": []any{},
-		})
+			"createdUnderSchemaVersion": item.CreatedUnder,
+			"canonicalUri":              item.CanonicalURI, "payload": descriptorMap(item.Payload, nil),
+			"resources": resourceEntries, "dependencies": dependencies,
+		}
+		if item.Kind == artifact.KindSchema {
+			entry["schemaClass"] = item.SchemaClass
+		}
+		if item.Kind == artifact.KindSourceMapping {
+			entry["targetSchemaVersion"] = item.TargetSchema
+		}
+		if item.Extensions != nil {
+			entry["extensions"] = item.Extensions
+		}
+		entries = append(entries, entry)
 		uris = append(uris, map[string]any{"uri": item.CanonicalURI, "artifactRevision": item.Revision})
-		storage = append(storage, map[string]any{"kind": item.Kind, "artifactType": item.Type, "stores": []string{"data-center-inventory"}})
+		if item.Kind == artifact.KindSchema && item.SchemaClass != artifact.SchemaClassSource {
+			storage = append(storage, map[string]any{"kind": item.Kind, "artifactType": item.Type, "stores": []string{"data-center-inventory"}})
+		}
 		bound[manifest.Key{Kind: item.Kind, Type: item.Type, Revision: item.Revision}] = item
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := fmt.Sprint(entries[i]["kind"])+"/"+fmt.Sprint(entries[i]["artifactType"]), fmt.Sprint(entries[j]["kind"])+"/"+fmt.Sprint(entries[j]["artifactType"])
+		return a < b
+	})
+	sort.Slice(uris, func(i, j int) bool { return uris[i]["uri"].(string) < uris[j]["uri"].(string) })
+	sort.Slice(storage, func(i, j int) bool { return storage[i]["artifactType"].(string) < storage[j]["artifactType"].(string) })
 	root := map[string]any{
 		"$schema": "https://example.test/manifest-1.0.0", "formatVersion": "1.0.0", "schemaVersion": fixture.version,
 		"source":    map[string]any{"repository": "https://git.example.test/schema-model", "commit": strings.Repeat("a", 40)},
@@ -225,7 +317,7 @@ func fixtureDigest(bytes []byte) string {
 func loadValidatedFixture(t testing.TB, ctx context.Context, database *sql.DB, fixture registryFixture) (manifest.Manifest, error) {
 	t.Helper()
 	parsed, validationContext := fixtureManifest(t, fixture)
-	if err := parsed.Validate(validationContext); err != nil {
+	if err := releasevalidation.Validate(parsed, validationContext); err != nil {
 		return manifest.Manifest{}, fmt.Errorf("validate fixture %s: %w", fixture.name, err)
 	}
 	tx, err := database.BeginTx(ctx, nil)
@@ -246,10 +338,25 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		return manifest.Manifest{}, err
 	}
 	for _, item := range fixture.artifacts {
+		var schemaClass, targetVersion any
+		var extensions any
+		if item.Extensions != nil {
+			raw, err := json.Marshal(item.Extensions)
+			if err != nil {
+				return manifest.Manifest{}, err
+			}
+			extensions = string(raw)
+		}
+		if item.Kind == artifact.KindSchema {
+			schemaClass = item.SchemaClass
+		}
+		if item.Kind == artifact.KindSourceMapping {
+			targetVersion = item.TargetSchema
+		}
 		_, err = tx.ExecContext(ctx, `
-INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (artifact_revision) DO NOTHING`, item.Revision, item.Kind, item.Type, item.CreatedUnder, item.SchemaClass, item.CanonicalURI, item.Payload.MediaType, item.Payload.Digest, item.Payload.Size, item.PayloadBytes)
+INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes,target_schema_version,extensions)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,$11,$12)
+ON CONFLICT (artifact_revision) DO NOTHING`, item.Revision, item.Kind, item.Type, item.CreatedUnder, schemaClass, item.CanonicalURI, item.Payload.MediaType, item.Payload.Digest, item.Payload.Size, item.PayloadBytes, targetVersion, extensions)
 		if err != nil {
 			return manifest.Manifest{}, err
 		}
@@ -270,9 +377,39 @@ ON CONFLICT (artifact_revision, name) DO NOTHING`, item.Revision, resource.Name,
 		if err != nil {
 			return manifest.Manifest{}, err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO schema_registry.storage_catalog_entries (schema_version, artifact_type, store) VALUES ($1, $2, 'data-center-inventory')`, parsed.SchemaVersion, item.Type)
+		if item.Kind == artifact.KindSchema && item.SchemaClass != artifact.SchemaClassSource {
+			_, err = tx.ExecContext(ctx, `INSERT INTO schema_registry.storage_catalog_entries (schema_version, artifact_type, store) VALUES ($1, $2, 'data-center-inventory')`, parsed.SchemaVersion, item.Type)
+			if err != nil {
+				return manifest.Manifest{}, err
+			}
+		}
+	}
+	for _, item := range fixture.artifacts {
+		for _, dependency := range item.Dependencies {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO schema_registry.artifact_dependencies (artifact_revision,dependency_kind,dependency_artifact_type,dependency_revision) VALUES ($1,$2,$3,$4)`, item.Revision, dependency.Kind, dependency.Type, dependency.Revision); err != nil {
+				return manifest.Manifest{}, err
+			}
+		}
+		if item.Kind != artifact.KindSourceMapping {
+			continue
+		}
+		descriptor, err := sourcemapping.Parse(item.PayloadBytes)
 		if err != nil {
 			return manifest.Manifest{}, err
+		}
+		var conditionName, conditionDigest any
+		if descriptor.Programs.Condition != nil {
+			conditionName, conditionDigest = descriptor.Programs.Condition.ProgramRef, descriptor.Programs.Condition.ProgramDigest
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile,condition_program_name,condition_program_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, fixture.version, item.Revision, descriptor.SourceSchema.ID, descriptor.SourceSchema.Revision, item.TargetSchema, descriptor.Engine.Language, descriptor.Engine.LanguageVersion, descriptor.Engine.ExecutionProfile, conditionName, conditionDigest)
+		if err != nil {
+			return manifest.Manifest{}, err
+		}
+		for ordinal, transformation := range descriptor.Programs.Transformations {
+			_, err = tx.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, fixture.version, item.Revision, ordinal, transformation.TargetSchema.ID, transformation.TargetSchema.Revision, transformation.Cardinality, transformation.ProgramRef, transformation.ProgramDigest)
+			if err != nil {
+				return manifest.Manifest{}, err
+			}
 		}
 	}
 	if err := storeProjectionCommitments(ctx, tx, parsed); err != nil {
@@ -327,6 +464,29 @@ ON CONFLICT (artifact_revision) DO NOTHING`); err != nil {
 func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value manifest.Manifest) error {
 	for _, family := range []model.ProjectionFamily{model.ProjectionRelease, model.ProjectionArtifact, model.ProjectionResource, model.ProjectionDependency, model.ProjectionBinding, model.ProjectionURI, model.ProjectionStorage, model.ProjectionSourceMapping} {
 		rows, err := manifestProjectionRows(value, value.Raw, family)
+		if err != nil && family == model.ProjectionSourceMapping {
+			rows = make([]string, 0)
+			for _, item := range value.Artifacts {
+				if item.Kind != artifact.KindSourceMapping {
+					continue
+				}
+				var payload []byte
+				if err = transaction.QueryRowContext(ctx, `SELECT payload_bytes FROM schema_registry.artifacts WHERE artifact_revision = $1`, item.Revision).Scan(&payload); err != nil {
+					return err
+				}
+				var descriptor sourcemapping.Descriptor
+				descriptor, err = sourcemapping.Parse(payload)
+				if err != nil {
+					return err
+				}
+				var derived []string
+				derived, err = mappingDescriptorProjection(value, item, descriptor)
+				if err != nil {
+					return err
+				}
+				rows = append(rows, derived...)
+			}
+		}
 		if err != nil {
 			return err
 		}

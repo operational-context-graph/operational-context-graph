@@ -493,7 +493,7 @@ func TestSourceMappingCollectionFiltersEnvelopeAndConcurrentReads(t *testing.T) 
 	assert.Contains(t, response.Body.String(), `"schemaVersion":"1.0.0"`)
 	assert.Contains(t, response.Body.String(), `"nextCursor":null`)
 	assert.Contains(t, response.Body.String(), `"language":"arbitrary-engine"`)
-	assert.Contains(t, response.Body.String(), `"self":"/v1/releases/1.0.0/source-mappings"`)
+	assert.Contains(t, response.Body.String(), `"self":"/v1/releases/1.0.0/source-mappings?`)
 
 	response = serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings?engineLanguage=other")
 	require.Equal(t, http.StatusOK, response.Code)
@@ -524,8 +524,8 @@ func TestSourceMappingCollectionFiltersEnvelopeAndConcurrentReads(t *testing.T) 
 	require.NotEmpty(t, first)
 }
 
-func TestSourceMappingCollectionPaginatesAndRejectsDuplicateResolvedSources(t *testing.T) {
-	t.Run("1001 mappings paginate through a signed cursor", func(t *testing.T) {
+func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
+	t.Run("1001 mappings paginate through an unsigned cursor", func(t *testing.T) {
 		fixture := mappingFixture()
 		items := make([]model.Artifact, 0, 1001)
 		for index := 0; index < 1001; index++ {
@@ -534,8 +534,10 @@ func TestSourceMappingCollectionPaginatesAndRejectsDuplicateResolvedSources(t *t
 			item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))
 			items = append(items, item)
 			fixture.artifacts[revision] = item
-			fixture.resources[revision], fixture.dependencies[revision] = nil, nil
-			fixture.mappings[revision] = model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: revision, SourceArtifactType: typeName, SourceRevision: "rev-schema", TargetArtifactType: "device", TargetRevision: "rev-schema", TargetSchemaVersion: "1.0.0", Cardinality: "one", EngineLanguage: "publisher", EngineLanguageVersion: "1.0.0", ExecutionProfile: "default"}
+			detail := fixture.mappings["rev-mapping"]
+			detail.MappingRevision, detail.EngineLanguage, detail.ExecutionProfile = revision, "publisher", "default"
+			fixture.resources[revision] = append([]model.Resource(nil), fixture.resources["rev-mapping"]...)
+			setMappingFixture(fixture, item, detail)
 		}
 		fixture.collections["1.0.0"] = items
 		server := artifactTestServer(fixture)
@@ -555,20 +557,20 @@ func TestSourceMappingCollectionPaginatesAndRejectsDuplicateResolvedSources(t *t
 		assert.Nil(t, page.NextCursor)
 	})
 
-	t.Run("duplicate resolved source is inconsistent", func(t *testing.T) {
+	t.Run("shared resolved source is valid", func(t *testing.T) {
 		fixture := mappingFixture()
 		original := fixture.selections["source-mapping/device-mapping"]
 		duplicate := original
 		duplicate.Revision, duplicate.Type = "rev-mapping-two", "device-mapping-two"
 		fixture.collections["1.0.0"] = append(fixture.collections["1.0.0"], duplicate)
 		fixture.artifacts[duplicate.Revision] = duplicate
-		fixture.resources[duplicate.Revision], fixture.dependencies[duplicate.Revision] = nil, nil
+		fixture.resources[duplicate.Revision] = append([]model.Resource(nil), fixture.resources[original.Revision]...)
 		detail := fixture.mappings[original.Revision]
 		detail.MappingRevision = duplicate.Revision
-		fixture.mappings[duplicate.Revision] = detail
+		setMappingFixture(fixture, duplicate, detail)
 		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings")
-		assert.Equal(t, http.StatusInternalServerError, response.Code)
-		assert.Contains(t, response.Body.String(), `"code":"inconsistent-registry-state"`)
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), `"artifactType":"device-mapping-two"`)
 	})
 }
 
@@ -581,12 +583,14 @@ func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 		item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))
 		items = append(items, item)
 		fixture.artifacts[revision] = item
-		fixture.resources[revision], fixture.dependencies[revision] = nil, nil
 		language := "skip"
 		if index >= 1000 {
 			language = "keep"
 		}
-		fixture.mappings[revision] = model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: revision, SourceArtifactType: typeName, SourceRevision: "rev-schema", TargetArtifactType: "device", TargetRevision: "rev-schema", TargetSchemaVersion: "1.0.0", Cardinality: "one", EngineLanguage: language, EngineLanguageVersion: "1.0.0", ExecutionProfile: "default"}
+		detail := fixture.mappings["rev-mapping"]
+		detail.MappingRevision, detail.EngineLanguage = revision, language
+		fixture.resources[revision] = append([]model.Resource(nil), fixture.resources["rev-mapping"]...)
+		setMappingFixture(fixture, item, detail)
 	}
 	fixture.collections["1.0.0"] = items
 	server := artifactTestServer(fixture)
@@ -594,21 +598,19 @@ func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	var page struct {
 		Items []struct {
-			Metadata struct {
-				ArtifactType string `json:"artifactType"`
-			} `json:"metadata"`
+			ArtifactType string `json:"artifactType"`
 		} `json:"items"`
 		NextCursor *string `json:"nextCursor"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
 	require.Len(t, page.Items, 1)
-	assert.Equal(t, "mapping-filter-1000", page.Items[0].Metadata.ArtifactType)
+	assert.Equal(t, "mapping-filter-1000", page.Items[0].ArtifactType)
 	require.NotNil(t, page.NextCursor)
 	response = serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings?engineLanguage=keep&limit=1&cursor="+url.QueryEscape(*page.NextCursor))
 	require.Equal(t, http.StatusOK, response.Code)
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
 	require.Len(t, page.Items, 1)
-	assert.Equal(t, "mapping-filter-1001", page.Items[0].Metadata.ArtifactType)
+	assert.Equal(t, "mapping-filter-1001", page.Items[0].ArtifactType)
 	assert.Nil(t, page.NextCursor)
 }
 
@@ -616,6 +618,7 @@ func TestSourceMappingFiltersUseResolvedDependenciesNotMappingIdentity(t *testin
 	fixture := mappingFixture()
 	mapping := fixture.selections["source-mapping/device-mapping"]
 	mapping.Type = "publisher-descriptor-name"
+	setMappingFixture(fixture, mapping, fixture.mappings[mapping.Revision])
 	fixture.collections["1.0.0"] = []model.Artifact{mapping}
 	fixture.artifacts[mapping.Revision] = mapping
 	server := artifactTestServer(fixture)
@@ -629,12 +632,12 @@ func TestSourceMappingFiltersUseResolvedDependenciesNotMappingIdentity(t *testin
 func TestSourceMappingRoutesPreserveOpaqueProgramMetadata(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
 
-	response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping")
+	response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), `"language":"arbitrary-engine"`)
 	assert.Contains(t, response.Body.String(), `"href":"/v1/artifacts/rev-mapping/resources/program.bin"`)
 
-	response = serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+	response = serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), `"content":"b3BhcXVlAHByb2dyYW0="`)
 	assert.NotContains(t, response.Body.String(), "execute")
@@ -643,21 +646,22 @@ func TestSourceMappingRoutesPreserveOpaqueProgramMetadata(t *testing.T) {
 func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
 	t.Run("absent schema and mapping have distinct failures", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
-		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mapping")
+		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mappings")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.Contains(t, response.Body.String(), `"code":"schema-not-in-release"`)
 		fixture := mappingFixture()
 		fixture.mappings = map[string]model.SourceMappingDetail{}
-		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping")
+		delete(fixture.selections, "source-mapping/device-mapping")
+		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
 		assert.Equal(t, http.StatusNotFound, response.Code)
-		assert.Contains(t, response.Body.String(), `"code":"source-mapping-not-in-release"`)
+		assert.Contains(t, response.Body.String(), `"code":"artifact-not-in-release"`)
 	})
 
 	t.Run("program mismatch is inconsistent and validators are conditional", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
-		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping")
+		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
 		require.Equal(t, http.StatusOK, response.Code)
-		request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping", nil)
+		request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping", nil)
 		request.Header.Set("If-None-Match", response.Header().Get("ETag"))
 		conditional := httptest.NewRecorder()
 		server.Handler().ServeHTTP(conditional, request)
@@ -665,22 +669,23 @@ func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
 
 		fixture := mappingFixture()
 		detail := fixture.mappings["rev-mapping"]
-		detail.ProgramDigest = fixtureBytes([]byte("different"), "application/vnd.example.program").Digest
+		detail.Transformations = append([]model.MappingTransformation(nil), detail.Transformations...)
+		detail.Transformations[0].ProgramDigest = fixtureBytes([]byte("different"), "application/vnd.example.program").Digest
 		fixture.mappings["rev-mapping"] = detail
-		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping")
+		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 	})
 }
 
 func TestSourceMappingPackageNegotiationAndConcurrentReads(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
-	request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package", nil)
 	request.Header.Set("Accept", "text/plain")
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	assert.Equal(t, http.StatusNotAcceptable, response.Code)
 
-	request = httptest.NewRequest(http.MethodHead, "/v1/releases/1.0.0/schemas/device/source-mapping/package", nil)
+	request = httptest.NewRequest(http.MethodHead, "/v1/releases/1.0.0/source-mappings/device-mapping/package", nil)
 	response = httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	require.Equal(t, http.StatusOK, response.Code)
@@ -693,7 +698,7 @@ func TestSourceMappingPackageNegotiationAndConcurrentReads(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			result := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+			result := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 			if result.Code == http.StatusOK {
 				bodies <- result.Body.String()
 			}
@@ -720,7 +725,7 @@ func TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot(t *testi
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+			response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 			if response.Code == http.StatusOK {
 				results <- response.Body.Bytes()
 			}
@@ -732,19 +737,19 @@ func TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot(t *testi
 	for value := range results {
 		var body struct {
 			SchemaVersion string `json:"schemaVersion"`
-			Program       struct {
+			Programs      []struct {
 				Content string `json:"content"`
-			} `json:"program"`
-			TargetStores []string        `json:"targetStores"`
-			SourceSchema json.RawMessage `json:"sourceSchema"`
-			TargetSchema json.RawMessage `json:"targetSchema"`
+			} `json:"programs"`
+			TargetStores []string          `json:"targetStores"`
+			Schemas      []json.RawMessage `json:"schemas"`
 		}
 		require.NoError(t, json.Unmarshal(value, &body))
 		assert.Equal(t, "1.0.0", body.SchemaVersion)
-		assert.Equal(t, "b3BhcXVlAHByb2dyYW0=", body.Program.Content)
+		require.Len(t, body.Programs, 1)
+		assert.Equal(t, "b3BhcXVlAHByb2dyYW0=", body.Programs[0].Content)
 		assert.Equal(t, []string{"data-center-inventory"}, body.TargetStores)
-		assert.Contains(t, string(body.SourceSchema), `"artifactRevision":"rev-schema"`)
-		assert.Contains(t, string(body.TargetSchema), `"artifactRevision":"rev-schema"`)
+		require.Len(t, body.Schemas, 1)
+		assert.Contains(t, string(body.Schemas[0]), `"artifactRevision":"rev-schema"`)
 		if first == nil {
 			first = value
 		} else {
@@ -757,13 +762,14 @@ func TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot(t *testi
 func TestSourceMappingPackageMissingDependenciesAndConditionalResponses(t *testing.T) {
 	t.Run("absent source schema and mapping have no partial package", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
-		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mapping/package")
+		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mappings/packages")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.Contains(t, response.Body.String(), `"code":"schema-not-in-release"`)
 		assert.NotContains(t, response.Body.String(), `"mapping":`)
 		fixture := mappingFixture()
 		fixture.mappings = map[string]model.SourceMappingDetail{}
-		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+		delete(fixture.selections, "source-mapping/device-mapping")
+		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.NotContains(t, response.Body.String(), `"mapping":`)
 	})
@@ -771,7 +777,7 @@ func TestSourceMappingPackageMissingDependenciesAndConditionalResponses(t *testi
 	t.Run("resource failure returns no partial package", func(t *testing.T) {
 		fixture := mappingFixture()
 		fixture.resourceErr = postgres.ErrInconsistentState
-		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.NotContains(t, response.Body.String(), `"mapping":`)
 	})
@@ -781,7 +787,7 @@ func TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas(t *testing.T)
 	t.Run("missing canonical target stores", func(t *testing.T) {
 		fixture := mappingFixture()
 		fixture.stores = map[string][]model.StorageEntry{}
-		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.NotContains(t, response.Body.String(), `"targetStores"`)
 	})
@@ -790,7 +796,7 @@ func TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas(t *testing.T)
 		schema := fixture.selections["schema/device"]
 		schema.Payload.Digest = fixtureBytes([]byte("other"), schema.Payload.MediaType).Digest
 		fixture.selections["schema/device"], fixture.artifacts[schema.Revision] = schema, schema
-		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.NotContains(t, response.Body.String(), `"sourceSchema":`)
 	})
@@ -802,7 +808,7 @@ func TestSourceMappingPackageRejectsCorruptProgram(t *testing.T) {
 	resource := fixture.resources[mapping.Revision][0]
 	resource.Digest = fixtureBytes([]byte("other"), resource.MediaType).Digest
 	fixture.resources[mapping.Revision][0] = resource
-	response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+	response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 	assert.Equal(t, http.StatusInternalServerError, response.Code)
 }
 
@@ -822,22 +828,24 @@ func TestSourceMappingPackageOpaqueProgramBoundaries(t *testing.T) {
 			resource.ByteDescriptor = fixtureBytes(test.body, resource.MediaType)
 			fixture.resources[mapping.Revision][0] = resource
 			detail := fixture.mappings[mapping.Revision]
-			detail.ProgramDigest = resource.Digest
-			fixture.mappings[mapping.Revision] = detail
+			detail.Transformations = append([]model.MappingTransformation(nil), detail.Transformations...)
+			detail.Transformations[0].ProgramDigest = resource.Digest
+			setMappingFixture(fixture, mapping, detail)
 
-			response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/source-mapping/package")
+			response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package")
 			require.Equal(t, http.StatusOK, response.Code)
 			var body struct {
-				Program struct {
+				Programs []struct {
 					Size    int64  `json:"size"`
 					Digest  string `json:"digest"`
 					Content string `json:"content"`
-				} `json:"program"`
+				} `json:"programs"`
 			}
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
-			assert.Equal(t, int64(len(test.body)), body.Program.Size)
-			assert.Equal(t, resource.Digest, body.Program.Digest)
-			decoded, err := base64.StdEncoding.DecodeString(body.Program.Content)
+			require.Len(t, body.Programs, 1)
+			assert.Equal(t, int64(len(test.body)), body.Programs[0].Size)
+			assert.Equal(t, resource.Digest, body.Programs[0].Digest)
+			decoded, err := base64.StdEncoding.DecodeString(body.Programs[0].Content)
 			require.NoError(t, err)
 			if len(test.body) == 0 {
 				assert.Empty(t, decoded)
@@ -905,6 +913,38 @@ func mappingFixture() *artifactTestSnapshot {
 	mapping := fixture.selections["source-mapping/device-mapping"]
 	program := []byte("opaque\x00program")
 	fixture.resources[mapping.Revision] = []model.Resource{{ArtifactRevision: mapping.Revision, Name: "program.bin", Role: "program", ByteDescriptor: fixtureBytes(program, "application/vnd.example.program")}}
-	fixture.mappings[mapping.Revision] = model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: mapping.Revision, SourceArtifactType: "device", SourceRevision: "rev-schema", TargetArtifactType: "device", TargetRevision: "rev-schema", TargetSchemaVersion: "1.0.0", Cardinality: "one", EngineLanguage: "arbitrary-engine", EngineLanguageVersion: "9.8.7", ExecutionProfile: "arbitrary-profile", ProgramName: "program.bin", ProgramDigest: fixture.resources[mapping.Revision][0].Digest}
+	detail := model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: mapping.Revision, SourceArtifactType: "device", SourceRevision: "rev-schema", TargetSchemaVersion: "1.0.0", EngineLanguage: "arbitrary-engine", EngineLanguageVersion: "9.8.7", ExecutionProfile: "arbitrary-profile", Transformations: []model.MappingTransformation{{TargetArtifactType: "device", TargetRevision: "rev-schema", Cardinality: "one", ProgramBinding: model.ProgramBinding{ProgramName: "program.bin", ProgramDigest: fixture.resources[mapping.Revision][0].Digest}}}}
+	setMappingFixture(fixture, mapping, detail)
 	return fixture
+}
+
+func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detail model.SourceMappingDetail) {
+	programs := map[string]any{"transformations": make([]any, 0, len(detail.Transformations))}
+	if detail.Condition != nil {
+		programs["condition"] = map[string]any{"programRef": detail.Condition.ProgramName, "programDigest": detail.Condition.ProgramDigest}
+	}
+	dependencies := []model.Dependency{{ArtifactRevision: item.Revision, Kind: "schema", ArtifactType: detail.SourceArtifactType, Revision: detail.SourceRevision}}
+	seen := map[string]bool{detail.SourceRevision: true}
+	for _, transformation := range detail.Transformations {
+		programs["transformations"] = append(programs["transformations"].([]any), map[string]any{"programRef": transformation.ProgramName, "programDigest": transformation.ProgramDigest, "cardinality": transformation.Cardinality, "targetSchema": map[string]any{"id": transformation.TargetArtifactType, "revision": transformation.TargetRevision}})
+		if !seen[transformation.TargetRevision] {
+			dependencies = append(dependencies, model.Dependency{ArtifactRevision: item.Revision, Kind: "schema", ArtifactType: transformation.TargetArtifactType, Revision: transformation.TargetRevision})
+			seen[transformation.TargetRevision] = true
+		}
+	}
+	data, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": item.Type, "sourceSchema": map[string]any{"id": detail.SourceArtifactType, "revision": detail.SourceRevision}, "engine": map[string]any{"language": detail.EngineLanguage, "languageVersion": detail.EngineLanguageVersion, "executionProfile": detail.ExecutionProfile}, "programs": programs})
+	if err != nil {
+		panic(err)
+	}
+	item.Payload = fixtureBytes(data, "application/vnd.apeiro.ocg.source-mapping.v1+json")
+	fixture.artifacts[item.Revision], fixture.selections["source-mapping/"+item.Type] = item, item
+	for index := range fixture.collections[detail.SchemaVersion] {
+		if fixture.collections[detail.SchemaVersion][index].Revision == item.Revision {
+			fixture.collections[detail.SchemaVersion][index] = item
+		}
+	}
+	for index := range fixture.resources[item.Revision] {
+		fixture.resources[item.Revision][index].ArtifactRevision = item.Revision
+	}
+	fixture.mappings[item.Revision], fixture.dependencies[item.Revision] = detail, dependencies
 }

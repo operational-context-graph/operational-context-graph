@@ -9,6 +9,8 @@ BUILD_DIR ?= $(CURDIR)/bin
 COVERAGE_DIR ?= $(CURDIR)/coverage
 GOVULNCHECK_VERSION ?= v1.9.0
 GOOSE_VERSION ?= v3.26.0
+TEST_PACKAGES ?= ./...
+TEST_ARGS ?=
 
 .PHONY: build build-schema-introspection-api run run-schema-introspection-api \
 	test race-test coverage vet lint tidy vuln sbom migrate-up migrate-down
@@ -24,7 +26,7 @@ run-schema-introspection-api: ## Run the Schema Introspection API from source
 	go run ./cmd/schema-introspection-api
 
 test: ## Run tests with race detection
-	go test ./... -race
+	go test $(TEST_PACKAGES) -race $(TEST_ARGS)
 
 race-test: test ## Run race-enabled tests
 

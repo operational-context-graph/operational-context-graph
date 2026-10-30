@@ -24,11 +24,27 @@ type Descriptor struct {
 	FormatVersion string
 	ID            string
 	SourceSchema  SchemaReference
-	TargetSchema  SchemaReference
-	Cardinality   string
 	Engine        Engine
+	Programs      Programs
+}
+
+// ProgramReference binds an opaque resource owned by this mapping revision.
+type ProgramReference struct {
 	ProgramRef    string
 	ProgramDigest string
+}
+
+// Transformation describes one ordered output program and its canonical schema.
+type Transformation struct {
+	ProgramReference
+	TargetSchema SchemaReference
+	Cardinality  string
+}
+
+// Programs preserves an optional condition and a non-empty transformation list.
+type Programs struct {
+	Condition       *ProgramReference
+	Transformations []Transformation
 }
 
 // SchemaReference identifies a schema by its immutable revision or release version.
@@ -72,14 +88,20 @@ type ValidationContext struct {
 	ReusedMappings []Mapping
 }
 
-// Result contains the resolved immutable references. OutputClass is derived from the
-// target schema, never from a source-mapping descriptor field.
+// Result contains resolved references without interpreting any program bytes.
 type Result struct {
-	Descriptor  Descriptor
-	Source      Schema
+	Descriptor      Descriptor
+	Source          Schema
+	Condition       *artifact.Resource
+	Transformations []ResolvedTransformation
+}
+
+// ResolvedTransformation derives output classification from its canonical target.
+type ResolvedTransformation struct {
 	Target      Schema
 	OutputClass artifact.SchemaClass
 	Program     artifact.Resource
+	Cardinality string
 }
 
 // Parse decodes and structurally validates a source-mapping descriptor.
@@ -88,7 +110,7 @@ func Parse(data []byte) (Descriptor, error) {
 	if err != nil {
 		return Descriptor{}, fmt.Errorf("parse descriptor: %w", err)
 	}
-	if err := strictjson.RejectUnknownFields(object, "$schema", "formatVersion", "id", "sourceSchema", "targetSchema", "cardinality", "engine", "programRef", "programDigest"); err != nil {
+	if err := strictjson.RejectUnknownFields(object, "$schema", "formatVersion", "id", "sourceSchema", "engine", "programs"); err != nil {
 		return Descriptor{}, fmt.Errorf("descriptor fields: %w", err)
 	}
 	descriptor := Descriptor{}
@@ -101,19 +123,10 @@ func Parse(data []byte) (Descriptor, error) {
 	if descriptor.ID, err = requiredString(object, "id"); err != nil {
 		return Descriptor{}, err
 	}
-	if descriptor.Cardinality, err = requiredString(object, "cardinality"); err != nil {
-		return Descriptor{}, err
-	}
-	if descriptor.ProgramRef, err = requiredString(object, "programRef"); err != nil {
-		return Descriptor{}, err
-	}
-	if descriptor.ProgramDigest, err = requiredString(object, "programDigest"); err != nil {
-		return Descriptor{}, err
-	}
 	if descriptor.SourceSchema, err = parseSchemaReference(object, "sourceSchema"); err != nil {
 		return Descriptor{}, err
 	}
-	if descriptor.TargetSchema, err = parseSchemaReference(object, "targetSchema"); err != nil {
+	if descriptor.Programs, err = parsePrograms(object["programs"]); err != nil {
 		return Descriptor{}, err
 	}
 	if descriptor.Engine, err = parseEngine(object); err != nil {
@@ -148,7 +161,7 @@ func ValidateParsed(mapping Mapping, context ValidationContext) (Result, error) 
 	if err := validateContext(context); err != nil {
 		return Result{}, err
 	}
-	program, err := validateProgram(mapping.Artifact, mapping.Descriptor)
+	programs, err := validatePrograms(mapping.Artifact, mapping.Descriptor)
 	if err != nil {
 		return Result{}, err
 	}
@@ -156,35 +169,112 @@ func ValidateParsed(mapping Mapping, context ValidationContext) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	target, err := resolveTarget(mapping, context)
-	if err != nil {
-		return Result{}, err
+	result := Result{Descriptor: mapping.Descriptor, Source: source, Transformations: make([]ResolvedTransformation, 0, len(mapping.Descriptor.Programs.Transformations))}
+	if condition := mapping.Descriptor.Programs.Condition; condition != nil {
+		resource := programs[condition.ProgramRef]
+		result.Condition = &resource
 	}
-	if err := validateDependencies(mapping.Artifact.Dependencies, source, target); err != nil {
+	targets := make([]Schema, 0, len(mapping.Descriptor.Programs.Transformations))
+	for _, transformation := range mapping.Descriptor.Programs.Transformations {
+		target, err := resolveTarget(mapping.Artifact.TargetSchema, transformation.TargetSchema, context)
+		if err != nil {
+			return Result{}, err
+		}
+		targets = append(targets, target)
+		result.Transformations = append(result.Transformations, ResolvedTransformation{
+			Target: target, OutputClass: target.Class, Program: programs[transformation.ProgramRef], Cardinality: transformation.Cardinality,
+		})
+	}
+	if err := validateDependencies(mapping.Artifact.Dependencies, source, targets, context); err != nil {
 		return Result{}, err
 	}
 	if err := validateReuse(mapping, context.ReusedMappings); err != nil {
 		return Result{}, err
 	}
-	return Result{Descriptor: mapping.Descriptor, Source: source, Target: target, OutputClass: target.Class, Program: program}, nil
+	return result, nil
 }
 
-// ValidateRelease validates all selected mappings and enforces one mapping per source type.
+// ValidateRelease validates distinct mapping identities, including shared sources.
 func ValidateRelease(mappings []artifact.Artifact, context ValidationContext) ([]Result, error) {
 	results := make([]Result, 0, len(mappings))
-	sources := make(map[string]struct{}, len(mappings))
+	identities := make(map[string]struct{}, len(mappings))
 	for _, mapping := range mappings {
 		result, err := Validate(mapping, context)
 		if err != nil {
 			return nil, err
 		}
-		if _, exists := sources[result.Source.Type]; exists {
-			return nil, fmt.Errorf("%w: multiple mappings for source schema %q", errInvalid, result.Source.Type)
+		if _, exists := identities[mapping.Type]; exists {
+			return nil, fmt.Errorf("%w: duplicate mapping identity", errInvalid)
 		}
-		sources[result.Source.Type] = struct{}{}
+		identities[mapping.Type] = struct{}{}
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+func parsePrograms(raw any) (Programs, error) {
+	object, ok := raw.(map[string]any)
+	if !ok {
+		return Programs{}, fmt.Errorf("%w: programs must be an object", errInvalid)
+	}
+	if err := strictjson.RejectUnknownFields(object, "condition", "transformations"); err != nil {
+		return Programs{}, err
+	}
+	var result Programs
+	if rawCondition, exists := object["condition"]; exists {
+		condition, ok := rawCondition.(map[string]any)
+		if !ok {
+			return Programs{}, fmt.Errorf("%w: condition must be an object", errInvalid)
+		}
+		if err := strictjson.RejectUnknownFields(condition, "programRef", "programDigest"); err != nil {
+			return Programs{}, err
+		}
+		reference, err := parseProgramReference(condition)
+		if err != nil {
+			return Programs{}, err
+		}
+		result.Condition = &reference
+	}
+	transformations, ok := object["transformations"].([]any)
+	if !ok || len(transformations) == 0 || len(transformations) > strictjson.MaxArrayEntries {
+		return Programs{}, fmt.Errorf("%w: transformations must be a non-empty bounded array", errInvalid)
+	}
+	result.Transformations = make([]Transformation, 0, len(transformations))
+	for _, raw := range transformations {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			return Programs{}, fmt.Errorf("%w: transformation must be an object", errInvalid)
+		}
+		if err := strictjson.RejectUnknownFields(entry, "programRef", "programDigest", "targetSchema", "cardinality"); err != nil {
+			return Programs{}, err
+		}
+		reference, err := parseProgramReference(entry)
+		if err != nil {
+			return Programs{}, err
+		}
+		target, err := parseSchemaReference(entry, "targetSchema")
+		if err != nil {
+			return Programs{}, err
+		}
+		cardinality, err := requiredString(entry, "cardinality")
+		if err != nil {
+			return Programs{}, err
+		}
+		result.Transformations = append(result.Transformations, Transformation{ProgramReference: reference, TargetSchema: target, Cardinality: cardinality})
+	}
+	return result, nil
+}
+
+func parseProgramReference(object map[string]any) (ProgramReference, error) {
+	name, err := requiredString(object, "programRef")
+	if err != nil {
+		return ProgramReference{}, err
+	}
+	digest, err := requiredString(object, "programDigest")
+	if err != nil {
+		return ProgramReference{}, err
+	}
+	return ProgramReference{ProgramRef: name, ProgramDigest: digest}, nil
 }
 
 func requiredString(object map[string]any, name string) (string, error) {
@@ -254,19 +344,31 @@ func validateDescriptor(descriptor Descriptor) error {
 	if descriptor.FormatVersion != "1.0.0" || !artifact.ValidVersion(descriptor.FormatVersion) {
 		return fmt.Errorf("%w: unsupported format version", errInvalid)
 	}
-	if !artifact.ValidLogicalType(descriptor.ID) || !validReference(descriptor.SourceSchema) || !validReference(descriptor.TargetSchema) {
+	if !artifact.ValidLogicalType(descriptor.ID) || !validReference(descriptor.SourceSchema) {
 		return fmt.Errorf("%w: invalid schema reference", errInvalid)
 	}
-	if descriptor.Cardinality != "one" && descriptor.Cardinality != "many" {
-		return fmt.Errorf("%w: invalid cardinality", errInvalid)
-	}
-	if len(descriptor.Engine.Language) > artifact.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > artifact.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
+	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > artifact.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > artifact.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
 		return fmt.Errorf("%w: invalid engine metadata", errInvalid)
 	}
-	if !artifact.ValidResourceName(descriptor.ProgramRef) || !artifact.ValidDigest(descriptor.ProgramDigest) {
-		return fmt.Errorf("%w: invalid program reference", errInvalid)
+	if len(descriptor.Programs.Transformations) == 0 || len(descriptor.Programs.Transformations) > strictjson.MaxArrayEntries {
+		return fmt.Errorf("%w: invalid transformation count", errInvalid)
+	}
+	if condition := descriptor.Programs.Condition; condition != nil && !validProgramReference(*condition) {
+		return fmt.Errorf("%w: invalid condition reference", errInvalid)
+	}
+	for _, transformation := range descriptor.Programs.Transformations {
+		if !validProgramReference(transformation.ProgramReference) || !validReference(transformation.TargetSchema) {
+			return fmt.Errorf("%w: invalid transformation reference", errInvalid)
+		}
+		if transformation.Cardinality != "one" && transformation.Cardinality != "many" {
+			return fmt.Errorf("%w: invalid transformation cardinality", errInvalid)
+		}
 	}
 	return nil
+}
+
+func validProgramReference(reference ProgramReference) bool {
+	return artifact.ValidResourceName(reference.ProgramRef) && artifact.ValidDigest(reference.ProgramDigest)
 }
 
 func validReference(reference SchemaReference) bool {
@@ -309,34 +411,38 @@ func validateContext(context ValidationContext) error {
 	return nil
 }
 
-func validateProgram(mapping artifact.Artifact, descriptor Descriptor) (artifact.Resource, error) {
-	if len(mapping.Resources) != 1 {
-		return artifact.Resource{}, fmt.Errorf("%w: mappings require exactly one program resource", errInvalid)
-	}
-	var program *artifact.Resource
-	for index := range mapping.Resources {
-		resource := &mapping.Resources[index]
-		if resource.Role != "program" {
-			continue
+func validatePrograms(mapping artifact.Artifact, descriptor Descriptor) (map[string]artifact.Resource, error) {
+	resources := make(map[string]artifact.Resource, len(mapping.Resources))
+	for _, resource := range mapping.Resources {
+		if _, exists := resources[resource.Name]; exists || !artifact.ValidResourceName(resource.Name) || !artifact.ValidLogicalType(resource.Role) {
+			return nil, fmt.Errorf("%w: invalid or duplicate resource", errInvalid)
 		}
-		if program != nil {
-			return artifact.Resource{}, fmt.Errorf("%w: multiple program resources", errInvalid)
+		if err := artifact.ValidateDescriptor(resource.Descriptor, resource.Bytes); err != nil {
+			return nil, fmt.Errorf("validate resource bytes: %w", err)
 		}
-		program = resource
+		resources[resource.Name] = resource
 	}
-	if program == nil {
-		return artifact.Resource{}, fmt.Errorf("%w: program resource is required", errInvalid)
+	referenced := make(map[string]bool, len(resources))
+	references := make([]ProgramReference, 0, len(descriptor.Programs.Transformations)+1)
+	if descriptor.Programs.Condition != nil {
+		references = append(references, *descriptor.Programs.Condition)
 	}
-	if !artifact.ValidResourceName(program.Name) || program.MediaType == "" {
-		return artifact.Resource{}, fmt.Errorf("%w: invalid program resource metadata", errInvalid)
+	for _, transformation := range descriptor.Programs.Transformations {
+		references = append(references, transformation.ProgramReference)
 	}
-	if err := artifact.ValidateDescriptor(program.Descriptor, program.Bytes); err != nil {
-		return artifact.Resource{}, fmt.Errorf("validate program bytes: %w", err)
+	for _, reference := range references {
+		resource, ok := resources[reference.ProgramRef]
+		if !ok || resource.Role != "program" || resource.Digest != reference.ProgramDigest {
+			return nil, fmt.Errorf("%w: program binding does not match resource", errInvalid)
+		}
+		referenced[reference.ProgramRef] = true
 	}
-	if descriptor.ProgramRef != program.Name || descriptor.ProgramDigest != program.Digest {
-		return artifact.Resource{}, fmt.Errorf("%w: program binding does not match resource", errInvalid)
+	for _, resource := range resources {
+		if resource.Role == "program" && !referenced[resource.Name] {
+			return nil, fmt.Errorf("%w: unreferenced program resource", errInvalid)
+		}
 	}
-	return *program, nil
+	return resources, nil
 }
 
 func resolveReference(reference SchemaReference, context ValidationContext, role string) (Schema, error) {
@@ -362,12 +468,11 @@ func resolveReference(reference SchemaReference, context ValidationContext, role
 	return schema, nil
 }
 
-func resolveTarget(mapping Mapping, context ValidationContext) (Schema, error) {
-	targetReference := mapping.Descriptor.TargetSchema
-	if targetReference.Version != "" && targetReference.Version != mapping.Artifact.TargetSchema {
+func resolveTarget(targetVersion string, targetReference SchemaReference, context ValidationContext) (Schema, error) {
+	if targetReference.Version != "" && targetReference.Version != targetVersion {
 		return Schema{}, fmt.Errorf("%w: target selector version differs from target schema version", errInvalid)
 	}
-	targetRelease, ok := lineageRelease(context.Lineage, mapping.Artifact.TargetSchema)
+	targetRelease, ok := lineageRelease(context.Lineage, targetVersion)
 	if !ok {
 		return Schema{}, fmt.Errorf("%w: target schema version is not in lineage", errInvalid)
 	}
@@ -388,21 +493,28 @@ func canonicalOutputClass(class artifact.SchemaClass) bool {
 	return class == artifact.SchemaClassEntity || class == artifact.SchemaClassIdentifier || class == artifact.SchemaClassEdge
 }
 
-func validateDependencies(dependencies []artifact.Dependency, source, target Schema) error {
-	if len(dependencies) != 2 {
-		return fmt.Errorf("%w: mappings require exactly source and target dependencies", errInvalid)
+func validateDependencies(dependencies []artifact.Dependency, source Schema, targets []Schema, context ValidationContext) error {
+	wanted := map[artifact.Dependency]bool{{Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}: true}
+	for _, target := range targets {
+		wanted[artifact.Dependency{Kind: artifact.KindSchema, Type: target.Type, Revision: target.Revision}] = true
 	}
-	wanted := map[artifact.Dependency]struct{}{
-		{Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}: {},
-		{Kind: artifact.KindSchema, Type: target.Type, Revision: target.Revision}: {},
-	}
-	if len(wanted) != len(dependencies) {
-		return fmt.Errorf("%w: source and target dependencies must differ", errInvalid)
-	}
+	seen := make(map[artifact.Dependency]bool, len(dependencies))
 	for _, dependency := range dependencies {
-		if _, ok := wanted[dependency]; !ok {
-			return fmt.Errorf("%w: dependency does not match a resolved schema", errInvalid)
+		if seen[dependency] || !artifact.ValidLogicalType(dependency.Type) || !artifact.ValidRevision(dependency.Revision) {
+			return fmt.Errorf("%w: invalid or duplicate dependency", errInvalid)
 		}
+		seen[dependency] = true
+		if dependency.Kind == artifact.KindSchema {
+			if _, ok := selectedSchema(context.Lineage[0], dependency.Type, dependency.Revision); !ok {
+				return fmt.Errorf("%w: dependency schema is not selected", errInvalid)
+			}
+		} else if dependency.Kind != artifact.KindContext && dependency.Kind != artifact.KindSourceMapping {
+			return fmt.Errorf("%w: unsupported dependency kind", errInvalid)
+		}
+		delete(wanted, dependency)
+	}
+	if len(wanted) != 0 {
+		return fmt.Errorf("%w: missing resolved schema dependency", errInvalid)
 	}
 	return nil
 }

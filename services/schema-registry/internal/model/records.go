@@ -75,10 +75,14 @@ type ReleaseArtifact struct {
 
 // ArtifactFilter contains exact, release-scoped artifact collection filters.
 type ArtifactFilter struct {
-	Kind              string
-	ArtifactType      string
-	SchemaClass       string
-	DependsOnRevision string
+	Kind               string
+	ArtifactType       string
+	SchemaClass        string
+	DependsOnRevision  string
+	SourceArtifactType string
+	TargetArtifactType string
+	EngineLanguage     string
+	ExecutionProfile   string
 }
 
 // ContextBinding binds a selected schema revision to a selected context revision.
@@ -109,15 +113,26 @@ type SourceMappingDetail struct {
 	MappingRevision       string
 	SourceArtifactType    string
 	SourceRevision        string
-	TargetArtifactType    string
-	TargetRevision        string
 	TargetSchemaVersion   string
-	Cardinality           string
 	EngineLanguage        string
 	EngineLanguageVersion string
 	ExecutionProfile      string
-	ProgramName           string
-	ProgramDigest         string
+	Condition             *ProgramBinding
+	Transformations       []MappingTransformation
+}
+
+// ProgramBinding identifies one opaque resource owned by a mapping revision.
+type ProgramBinding struct {
+	ProgramName   string
+	ProgramDigest string
+}
+
+// MappingTransformation preserves descriptor order and its resolved target.
+type MappingTransformation struct {
+	ProgramBinding
+	TargetArtifactType string
+	TargetRevision     string
+	Cardinality        string
 }
 
 // ProjectionFamily names one independently verified normalized projection.

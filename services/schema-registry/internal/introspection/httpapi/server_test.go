@@ -278,8 +278,10 @@ func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
 		"/v1/resources/:kind/:artifactType/:artifactRevision",
 		"/v1/releases/:schemaVersion/resolve",
 		"/v1/artifact-kinds/:kind/:artifactType/history",
-		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mapping/package",
-		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mapping",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mappings/packages",
+		"/v1/releases/:schemaVersion/schemas/:artifactType/source-mappings",
+		"/v1/releases/:schemaVersion/source-mappings/:artifactType/package",
+		"/v1/releases/:schemaVersion/source-mappings/:artifactType",
 		"/v1/releases/:schemaVersion/schemas/:artifactType/contexts",
 		"/v1/releases/:schemaVersion/schemas/:artifactType/package",
 		"/v1/releases/:schemaVersion/schemas/:artifactType/content",
@@ -302,7 +304,7 @@ func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
 			assert.Truef(t, ok, "missing %s %s", method, path)
 		}
 	}
-	assert.Len(t, expectedPaths, 22)
+	assert.Len(t, expectedPaths, 24)
 	for _, path := range []string{"/healthz", "/readyz"} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			_, ok := routes[method+" "+path]
@@ -310,7 +312,7 @@ func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
 		}
 	}
 
-	assert.Len(t, routes, 48)
+	assert.Len(t, routes, 52)
 }
 
 func TestShutdownForceClosesTransportAfterDeadline(t *testing.T) {

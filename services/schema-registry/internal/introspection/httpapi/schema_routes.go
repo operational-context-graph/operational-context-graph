@@ -6,7 +6,6 @@ package httpapi
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -17,11 +16,12 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
 
-const maxGeneratedJSONBytes = 64 << 20
+const maxGeneratedJSONBytes = representation.MaxGeneratedJSONBytes
 
 // SchemasResponse represents a paginated schema descriptor response.
 type SchemasResponse struct {
@@ -32,10 +32,7 @@ type SchemasResponse struct {
 }
 
 // PackageSchemaResponse represents a schema document in a source-mapping or schema package response.
-type PackageSchemaResponse struct {
-	Metadata descriptorResponse `json:"metadata"`
-	Document json.RawMessage    `json:"document"`
-}
+type PackageSchemaResponse = representation.PackageSchemaResponse
 
 // SchemaContextsResponse represents the context descriptors for a schema.
 type SchemaContextsResponse struct {
@@ -60,38 +57,17 @@ type SchemaPackageResponse struct {
 }
 
 // MappingResponse represents a source-mapping descriptor response.
-type MappingResponse struct {
-	Metadata     descriptorResponse          `json:"metadata"`
-	SourceSchema MappingSourceSchemaResponse `json:"sourceSchema"`
-	TargetSchema MappingTargetSchemaResponse `json:"targetSchema"`
-	Cardinality  string                      `json:"cardinality"`
-	Engine       MappingEngineResponse       `json:"engine"`
-	Program      resourceResponse            `json:"program"`
-}
+type MappingResponse = representation.MappingResponse
+
+type MappingProgramsResponse = representation.MappingProgramsResponse
+
+type MappingTransformationResponse = representation.MappingTransformationResponse
 
 // MappingSourceSchemaResponse represents the source schema for a source mapping.
-type MappingSourceSchemaResponse struct {
-	ArtifactRevision string `json:"artifactRevision"`
-	ArtifactType     string `json:"artifactType"`
-	Content          string `json:"content"`
-	Metadata         string `json:"metadata"`
-}
-
-// MappingTargetSchemaResponse represents the target schema for a source mapping.
-type MappingTargetSchemaResponse struct {
-	ArtifactRevision string `json:"artifactRevision"`
-	ArtifactType     string `json:"artifactType"`
-	Content          string `json:"content"`
-	Metadata         string `json:"metadata"`
-	SchemaVersion    string `json:"schemaVersion"`
-}
+type MappingSourceSchemaResponse = representation.MappingSourceSchemaResponse
 
 // MappingEngineResponse represents the engine configuration for a source mapping.
-type MappingEngineResponse struct {
-	ExecutionProfile string `json:"executionProfile"`
-	Language         string `json:"language"`
-	LanguageVersion  string `json:"languageVersion"`
-}
+type MappingEngineResponse = representation.MappingEngineResponse
 
 // MappingsResponse represents a paginated source-mapping descriptor response.
 type MappingsResponse struct {
@@ -102,25 +78,17 @@ type MappingsResponse struct {
 }
 
 // MappingPackageResponse represents a source-mapping package response.
-type MappingPackageResponse struct {
-	SchemaVersion string                        `json:"schemaVersion"`
-	Mapping       any                           `json:"mapping"`
-	Program       MappingPackageProgramResponse `json:"program"`
-	SourceSchema  PackageSchemaResponse         `json:"sourceSchema"`
-	TargetSchema  PackageSchemaResponse         `json:"targetSchema"`
-	TargetStores  []string                      `json:"targetStores"`
-	Links         links                         `json:"links"`
+type MappingPackageResponse = representation.MappingPackageResponse
+
+type MappingPackagesResponse struct {
+	SchemaVersion string                   `json:"schemaVersion"`
+	Items         []MappingPackageResponse `json:"items"`
+	NextCursor    *string                  `json:"nextCursor"`
+	Links         links                    `json:"links"`
 }
 
 // MappingPackageProgramResponse represents program content in a source-mapping package response.
-type MappingPackageProgramResponse struct {
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Content   string `json:"content"`
-}
+type MappingPackageProgramResponse = representation.MappingPackageProgramResponse
 
 // SchemaStoresResponse represents the stores associated with a schema.
 type SchemaStoresResponse struct {
@@ -145,8 +113,8 @@ func (s *Server) registerSchemaRoutes() {
 		path    string
 		handler gin.HandlerFunc
 	}{
-		{"/releases/:schemaVersion/schemas/:artifactType/source-mapping/package", s.mappingPackage},
-		{"/releases/:schemaVersion/schemas/:artifactType/source-mapping", s.schemaMapping},
+		{"/releases/:schemaVersion/schemas/:artifactType/source-mappings/packages", s.schemaMappingPackages},
+		{"/releases/:schemaVersion/schemas/:artifactType/source-mappings", s.schemaMapping},
 		{"/releases/:schemaVersion/schemas/:artifactType/contexts", s.schemaContexts},
 		{"/releases/:schemaVersion/schemas/:artifactType/package", s.schemaPackage},
 		{"/releases/:schemaVersion/schemas/:artifactType/content", s.schemaContent},
@@ -154,6 +122,8 @@ func (s *Server) registerSchemaRoutes() {
 		{"/releases/:schemaVersion/schemas/:artifactType", s.schemaMetadata},
 		{"/releases/:schemaVersion/schemas", s.schemas},
 		{"/releases/:schemaVersion/source-mappings", s.mappings},
+		{"/releases/:schemaVersion/source-mappings/:artifactType", s.mappingMetadata},
+		{"/releases/:schemaVersion/source-mappings/:artifactType/package", s.mappingPackage},
 	} {
 		s.api.GET(route.path, route.handler)
 		s.api.HEAD(route.path, route.handler)
@@ -342,59 +312,38 @@ func (s *Server) schemaPackage(c *gin.Context) {
 }
 
 func enrichedMapping(value artifact.Mapping, version string) MappingResponse {
-	program := resourceResponse{Name: value.Detail.ProgramName, Role: "program", Digest: value.Detail.ProgramDigest, Href: "/v1/artifacts/" + value.Descriptor.Artifact.Revision + "/resources/" + value.Detail.ProgramName}
-	for _, resource := range value.Descriptor.Resources {
-		if resource.Name == value.Detail.ProgramName {
-			program.MediaType, program.Digest, program.Size = resource.MediaType, resource.Digest, resource.Size
-			break
-		}
-	}
-	return MappingResponse{
-		Metadata: descriptor(value.Descriptor, version),
-		SourceSchema: MappingSourceSchemaResponse{
-			ArtifactType:     value.Detail.SourceArtifactType,
-			ArtifactRevision: value.Detail.SourceRevision,
-			Metadata:         "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType,
-			Content:          "/v1/releases/" + version + "/schemas/" + value.Detail.SourceArtifactType + "/content",
-		},
-		TargetSchema: MappingTargetSchemaResponse{
-			ArtifactType:     value.Detail.TargetArtifactType,
-			ArtifactRevision: value.Detail.TargetRevision,
-			SchemaVersion:    value.Detail.TargetSchemaVersion,
-			Metadata:         "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType,
-			Content:          "/v1/releases/" + version + "/schemas/" + value.Detail.TargetArtifactType + "/content",
-		},
-		Cardinality: value.Detail.Cardinality,
-		Engine: MappingEngineResponse{
-			Language:         value.Detail.EngineLanguage,
-			LanguageVersion:  value.Detail.EngineLanguageVersion,
-			ExecutionProfile: value.Detail.ExecutionProfile,
-		},
-		Program: program,
-	}
+	return representation.BuildMapping(value, version)
 }
 
-func (s *Server) mappings(c *gin.Context) {
+func (s *Server) mappings(c *gin.Context)              { s.mappingCollection(c, false, false) }
+func (s *Server) schemaMapping(c *gin.Context)         { s.mappingCollection(c, true, false) }
+func (s *Server) schemaMappingPackages(c *gin.Context) { s.mappingCollection(c, true, true) }
+
+func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	version := c.Param("schemaVersion")
-	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "sourceArtifactType", "targetArtifactType", "engineLanguage", "executionProfile", "limit", "cursor")
-	if !artifactmodel.ValidVersion(version) || err != nil {
+	allowed := []string{"sourceArtifactType", "targetArtifactType", "engineLanguage", "executionProfile", "limit", "cursor"}
+	if nested {
+		allowed = []string{"sourceMappingArtifactType", "limit", "cursor"}
+	}
+	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, allowed...)
+	if !artifactmodel.ValidVersion(version) || nested && !artifactmodel.ValidLogicalType(c.Param("artifactType")) {
+		s.writeArtifactValidationError(c, InvalidRequest)
+		return
+	}
+	if err != nil {
 		s.writeArtifactValidationError(c, InvalidQueryParameter)
 		return
 	}
-	for _, key := range []string{"sourceArtifactType", "targetArtifactType", "engineLanguage", "executionProfile"} {
-		if values.Get(key) == "" && c.Request.URL.Query().Has(key) {
+	for key := range values {
+		if values.Get(key) == "" || len(values.Get(key)) > artifactmodel.MaxIdentifierBytes && key != "cursor" {
 			s.writeArtifactValidationError(c, InvalidQueryParameter)
 			return
 		}
 	}
-	for _, key := range []string{"sourceArtifactType", "targetArtifactType"} {
+	for _, key := range []string{"sourceArtifactType", "targetArtifactType", "sourceMappingArtifactType"} {
 		if value := values.Get(key); value != "" {
 			if !artifactmodel.ValidLogicalType(value) {
 				s.writeArtifactValidationError(c, InvalidQueryParameter)
-				return
-			}
-			if _, lookupErr := s.artifacts.GetReleaseArtifact(c.Request.Context(), version, "schema", value); lookupErr != nil {
-				s.writeArtifactError(c, lookupErr, SchemaNotInRelease)
 				return
 			}
 		}
@@ -407,121 +356,159 @@ func (s *Server) mappings(c *gin.Context) {
 			return
 		}
 	}
-	filters := map[string]string{"version": version, "sourceArtifactType": values.Get("sourceArtifactType"), "targetArtifactType": values.Get("targetArtifactType"), "engineLanguage": values.Get("engineLanguage"), "executionProfile": values.Get("executionProfile")}
+	filter := model.ArtifactFilter{Kind: "source-mapping", ArtifactType: values.Get("sourceMappingArtifactType"), SourceArtifactType: values.Get("sourceArtifactType"), TargetArtifactType: values.Get("targetArtifactType"), EngineLanguage: values.Get("engineLanguage"), ExecutionProfile: values.Get("executionProfile")}
+	resource := "release-source-mappings"
+	if nested {
+		filter.SourceArtifactType = c.Param("artifactType")
+		resource = "source-schema-mappings"
+	}
+	if packages {
+		resource = "source-schema-mapping-packages"
+	}
+	filters := map[string]string{"version": version, "sourceArtifactType": filter.SourceArtifactType, "targetArtifactType": filter.TargetArtifactType, "engineLanguage": filter.EngineLanguage, "executionProfile": filter.ExecutionProfile, "sourceMappingArtifactType": filter.ArtifactType}
 	var afterType *string
 	if token := values.Get("cursor"); token != "" {
-		payload, decodeErr := s.cursors.Decode(token, pagination.Payload{Resource: "release-source-mappings", Limit: limit, Sort: "artifact-type", Filters: filters})
-		if decodeErr != nil || !artifactmodel.ValidLogicalType(payload.Last) {
+		payload, decodeErr := s.cursors.Decode(token, pagination.Payload{Resource: resource, Limit: limit, Sort: "artifact-type", Filters: filters})
+		if decodeErr != nil || !artifactmodel.ValidLogicalType(payload.Last) || payload.Snapshot != version {
 			s.writeArtifactValidationError(c, InvalidCursor)
 			return
 		}
 		afterType = &payload.Last
 	}
-	result, err := s.artifacts.Mappings(c.Request.Context(), version, model.ArtifactFilter{Kind: "source-mapping"}, afterType, limit+1)
-	if err != nil {
-		s.writeArtifactError(c, err, ReleaseNotFound)
-		return
+	self := "/v1/releases/" + version + "/source-mappings"
+	if nested {
+		self = "/v1/releases/" + version + "/schemas/" + c.Param("artifactType") + "/source-mappings"
 	}
+	if packages {
+		self += "/packages"
+	}
+	if query := values.Encode(); query != "" {
+		self += "?" + query
+	}
+	var current string
 	items := make([]MappingResponse, 0)
+	packageItems := make([]MappingPackageResponse, 0)
 	matchedTypes := make([]string, 0)
-	seenSources := make(map[string]struct{})
-	for _, item := range result.Value {
-		d := item.Detail
-		if _, exists := seenSources[d.SourceArtifactType]; exists {
-			s.writeArtifactError(c, postgres.ErrInconsistentState, ReleaseNotFound)
+	encodedItems := 0
+	withinItemBudget := func(value any) bool {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return false
+		}
+		encodedItems += len(encoded)
+		return encodedItems <= maxGeneratedJSONBytes
+	}
+	if packages {
+		result, lookupErr := s.artifacts.MappingPackages(c.Request.Context(), version, filter, afterType, limit+1)
+		if lookupErr != nil {
+			s.writeArtifactError(c, lookupErr, SchemaNotInRelease)
 			return
 		}
-		seenSources[d.SourceArtifactType] = struct{}{}
-		if values.Get("sourceArtifactType") != "" && d.SourceArtifactType != values.Get("sourceArtifactType") || values.Get("targetArtifactType") != "" && d.TargetArtifactType != values.Get("targetArtifactType") || values.Get("engineLanguage") != "" && d.EngineLanguage != values.Get("engineLanguage") || values.Get("executionProfile") != "" && d.ExecutionProfile != values.Get("executionProfile") {
-			continue
+		current = result.Current.SchemaVersion
+		for index, item := range result.Value {
+			matchedTypes = append(matchedTypes, item.Mapping.Artifact.Type)
+			if index >= limit {
+				continue
+			}
+			body, err := mappingPackageBody(item, version)
+			if err != nil {
+				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
+				return
+			}
+			if !withinItemBudget(body) {
+				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
+				return
+			}
+			packageItems = append(packageItems, body)
 		}
-		items = append(items, enrichedMapping(item, version))
-		matchedTypes = append(matchedTypes, item.Descriptor.Artifact.Type)
+	} else {
+		result, err := s.artifacts.Mappings(c.Request.Context(), version, filter, afterType, limit+1)
+		if err != nil {
+			s.writeArtifactError(c, err, SchemaNotInRelease)
+			return
+		}
+		current = result.Current.SchemaVersion
+		for index, item := range result.Value {
+			matchedTypes = append(matchedTypes, item.Descriptor.Artifact.Type)
+			if index >= limit {
+				continue
+			}
+			body := enrichedMapping(item, version)
+			if !withinItemBudget(body) {
+				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
+				return
+			}
+			items = append(items, body)
+		}
 	}
 	next := (*string)(nil)
-	if len(items) > limit {
+	if len(matchedTypes) > limit {
 		last := matchedTypes[limit-1]
-		token, encodeErr := s.cursors.Encode(pagination.Payload{Resource: "release-source-mappings", Limit: limit, Sort: "artifact-type", Filters: filters, Last: last, Snapshot: version})
+		token, encodeErr := s.cursors.Encode(pagination.Payload{Resource: resource, Limit: limit, Sort: "artifact-type", Filters: filters, Last: last, Snapshot: version})
 		if encodeErr != nil {
 			s.writeArtifactError(c, postgres.ErrInconsistentState, ReleaseNotFound)
 			return
 		}
-		next, items = &token, items[:limit]
+		next = &token
+		if !packages {
+			items = items[:limit]
+		}
 	}
-	s.writeJSON(c, http.StatusOK, result.Current.SchemaVersion, version, MappingsResponse{
+	if packages {
+		s.writeBoundedJSON(c, current, version, MappingPackagesResponse{SchemaVersion: version, Items: packageItems, NextCursor: next, Links: links{"self": self}})
+		return
+	}
+	s.writeBoundedJSON(c, current, version, MappingsResponse{
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
-		Links:         links{"self": "/v1/releases/" + version + "/source-mappings"},
+		Links:         links{"self": self},
 	})
 }
 
-func (s *Server) schemaMapping(c *gin.Context) {
-	version, source := c.Param("schemaVersion"), c.Param("artifactType")
-	if !validSchemaPath(version, source) {
+func (s *Server) mappingMetadata(c *gin.Context) {
+	version, mappingType := c.Param("schemaVersion"), c.Param("artifactType")
+	if !validSchemaPath(version, mappingType) {
 		s.writeArtifactValidationError(c, InvalidRequest)
 		return
 	}
-	if _, err := s.artifacts.GetReleaseArtifact(c.Request.Context(), version, "schema", source); err != nil {
-		s.writeArtifactError(c, err, SchemaNotInRelease)
+	if _, err := ParseAndValidateQuery(c.Request.URL.RawQuery); err != nil {
+		s.writeArtifactValidationError(c, InvalidQueryParameter)
 		return
 	}
-	value, err := s.artifacts.MappingPackage(c.Request.Context(), version, source)
+	value, err := s.artifacts.MappingMetadata(c.Request.Context(), version, mappingType)
 	if err != nil {
-		s.writeArtifactError(c, err, SourceMappingNotInRelease)
+		s.writeArtifactError(c, err, ArtifactNotInRelease)
 		return
 	}
-	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, enrichedMapping(artifact.Mapping{Descriptor: value.Value.Mapping, Detail: value.Value.Detail}, version))
+	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, enrichedMapping(value.Value, version))
 }
 
 func (s *Server) mappingPackage(c *gin.Context) {
-	version, source := c.Param("schemaVersion"), c.Param("artifactType")
-	if !validSchemaPath(version, source) {
+	version, mappingType := c.Param("schemaVersion"), c.Param("artifactType")
+	if !validSchemaPath(version, mappingType) {
 		s.writeArtifactValidationError(c, InvalidRequest)
 		return
 	}
-	if _, err := s.artifacts.GetReleaseArtifact(c.Request.Context(), version, "schema", source); err != nil {
-		s.writeArtifactError(c, err, SchemaNotInRelease)
+	if _, err := ParseAndValidateQuery(c.Request.URL.RawQuery); err != nil {
+		s.writeArtifactValidationError(c, InvalidQueryParameter)
 		return
 	}
-	value, err := s.artifacts.MappingPackage(c.Request.Context(), version, source)
+	value, err := s.artifacts.MappingPackage(c.Request.Context(), version, mappingType)
 	if err != nil {
-		s.writeArtifactError(c, err, SourceMappingNotInRelease)
+		s.writeArtifactError(c, err, ArtifactNotInRelease)
 		return
 	}
-	sourceDocument, sourceErr := parsedDocument(value.Value.Source)
-	targetDocument, targetErr := parsedDocument(value.Value.Target)
-	if sourceErr != nil || targetErr != nil {
-		s.writeArtifactError(c, postgres.ErrInconsistentState, SourceMappingNotInRelease)
+	body, err := mappingPackageBody(value.Value, version)
+	if err != nil {
+		s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: value.Current.SchemaVersion, SelectedSchemaVersion: version})
 		return
-	}
-	stores := make([]string, 0, len(value.Value.Stores))
-	for _, entry := range value.Value.Stores {
-		stores = append(stores, entry.Store)
-	}
-	body := MappingPackageResponse{
-		SchemaVersion: version,
-		Mapping:       enrichedMapping(artifact.Mapping{Descriptor: value.Value.Mapping, Detail: value.Value.Detail}, version),
-		Program: MappingPackageProgramResponse{
-			Name:      value.Value.Program.Name,
-			Role:      value.Value.Program.Role,
-			MediaType: value.Value.Program.MediaType,
-			Digest:    value.Value.Program.Digest,
-			Size:      value.Value.Program.Size,
-			Content:   base64.StdEncoding.EncodeToString(value.Value.Program.Bytes),
-		},
-		SourceSchema: PackageSchemaResponse{
-			Metadata: descriptor(value.Value.Source, version),
-			Document: sourceDocument,
-		},
-		TargetSchema: PackageSchemaResponse{
-			Metadata: descriptor(value.Value.Target, version),
-			Document: targetDocument,
-		},
-		TargetStores: stores,
-		Links:        links{"self": "/v1/releases/" + version + "/schemas/" + source + "/source-mapping/package"},
 	}
 	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, body)
+}
+
+func mappingPackageBody(value artifact.MappingPackage, version string) (MappingPackageResponse, error) {
+	return representation.BuildMappingPackage(value, version)
 }
 
 func (s *Server) schemaStores(c *gin.Context) {

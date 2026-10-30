@@ -98,16 +98,34 @@ type Changes struct {
 	StorageCatalog        []StorageChange
 }
 type ArtifactChange struct {
-	Operation                                           string
-	Kind                                                artifact.Kind
-	ArtifactType, BeforeRevision, AfterRevision, Impact string
+	Operation      string        `json:"operation"`
+	Kind           artifact.Kind `json:"kind"`
+	ArtifactType   string        `json:"artifactType"`
+	BeforeRevision string        `json:"beforeRevision,omitempty"`
+	AfterRevision  string        `json:"afterRevision,omitempty"`
+	Impact         string        `json:"impact"`
 }
-type BindingChange struct{ Operation, SchemaRevision, ContextRevision, Impact string }
-type URIChange struct{ Operation, URI, BeforeRevision, BeforeResource, AfterRevision, AfterResource, Impact string }
+type BindingChange struct {
+	Operation       string `json:"operation"`
+	SchemaRevision  string `json:"schemaRevision"`
+	ContextRevision string `json:"contextRevision"`
+	Impact          string `json:"impact"`
+}
+type URIChange struct {
+	Operation      string `json:"operation"`
+	URI            string `json:"uri"`
+	BeforeRevision string `json:"beforeRevision,omitempty"`
+	BeforeResource string `json:"beforeResource,omitempty"`
+	AfterRevision  string `json:"afterRevision,omitempty"`
+	AfterResource  string `json:"afterResource,omitempty"`
+	Impact         string `json:"impact"`
+}
 type StorageChange struct {
-	Operation                   string
-	Kind                        artifact.Kind
-	ArtifactType, Store, Impact string
+	Operation    string        `json:"operation"`
+	Kind         artifact.Kind `json:"kind"`
+	ArtifactType string        `json:"artifactType"`
+	Store        string        `json:"store"`
+	Impact       string        `json:"impact"`
 }
 
 // Key identifies one immutable artifact revision.
@@ -194,6 +212,7 @@ func Parse(data []byte) (Manifest, error) {
 }
 
 // Validate parses data and validates its closure against context.
+// It does not enforce application-specific response representation limits.
 func Validate(data []byte, context Context) (Manifest, error) {
 	m, err := Parse(data)
 	if err != nil {
@@ -206,6 +225,7 @@ func Validate(data []byte, context Context) (Manifest, error) {
 }
 
 // Validate validates a parsed immutable manifest without altering it.
+// Registry acceptance MUST also validate application response serviceability.
 func (m Manifest) Validate(context Context) error {
 	if err := m.validateStructural(); err != nil {
 		return err
@@ -509,7 +529,7 @@ func (m Manifest) validateChanges(context Context) error {
 
 // Diff returns the deterministic conservative change summary for two manifests.
 func Diff(before, after Manifest, context Context) (Changes, error) {
-	changes := Changes{}
+	changes := Changes{Artifacts: make([]ArtifactChange, 0)}
 	beforeArtifacts, afterArtifacts := artifactMap(before), artifactMap(after)
 	keys := unionKeys(beforeArtifacts, afterArtifacts)
 	for _, key := range keys {
@@ -517,7 +537,11 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 		right, hasRight := afterArtifacts[key]
 		switch {
 		case !hasLeft:
-			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: "add", Kind: right.Kind, ArtifactType: right.Type, AfterRevision: right.Revision, Impact: "additive"})
+			impact := "additive"
+			if right.Kind == artifact.KindSourceMapping {
+				impact = addedMappingImpact(before, right, context)
+			}
+			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: "add", Kind: right.Kind, ArtifactType: right.Type, AfterRevision: right.Revision, Impact: impact})
 		case !hasRight:
 			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: "remove", Kind: left.Kind, ArtifactType: left.Type, BeforeRevision: left.Revision, Impact: "breaking"})
 		case left.Revision != right.Revision:
@@ -531,12 +555,36 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 	changes.SchemaContextBindings = diffBindings(before, after)
 	changes.URICatalog = diffURIs(before, after)
 	changes.StorageCatalog = diffStorage(before, after)
+	if changes.SchemaContextBindings == nil {
+		changes.SchemaContextBindings = []BindingChange{}
+	}
+	if changes.URICatalog == nil {
+		changes.URICatalog = []URIChange{}
+	}
+	if changes.StorageCatalog == nil {
+		changes.StorageCatalog = []StorageChange{}
+	}
 	changes.Compatibility = classify(changes)
 	if changes.Compatibility == "operational" && len(changes.Artifacts)+len(changes.SchemaContextBindings)+len(changes.URICatalog)+len(changes.StorageCatalog) == 0 {
 		changes.Compatibility = "operational"
 	}
 	sortChanges(&changes)
 	return changes, nil
+}
+
+func addedMappingImpact(before Manifest, added Artifact, context Context) string {
+	bound, ok := context.Artifacts[Key{Kind: added.Kind, Type: added.Type, Revision: added.Revision}]
+	if !ok {
+		return "breaking"
+	}
+	descriptor, err := sourcemapping.Parse(bound.PayloadBytes)
+	if err != nil {
+		return "breaking"
+	}
+	if _, exists := findSelected(before.Artifacts, artifact.KindSchema, descriptor.SourceSchema.ID); exists {
+		return "breaking"
+	}
+	return "additive"
 }
 
 func parsePrevious(raw any) (*PreviousRelease, error) {
@@ -1199,14 +1247,38 @@ func stripResourceBytes(resources []artifact.Resource) []artifact.Resource {
 	return result
 }
 func immutableReuse(selection Artifact, history []Release) error {
+	seenIdentity, retired := false, false
 	for _, release := range history {
+		present := false
 		for _, previous := range release.Manifest.Artifacts {
-			if previous.Kind == selection.Kind && previous.Type == selection.Type && previous.Revision == selection.Revision && !reflect.DeepEqual(previous, selection) {
+			if previous.Kind == selection.Kind && previous.Type == selection.Type {
+				present = true
+				seenIdentity = true
+			}
+			if previous.CanonicalURI == selection.CanonicalURI && previous.Revision != selection.Revision {
+				return fmt.Errorf("%w: historical canonical URI is reassigned", errInvalid)
+			}
+			if previous.Kind == selection.Kind && previous.Type == selection.Type && previous.Revision == selection.Revision && !reflect.DeepEqual(revisionBoundSelection(previous), revisionBoundSelection(selection)) {
 				return fmt.Errorf("%w: immutable revision changed", errInvalid)
 			}
 		}
+		if seenIdentity && !present {
+			retired = true
+		}
+	}
+	if retired {
+		return fmt.Errorf("%w: retired logical identity is reused", errInvalid)
 	}
 	return nil
+}
+
+func revisionBoundSelection(value Artifact) Artifact {
+	value.Payload.BundlePath = ""
+	value.Resources = append([]artifact.Resource(nil), value.Resources...)
+	for index := range value.Resources {
+		value.Resources[index].BundlePath = ""
+	}
+	return value
 }
 func validateCreatedUnder(selection Artifact, version string, history []Release) error {
 	for _, release := range history {
