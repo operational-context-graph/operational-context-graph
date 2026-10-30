@@ -37,8 +37,23 @@ type db interface {
 	SchemaReady(ctx context.Context) error
 }
 
+// AssetPathRepo is the read-path flag value that mounts the repo-backed asset handlers instead of
+// the legacy store-backed ones. Any other value keeps the legacy stack.
+const AssetPathRepo = "repo"
+
+// assetBackend is the repo-backed asset implementation (reader + writer). It is supplied only when
+// the repo path is selected; the legacy stack ignores it.
+type assetBackend interface {
+	assetReader
+	assetWriter
+}
+
 // NewServer creates a configured Gin-backed HTTP server.
-func NewServer(d db, addr string) *http.Server {
+//
+// Assets are served by one of two fully parallel stacks, selected by assetPath: the legacy
+// store-backed handlers (default) or the repo-backed handlers (assetPath == AssetPathRepo). The two
+// never share code. Relationships and health always use the legacy store (d).
+func NewServer(d db, assets assetBackend, assetPath, addr string) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	binding.EnableDecoderDisallowUnknownFields = true
 	r := gin.New()
@@ -65,7 +80,11 @@ func NewServer(d db, addr string) *http.Server {
 
 	v1 := r.Group("/v1")
 	v1.Use(jsonBodyMiddleware(4 * 1024 * 1024)) // 4 MiB cap for POST bodies
-	registerAssetRoutes(v1, d)
+	if assetPath == AssetPathRepo {
+		registerAssetRoutesRepo(v1, assets, assets)
+	} else {
+		registerAssetRoutes(v1, d)
+	}
 	registerRelationshipRoutes(v1, d)
 
 	return &http.Server{

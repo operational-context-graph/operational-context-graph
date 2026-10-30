@@ -18,6 +18,7 @@ import (
 	"github.com/operational-context-graph/inventory-store/internal/config"
 	"github.com/operational-context-graph/inventory-store/internal/database"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset/adapters"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 
@@ -51,7 +52,14 @@ func run(ctx context.Context) error {
 
 	db := store.NewFromPool(pool)
 
-	srv := httpapi.NewServer(db, ":"+strconv.Itoa(cfg.Server.Port))
+	// Asset stack switch (additive). OCG_IS_READ_PATH = dao (default) | repo.
+	// The two asset handler stacks are fully parallel and share no code: "dao" mounts the legacy
+	// store-backed handlers, "repo" mounts the new repository-backed handlers that speak domain
+	// types. Relationships and health always use the legacy store. Only the asset routes swap.
+	assetPath := os.Getenv("OCG_IS_READ_PATH")
+	repo := adapters.NewPostgresAssetRepository(pool)
+	srv := httpapi.NewServer(db, repo, assetPath, ":"+strconv.Itoa(cfg.Server.Port))
+	slog.Info("asset stack configured", "path", assetPath)
 	srvErrC := make(chan error, 1)
 	go func() {
 		slog.Info("starting inventory-store", "addr", srv.Addr)
