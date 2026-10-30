@@ -219,7 +219,7 @@ func TestBackfillIngest_AllGapsOpen(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, "conn-1", mock.Anything, mock.Anything).Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 2, Outcomes: []bool{true, true}}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{AcceptedCount: 2, Accepted: []bool{true, true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 
@@ -278,7 +278,7 @@ func TestBackfillIngest_MixedBatch(t *testing.T) {
 		for i := range outcomes {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 
 	srv := newBackfillReceiver(t, bf, m)
@@ -392,7 +392,7 @@ func TestBackfillIngest_AdvanceBackfillError(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("db down"))
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{AcceptedCount: 1, Accepted: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 
@@ -500,7 +500,7 @@ func TestBackfillCloseGap_Concurrent_WithIngest(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{AcceptedCount: 1, Accepted: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "shared"})
@@ -537,7 +537,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 	bf.On("AdvanceBackfill", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{AcceptedCount: 1, Accepted: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "shared"})
@@ -628,7 +628,7 @@ func TestBackfillIngest_WatermarkNilNoAdvanceBackfill(t *testing.T) {
 	// AdvanceBackfill must NOT be called when watermark is nil
 
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{Accepted: 1, Outcomes: []bool{true}}, nil)
+	m.On("Ingest", mock.Anything, mock.Anything).Return(ingest.IngestResult{AcceptedCount: 1, Accepted: []bool{true}}, nil)
 
 	srv := newBackfillReceiver(t, bf, m)
 	part := partitionStruct(t, map[string]interface{}{"shard": "a"})

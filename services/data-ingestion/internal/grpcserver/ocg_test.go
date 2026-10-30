@@ -42,7 +42,7 @@ func noopAccept(t *testing.T) *Ingestor {
 		for i := range outcomes {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	return m
 }
@@ -269,7 +269,7 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 		for i := 0; i < len(batch)-rejected; i++ {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected, Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch) - rejected, RejectedCount: rejected, Accepted: outcomes}, nil
 	})
 	bf := NewMockBackfiller(t)
 	// Accepted records carry distinct partitions → one AdvanceLive call per partition.
@@ -302,7 +302,7 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 func TestAllRejectedReturnsOK(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{Rejected: len(batch)}, nil
+		return ingest.IngestResult{RejectedCount: len(batch)}, nil
 	})
 	// All rejected: AdvanceLive must NOT be called.
 	bf := NewMockBackfiller(t)
@@ -380,7 +380,7 @@ func TestPartitionFieldMapped(t *testing.T) {
 		for i := range outcomes {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -408,7 +408,7 @@ func TestWatermarkFieldMapped(t *testing.T) {
 		for i := range outcomes {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -436,7 +436,7 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 		for i := range outcomes {
 			outcomes[i] = true
 		}
-		return ingest.IngestResult{Accepted: len(batch), Outcomes: outcomes}, nil
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 

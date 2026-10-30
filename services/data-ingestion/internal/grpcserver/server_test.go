@@ -588,7 +588,7 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 		case <-done:
 		case <-ctx.Done():
 		}
-		return ingest.IngestResult{Accepted: 1}, nil
+		return ingest.IngestResult{AcceptedCount: 1}, nil
 	})
 	slowSrv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},

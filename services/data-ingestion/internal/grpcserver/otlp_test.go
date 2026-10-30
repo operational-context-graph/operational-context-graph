@@ -234,7 +234,7 @@ func TestNewServer_ValidOTLP(t *testing.T) {
 // ── happy path: logs ──────────────────────────────────────────────────────────
 
 func TestOTLPLogs_HappyPath(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -256,7 +256,7 @@ func TestOTLPLogs_EmptyRequest(t *testing.T) {
 // ── happy path: metrics ───────────────────────────────────────────────────────
 
 func TestOTLPMetrics_HappyPath(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -278,7 +278,7 @@ func TestOTLPMetrics_EmptyRequest(t *testing.T) {
 // ── happy path: traces ────────────────────────────────────────────────────────
 
 func TestOTLPTraces_HappyPath(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -300,7 +300,7 @@ func TestOTLPTraces_EmptyRequest(t *testing.T) {
 // ── IngestRecord fields ───────────────────────────────────────────────────────
 
 func TestOTLPLogs_IngestRecordFields(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -386,7 +386,7 @@ func TestOTLPLogs_ContextCancelled(t *testing.T) {
 }
 
 func TestOTLPLogs_AllRejected(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 0, Rejected: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -395,7 +395,7 @@ func TestOTLPLogs_AllRejected(t *testing.T) {
 }
 
 func TestOTLPLogs_SchemaHeader_EmptyString(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	schemaClient := &spySchemaClient{}
 	clients, cleanup := newOTLPBufconn(t, spy, schemaClient)
 	defer cleanup()
@@ -410,7 +410,7 @@ func TestOTLPLogs_SchemaHeader_EmptyString(t *testing.T) {
 }
 
 func TestOTLPLogs_SchemaHeader_PartialOverride(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -427,7 +427,7 @@ func TestOTLPLogs_SchemaHeader_PartialOverride(t *testing.T) {
 }
 
 func TestOTLPLogs_DefaultResolvedOnce(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	schemaClient := &spySchemaClient{}
 	clients, cleanup := newOTLPBufconn(t, spy, schemaClient)
 	defer cleanup()
@@ -442,7 +442,7 @@ func TestOTLPLogs_DefaultResolvedOnce(t *testing.T) {
 // ── concurrency tests ─────────────────────────────────────────────────────────
 
 func TestOTLPLogs_ConcurrentExport(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -465,7 +465,7 @@ func TestOTLPLogs_ConcurrentExport(t *testing.T) {
 }
 
 func TestOTLP_ConcurrentMixedSignalTypes(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
@@ -498,7 +498,7 @@ func TestOTLP_ConcurrentMixedSignalTypes(t *testing.T) {
 // ── integration smoke test (task 8.1) ────────────────────────────────────────
 
 func TestOTLP_EndToEnd_Logs(t *testing.T) {
-	spy := &spyIngestor{retRes: ingest.IngestResult{Accepted: 1}}
+	spy := &spyIngestor{retRes: ingest.IngestResult{AcceptedCount: 1}}
 	clients, cleanup := newOTLPBufconn(t, spy, &spySchemaClient{})
 	defer cleanup()
 
