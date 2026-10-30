@@ -999,6 +999,38 @@ func mappingJSON(t testing.TB, response *httptest.ResponseRecorder) map[string]a
 	return result
 }
 
+func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		fixture    func() *artifactTestSnapshot
+		collection string
+	}{
+		{"shared source and target", mappingFixture, "/v1/releases/1.0.0/schemas/device/source-mappings/packages"},
+		{"mixed targets and shared programs", multiMappingFixture, candidateBase + "/packages"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := artifactTestServer(test.fixture())
+			value, err := server.artifacts.MappingPackage(context.Background(), "1.0.0", "device-mapping")
+			require.NoError(t, err)
+			size, err := MappingPackageSize(value.Value, "1.0.0")
+			require.NoError(t, err)
+			body, err := BuildMappingPackage(value.Value, "1.0.0")
+			require.NoError(t, err)
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			response := serveArtifactRequest(server, http.MethodGet, mappingBase+"/package")
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Equal(t, encoded, response.Body.Bytes())
+			require.EqualValues(t, response.Body.Len(), size)
+			require.Equal(t, ETag(encoded), response.Header().Get("ETag"))
+			collection := mappingJSON(t, serveArtifactRequest(server, http.MethodGet, test.collection+"?sourceMappingArtifactType=device-mapping"))
+			var direct map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &direct))
+			require.Equal(t, direct, collection["items"].([]any)[0])
+		})
+	}
+}
+
 func TestMappingModelsAreCompleteAndEqualAcrossResources(t *testing.T) {
 	server := artifactTestServer(multiMappingFixture())
 	direct := mappingJSON(t, serveArtifactRequest(server, http.MethodGet, mappingBase))

@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
@@ -31,7 +31,7 @@ func Validate(value manifest.Manifest, context manifest.Context) error {
 		if err != nil {
 			return fmt.Errorf("source mapping %s package: %w", selection.Type, err)
 		}
-		if _, err := representation.MappingPackageSize(pack, closure.version); err != nil {
+		if _, err := httpapi.MappingPackageSize(pack, closure.version); err != nil {
 			return fmt.Errorf("source mapping %s package: %w", selection.Type, err)
 		}
 	}
@@ -82,11 +82,11 @@ func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error)
 	}
 	selection, exists := c.selections[key]
 	if !exists {
-		return model.Descriptor{}, fmt.Errorf("%w: artifact %s/%s/%s selection is missing", representation.ErrInvalid, key.Kind, key.Type, key.Revision)
+		return model.Descriptor{}, fmt.Errorf("%w: artifact %s/%s/%s selection is missing", httpapi.ErrInvalid, key.Kind, key.Type, key.Revision)
 	}
 	bound, exists := c.context.Artifacts[key]
 	if !exists || len(bound.PayloadBytes) == 0 {
-		return model.Descriptor{}, fmt.Errorf("%w: artifact %s/%s/%s bytes are missing", representation.ErrInvalid, key.Kind, key.Type, key.Revision)
+		return model.Descriptor{}, fmt.Errorf("%w: artifact %s/%s/%s bytes are missing", httpapi.ErrInvalid, key.Kind, key.Type, key.Revision)
 	}
 	value := model.Descriptor{
 		Artifact: model.Artifact{
@@ -109,7 +109,7 @@ func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error)
 	if selection.Extensions != nil {
 		extensions, err := json.Marshal(selection.Extensions)
 		if err != nil {
-			return model.Descriptor{}, fmt.Errorf("%w: artifact extensions: %v", representation.ErrInvalid, err)
+			return model.Descriptor{}, fmt.Errorf("%w: artifact extensions: %v", httpapi.ErrInvalid, err)
 		}
 		value.Artifact.Extensions = extensions
 	}
@@ -119,7 +119,7 @@ func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error)
 	}
 	for _, resource := range selection.Resources {
 		if _, exists := resources[resource.Name]; !exists {
-			return model.Descriptor{}, fmt.Errorf("%w: artifact %s resource %s is missing", representation.ErrInvalid, key.Type, resource.Name)
+			return model.Descriptor{}, fmt.Errorf("%w: artifact %s resource %s is missing", httpapi.ErrInvalid, key.Type, resource.Name)
 		}
 		// Size validation needs declared program sizes, not retained resource bytes.
 		value.Resources = append(value.Resources, model.Resource{
@@ -144,7 +144,7 @@ func byteDescriptor(value artifact.Descriptor, data []byte) model.ByteDescriptor
 func (c *selectedClosure) schema(reference sourcemapping.SchemaReference) (model.Descriptor, error) {
 	selection, exists := c.schemas[reference.ID]
 	if !exists || reference.Revision != "" && selection.Revision != reference.Revision {
-		return model.Descriptor{}, fmt.Errorf("%w: selected schema %s/%s is missing", representation.ErrInvalid, reference.ID, reference.Revision)
+		return model.Descriptor{}, fmt.Errorf("%w: selected schema %s/%s is missing", httpapi.ErrInvalid, reference.ID, reference.Revision)
 	}
 	// Format validation proves every version selector resolves to this selected revision.
 	return c.descriptor(selectionKey(selection))
@@ -157,7 +157,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 	}
 	parsed, err := sourcemapping.Parse(mapping.Artifact.Payload.Bytes)
 	if err != nil {
-		return model.MappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %v", representation.ErrInvalid, err)
+		return model.MappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %v", httpapi.ErrInvalid, err)
 	}
 	source, err := c.schema(parsed.SourceSchema)
 	if err != nil {
@@ -180,7 +180,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 	bind := func(reference sourcemapping.ProgramReference) (model.ProgramBinding, error) {
 		resource, exists := resources[reference.ProgramRef]
 		if !exists || resource.Role != "program" || resource.Digest != reference.ProgramDigest {
-			return model.ProgramBinding{}, fmt.Errorf("%w: program resource %s is missing or disagrees with binding", representation.ErrInvalid, reference.ProgramRef)
+			return model.ProgramBinding{}, fmt.Errorf("%w: program resource %s is missing or disagrees with binding", httpapi.ErrInvalid, reference.ProgramRef)
 		}
 		programs[resource.Name] = resource
 		return model.ProgramBinding{ProgramName: resource.Name, ProgramDigest: resource.Digest}, nil
@@ -214,7 +214,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 		}
 		placements := c.stores[target.Artifact.Type]
 		if len(placements) == 0 {
-			return model.MappingPackage{}, fmt.Errorf("%w: target schema %s stores are missing", representation.ErrInvalid, target.Artifact.Type)
+			return model.MappingPackage{}, fmt.Errorf("%w: target schema %s stores are missing", httpapi.ErrInvalid, target.Artifact.Type)
 		}
 		for _, store := range placements {
 			if _, exists := stores[store.Store]; !exists {

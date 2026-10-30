@@ -13,11 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
@@ -31,7 +31,7 @@ type SchemasResponse struct {
 }
 
 // PackageSchemaResponse represents a schema document in a source-mapping or schema package response.
-type PackageSchemaResponse = representation.PackageSchemaResponse
+type PackageSchemaResponse = v1.PackageSchemaResponse
 
 // SchemaContextsResponse represents the context descriptors for a schema.
 type SchemaContextsResponse struct {
@@ -56,17 +56,17 @@ type SchemaPackageResponse struct {
 }
 
 // MappingResponse represents a source-mapping descriptor response.
-type MappingResponse = representation.MappingResponse
+type MappingResponse = v1.MappingResponse
 
-type MappingProgramsResponse = representation.MappingProgramsResponse
+type MappingProgramsResponse = v1.MappingProgramsResponse
 
-type MappingTransformationResponse = representation.MappingTransformationResponse
+type MappingTransformationResponse = v1.MappingTransformationResponse
 
 // MappingSourceSchemaResponse represents the source schema for a source mapping.
-type MappingSourceSchemaResponse = representation.MappingSourceSchemaResponse
+type MappingSourceSchemaResponse = v1.MappingSourceSchemaResponse
 
 // MappingEngineResponse represents the engine configuration for a source mapping.
-type MappingEngineResponse = representation.MappingEngineResponse
+type MappingEngineResponse = v1.MappingEngineResponse
 
 // MappingsResponse represents a paginated source-mapping descriptor response.
 type MappingsResponse struct {
@@ -77,7 +77,7 @@ type MappingsResponse struct {
 }
 
 // MappingPackageResponse represents a source-mapping package response.
-type MappingPackageResponse = representation.MappingPackageResponse
+type MappingPackageResponse = v1.MappingPackageResponse
 
 type MappingPackagesResponse struct {
 	SchemaVersion string                   `json:"schemaVersion"`
@@ -87,7 +87,7 @@ type MappingPackagesResponse struct {
 }
 
 // MappingPackageProgramResponse represents program content in a source-mapping package response.
-type MappingPackageProgramResponse = representation.MappingPackageProgramResponse
+type MappingPackageProgramResponse = v1.MappingPackageProgramResponse
 
 // SchemaStoresResponse represents the stores associated with a schema.
 type SchemaStoresResponse struct {
@@ -311,7 +311,7 @@ func (s *Server) schemaPackage(c *gin.Context) {
 }
 
 func enrichedMapping(value artifact.Mapping, version string) MappingResponse {
-	return representation.BuildMapping(value, version)
+	return BuildMapping(value, version)
 }
 
 func (s *Server) mappings(c *gin.Context)              { s.mappingCollection(c, false, false) }
@@ -507,7 +507,7 @@ func (s *Server) mappingPackage(c *gin.Context) {
 }
 
 func mappingPackageBody(value artifact.MappingPackage, version string) (MappingPackageResponse, error) {
-	return representation.BuildMappingPackage(value, version)
+	return BuildMappingPackage(value, version)
 }
 
 func (s *Server) schemaStores(c *gin.Context) {

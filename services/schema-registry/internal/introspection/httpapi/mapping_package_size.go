@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package representation
+package httpapi
 
 import (
 	"encoding/base64"
@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 )
@@ -31,7 +32,7 @@ func MappingPackageSize(value model.MappingPackage, version string) (int64, erro
 	return mappingPackageSize(value, body, config.MaxGeneratedJSONBytes)
 }
 
-func mappingPackageSize(value model.MappingPackage, metadata MappingPackageResponse, limit int64) (int64, error) {
+func mappingPackageSize(value model.MappingPackage, metadata v1.MappingPackageResponse, limit int64) (int64, error) {
 	if limit < 0 {
 		return 0, fmt.Errorf("%w: negative size limit", ErrInvalid)
 	}

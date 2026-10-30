@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
@@ -31,7 +31,7 @@ func TestValidateRejectsOversizedMappingPackageAfterFormatValidation(t *testing.
 	oversizeMapping(t, &value, context, "mapping-b")
 	require.NoError(t, value.Validate(context), "format validity does not establish response serviceability")
 	err := Validate(value, context)
-	require.ErrorIs(t, err, representation.ErrTooLarge)
+	require.ErrorIs(t, err, httpapi.ErrTooLarge)
 	require.NotErrorIs(t, err, manifest.ErrInvalid)
 	require.ErrorContains(t, err, "mapping-b")
 }
@@ -53,7 +53,7 @@ func TestValidateExcludesLargeAncillaryContent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pack.Mapping.Resources, 5, "ancillary metadata remains in the descriptor")
 	require.Len(t, pack.Programs, 2, "ancillary content does not enter the package")
-	size, err := representation.MappingPackageSize(pack, value.SchemaVersion)
+	size, err := httpapi.MappingPackageSize(pack, value.SchemaVersion)
 	require.NoError(t, err)
 	require.Less(t, size, int64(1<<20))
 	for _, resource := range pack.Mapping.Resources {
@@ -82,7 +82,7 @@ func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pack.Programs, 1)
 	require.Nil(t, pack.Programs[0].Bytes)
-	size, err := representation.MappingPackageSize(pack, value.SchemaVersion)
+	size, err := httpapi.MappingPackageSize(pack, value.SchemaVersion)
 	require.NoError(t, err)
 	require.True(t, size > config.MaxArtifactBytes)
 	require.Less(t, size, config.MaxGeneratedJSONBytes)
@@ -124,7 +124,7 @@ func TestMappingPackageSizeMatchesSharedRepresentation(t *testing.T) {
 	closure := indexClosure(value, context)
 	pack, err := closure.mappingPackage(closure.selections[mappingKey("mapping-a")])
 	require.NoError(t, err)
-	size, err := representation.MappingPackageSize(pack, value.SchemaVersion)
+	size, err := httpapi.MappingPackageSize(pack, value.SchemaVersion)
 	require.NoError(t, err)
 	// Only the shared response builder needs program bytes for Base64 encoding.
 	for index := range pack.Programs {
@@ -134,7 +134,7 @@ func TestMappingPackageSizeMatchesSharedRepresentation(t *testing.T) {
 			}
 		}
 	}
-	body, err := representation.BuildMappingPackage(pack, value.SchemaVersion)
+	body, err := httpapi.BuildMappingPackage(pack, value.SchemaVersion)
 	require.NoError(t, err)
 	encoded, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestValidateRejectsInvalidFormatBeforeApplicationSize(t *testing.T) {
 			test.mutate(&value, context)
 			err := Validate(value, context)
 			require.ErrorIs(t, err, manifest.ErrInvalid)
-			require.NotErrorIs(t, err, representation.ErrTooLarge)
+			require.NotErrorIs(t, err, httpapi.ErrTooLarge)
 			require.ErrorContains(t, err, test.want)
 		})
 	}
@@ -283,7 +283,7 @@ func TestMappingPackageRejectsMissingValidatedInputs(t *testing.T) {
 			selection := closure.selections[mappingKey("mapping-a")]
 			test.mutate(closure)
 			_, err := closure.mappingPackage(selection)
-			require.ErrorIs(t, err, representation.ErrInvalid)
+			require.ErrorIs(t, err, httpapi.ErrInvalid)
 			require.ErrorContains(t, err, test.want)
 		})
 	}

@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package representation defines the shared version 1 artifact and package JSON contract.
-package representation
+// Package v1 defines the version 1 artifact and package JSON contract.
+package v1
 
 import "encoding/json"
 

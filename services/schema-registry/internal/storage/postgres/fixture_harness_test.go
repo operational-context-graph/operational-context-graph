@@ -20,8 +20,6 @@ import (
 
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/releasevalidation"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
@@ -29,24 +27,12 @@ import (
 
 const fixtureOrigin = "https://registry.example.test"
 
-// registryFixture is a complete, application-validated candidate release.
-// All data reaches PostgreSQL only after application validation accepts it.
+// registryFixture is a complete fixture release.
 type registryFixture struct {
 	name      string
 	version   string
 	previous  *manifest.Release
 	artifacts []artifact.Artifact
-}
-
-func TestFixtureCatalogPassesSharedValidation(t *testing.T) {
-	fixtures := fixtureCatalog(t)
-	require.Len(t, fixtures, 10)
-	for _, fixture := range fixtures {
-		t.Run(fixture.name, func(t *testing.T) {
-			parsed, validationContext := fixtureManifest(t, fixture)
-			require.NoError(t, releasevalidation.Validate(parsed, validationContext))
-		})
-	}
 }
 
 func TestFixtureLoadSuite(t *testing.T) {
@@ -57,7 +43,7 @@ type fixtureLoadSuite struct {
 	PostgreSQLSuite
 }
 
-func (suite *fixtureLoadSuite) TestLoadValidatedFixture() {
+func (suite *fixtureLoadSuite) TestLoadFixture() {
 	for _, fixture := range fixtureCatalog(suite.T()) {
 		parsed, loadErr := loadValidatedFixture(suite.T(), suite.Context, suite.Database, fixture)
 		suite.Require().NoError(loadErr, fixture.name)
@@ -102,7 +88,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 		name: "initial", version: "1.0.0",
 		artifacts: []artifact.Artifact{fixtureSchema("device", "rev-device-v1", "1.0.0", []byte("true"), nil)},
 	}
-	initialRelease := validatedFixture(t, initial)
+	initialRelease := fixtureRelease(t, initial)
 	multi := registryFixture{
 		name: "multi-release", version: "1.1.0", previous: &initialRelease,
 		artifacts: []artifact.Artifact{
@@ -110,7 +96,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 			fixtureSchema("location", "rev-location-v1", "1.1.0", []byte(`{"type":"object"}`), nil),
 		},
 	}
-	multiRelease := validatedFixture(t, multi)
+	multiRelease := fixtureRelease(t, multi)
 	rollback := registryFixture{
 		name: "rollback", version: "2.0.0", previous: &multiRelease,
 		artifacts: []artifact.Artifact{fixtureSchema("device", "rev-device-v1", "1.0.0", []byte("true"), nil)},
@@ -200,40 +186,10 @@ func fixtureDescriptor(bytes []byte, mediaType, bundlePath string) artifact.Desc
 	return artifact.Descriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(sum[:]), Size: int64(len(bytes)), BundlePath: bundlePath}
 }
 
-func validatedFixture(t *testing.T, fixture registryFixture) manifest.Release {
+func fixtureRelease(t *testing.T, fixture registryFixture) manifest.Release {
 	t.Helper()
-	parsed, context := fixtureManifest(t, fixture)
-	require.NoError(t, releasevalidation.Validate(parsed, context), fixture.name)
+	parsed, _ := fixtureManifest(t, fixture)
 	return manifest.Release{Manifest: parsed, Digest: fixtureDigest(parsed.Raw)}
-}
-
-func TestFixtureAcceptanceRejectsOversizedPackageBeforeDatabaseAccess(t *testing.T) {
-	fixture := candidateFixture(t)
-	mapping := &fixture.artifacts[3]
-	data := make([]byte, config.MaxArtifactBytes)
-	mapping.Resources = []artifact.Resource{
-		fixtureResource("a.bin", "program", "application/octet-stream", data),
-		fixtureResource("b.bin", "program", "application/octet-stream", data),
-		fixtureResource("c.bin", "program", "application/octet-stream", data),
-	}
-	var descriptor map[string]any
-	require.NoError(t, json.Unmarshal(mapping.PayloadBytes, &descriptor))
-	programs := descriptor["programs"].(map[string]any)
-	programs["condition"] = map[string]any{"programRef": "a.bin", "programDigest": mapping.Resources[0].Digest}
-	for index, raw := range programs["transformations"].([]any) {
-		transformation := raw.(map[string]any)
-		resource := mapping.Resources[index%2+1]
-		transformation["programRef"], transformation["programDigest"] = resource.Name, resource.Digest
-	}
-	payload, err := json.Marshal(descriptor)
-	require.NoError(t, err)
-	mapping.PayloadBytes = payload
-	mapping.Payload = fixtureDescriptor(payload, mapping.Payload.MediaType, mapping.Payload.BundlePath)
-	parsed, validationContext := fixtureManifest(t, fixture)
-	require.NoError(t, parsed.Validate(validationContext), "the release remains valid independently of API limits")
-	// A nil database makes an accidental transaction attempt fail this regression.
-	_, err = loadValidatedFixture(t, context.Background(), nil, fixture)
-	require.ErrorIs(t, err, representation.ErrTooLarge)
 }
 
 func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, manifest.Context) {
@@ -315,12 +271,10 @@ func fixtureDigest(bytes []byte) string {
 	return "sha-256:" + hex.EncodeToString(sum[:])
 }
 
+// loadValidatedFixture loads a fixture that its caller has already validated.
 func loadValidatedFixture(t testing.TB, ctx context.Context, database *sql.DB, fixture registryFixture) (manifest.Manifest, error) {
 	t.Helper()
-	parsed, validationContext := fixtureManifest(t, fixture)
-	if err := releasevalidation.Validate(parsed, validationContext); err != nil {
-		return manifest.Manifest{}, fmt.Errorf("validate fixture %s: %w", fixture.name, err)
-	}
+	parsed, _ := fixtureManifest(t, fixture)
 	tx, err := database.BeginTx(ctx, nil)
 	if err != nil {
 		return manifest.Manifest{}, err

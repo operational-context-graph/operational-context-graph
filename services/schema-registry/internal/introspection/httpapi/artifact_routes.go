@@ -13,11 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
@@ -214,7 +214,7 @@ type byteResponse struct {
 	Revision     string
 	ResourceName string
 }
-type descriptorResponse = representation.DescriptorResponse
+type descriptorResponse = v1.DescriptorResponse
 
 func validKind(value string) bool {
 	return value == "schema" || value == "context" || value == "source-mapping"
@@ -348,7 +348,7 @@ func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, val
 }
 
 func descriptor(value artifact.Descriptor, selected string) descriptorResponse {
-	return representation.BuildDescriptor(value, selected)
+	return BuildDescriptor(value, selected)
 }
 
 func invalidArtifactPathCode(kind string) ErrorCode {
