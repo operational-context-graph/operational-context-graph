@@ -91,6 +91,7 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
+	partitions := make(map[string]struct{}, len(req.Messages))
 	for i, msg := range req.Messages {
 		batch[i] = ingest.IngestRecord{
 			Schema: ingest.SchemaKey{
@@ -111,6 +112,7 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		if msg.Watermark != nil {
 			batch[i].Watermark = msg.Watermark.AsMap()
 		}
+		partitions[batch[i].Partition] = struct{}{}
 	}
 
 	result, err := recv.handler.ingestor.Ingest(ctx, batch)
@@ -119,7 +121,7 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	// Collect last accepted watermark per partition (message order = last wins).
-	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, 0)
+	lastWM := lastAcceptedWatermarks(batch, result.Outcomes, len(partitions))
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
