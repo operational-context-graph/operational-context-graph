@@ -1,6 +1,3 @@
--- SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
--- SPDX-License-Identifier: Apache-2.0
-
 -- +goose Up
 CREATE TABLE IF NOT EXISTS relationships (
     id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

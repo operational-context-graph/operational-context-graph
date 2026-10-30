@@ -1,9 +1,3 @@
-<!--
-SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-
-SPDX-License-Identifier: Apache-2.0
--->
-
 # Data Ingestion service
 
 The Data Ingestion service is the entry point for all data that is ingested into the OCG.
