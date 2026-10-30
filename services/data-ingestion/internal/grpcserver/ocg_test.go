@@ -30,7 +30,9 @@ import (
 
 func noop(t *testing.T) *Ingestor {
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{}, nil)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		return ingest.IngestResult{Accepted: make([]bool, len(batch))}, nil
+	}).Maybe()
 	return m
 }
 
@@ -302,7 +304,7 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 func TestAllRejectedReturnsOK(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{RejectedCount: len(batch)}, nil
+		return ingest.IngestResult{RejectedCount: len(batch), Accepted: make([]bool, len(batch))}, nil
 	})
 	// All rejected: AdvanceLive must NOT be called.
 	bf := NewMockBackfiller(t)

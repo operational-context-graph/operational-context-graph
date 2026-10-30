@@ -16,7 +16,7 @@ func lastAcceptedWatermarks(batch []ingest.IngestRecord, accepted []bool, numPar
 		if numPartitions > 0 && len(result) == numPartitions {
 			break
 		}
-		if i >= len(accepted) || !accepted[i] || batch[i].Watermark == nil {
+		if !accepted[i] || batch[i].Watermark == nil {
 			continue
 		}
 		if _, seen := result[batch[i].Partition]; !seen {
