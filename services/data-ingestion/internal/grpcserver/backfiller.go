@@ -22,9 +22,9 @@ var _ Backfiller = (*backfill.PostgresBackfiller)(nil) // compile-time interface
 // past a record that was never durably written.
 type Backfiller interface {
 	// GetWatermark returns the last committed watermark for the
-	// (connectorID, partition) pair. Returns (nil, false, nil) when no
-	// watermark has been recorded. Returns a non-nil error on storage failure.
-	GetWatermark(ctx context.Context, connectorID, partition string) (watermark map[string]any, found bool, err error)
+	// (connectorID, partition) pair. Returns (nil, nil) when no watermark has
+	// been recorded. Returns a non-nil error on storage failure.
+	GetWatermark(ctx context.Context, connectorID, partition string) (watermark map[string]any, err error)
 
 	// StartGap records that a gap exists for the (connectorID, partition)
 	// pair, disabling live-stream watermark advancement until CloseGap is

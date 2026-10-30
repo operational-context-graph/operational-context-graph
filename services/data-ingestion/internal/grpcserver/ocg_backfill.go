@@ -94,11 +94,11 @@ func (recv *OCGBackfillReceiver) GetWatermark(ctx context.Context, req *ingestio
 		return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
 	}
 
-	wm, found, err := recv.handler.backfiller.GetWatermark(ctx, connectorID, partitionKey)
+	wm, err := recv.handler.backfiller.GetWatermark(ctx, connectorID, partitionKey)
 	if err != nil {
 		return nil, recv.handler.unavailableWithRetry("watermark lookup failed")
 	}
-	if !found {
+	if wm == nil {
 		return &ingestionv1.GetWatermarkResponse{}, nil
 	}
 

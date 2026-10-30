@@ -49,7 +49,7 @@ func watermarkStruct(t *testing.T, m map[string]interface{}) *structpb.Struct {
 func TestGetWatermark_Exists(t *testing.T) {
 	bf := NewMockBackfiller(t)
 	wm := map[string]any{"offset": float64(42)}
-	bf.On("GetWatermark", mock.Anything, "conn-1", mock.AnythingOfType("string")).Return(wm, true, nil)
+	bf.On("GetWatermark", mock.Anything, "conn-1", mock.AnythingOfType("string")).Return(wm, nil)
 
 	srv := newBackfillReceiver(t, bf, noop(t))
 
@@ -65,7 +65,7 @@ func TestGetWatermark_Exists(t *testing.T) {
 
 func TestGetWatermark_NotFound(t *testing.T) {
 	bf := NewMockBackfiller(t)
-	bf.On("GetWatermark", mock.Anything, "conn-1", mock.Anything).Return(nil, false, nil)
+	bf.On("GetWatermark", mock.Anything, "conn-1", mock.Anything).Return(nil, nil)
 
 	srv := newBackfillReceiver(t, bf, noop(t))
 
@@ -89,7 +89,7 @@ func TestGetWatermark_NoIdentity(t *testing.T) {
 
 func TestGetWatermark_BackfillerError(t *testing.T) {
 	bf := NewMockBackfiller(t)
-	bf.On("GetWatermark", mock.Anything, mock.Anything, mock.Anything).Return(nil, false, errors.New("db down"))
+	bf.On("GetWatermark", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("db down"))
 
 	srv := newBackfillReceiver(t, bf, noop(t))
 
@@ -646,7 +646,7 @@ func TestGetWatermark_WatermarkEncodingError(t *testing.T) {
 	// A chan value is one such type.
 	bf := NewMockBackfiller(t)
 	wm := map[string]any{"ch": make(chan int)}
-	bf.On("GetWatermark", mock.Anything, mock.Anything, mock.Anything).Return(wm, true, nil)
+	bf.On("GetWatermark", mock.Anything, mock.Anything, mock.Anything).Return(wm, nil)
 
 	srv := newBackfillReceiver(t, bf, noop(t))
 

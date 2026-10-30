@@ -40,27 +40,28 @@ func NewPostgresBackfiller(pool *pgxpool.Pool) (*PostgresBackfiller, error) {
 }
 
 // GetWatermark returns the last committed watermark for the (connectorID,
-// partition) pair. Returns (nil, false, nil) when no row exists.
-func (backfiller *PostgresBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, bool, error) {
+// partition) pair. Returns (nil, nil) when no row exists or the watermark
+// column is NULL.
+func (backfiller *PostgresBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, error) {
 	const q = `SELECT watermark FROM data_ingestion_watermarks WHERE connector_id=$1 AND partition_key=$2`
 
 	var raw []byte
 	err := backfiller.db.QueryRow(ctx, q, connectorID, partition).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("backfill: get watermark: %w", err)
+		return nil, fmt.Errorf("backfill: get watermark: %w", err)
 	}
 	if raw == nil {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	var wm map[string]any
 	if err := json.Unmarshal(raw, &wm); err != nil {
-		return nil, false, fmt.Errorf("backfill: get watermark: unmarshal: %w", err)
+		return nil, fmt.Errorf("backfill: get watermark: unmarshal: %w", err)
 	}
-	return wm, true, nil
+	return wm, nil
 }
 
 // StartGap opens a gap for the (connectorID, partition) pair. Idempotent.

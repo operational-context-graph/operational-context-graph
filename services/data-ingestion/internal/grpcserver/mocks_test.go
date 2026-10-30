@@ -121,13 +121,13 @@ type MockBackfiller struct {
 	mock.Mock
 }
 
-func (m *MockBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, bool, error) {
+func (m *MockBackfiller) GetWatermark(ctx context.Context, connectorID, partition string) (map[string]any, error) {
 	ret := m.Called(ctx, connectorID, partition)
 	var r0 map[string]any
 	if v := ret.Get(0); v != nil {
 		r0 = v.(map[string]any)
 	}
-	return r0, ret.Bool(1), ret.Error(2)
+	return r0, ret.Error(1)
 }
 
 func (m *MockBackfiller) StartGap(ctx context.Context, connectorID, partition string) error {

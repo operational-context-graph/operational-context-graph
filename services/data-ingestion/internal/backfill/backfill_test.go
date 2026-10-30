@@ -87,9 +87,8 @@ func TestGetWatermark_NoRow(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{scanErr: pgx.ErrNoRows}}
 	b := newBackfiller(d)
 
-	wm, found, err := b.GetWatermark(context.Background(), "conn1", "{}")
+	wm, err := b.GetWatermark(context.Background(), "conn1", "{}")
 	require.NoError(t, err)
-	assert.False(t, found)
 	assert.Nil(t, wm)
 }
 
@@ -98,9 +97,8 @@ func TestGetWatermark_NullWatermark(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{values: []any{nil}}}
 	b := newBackfiller(d)
 
-	wm, found, err := b.GetWatermark(context.Background(), "conn1", "{}")
+	wm, err := b.GetWatermark(context.Background(), "conn1", "{}")
 	require.NoError(t, err)
-	assert.False(t, found)
 	assert.Nil(t, wm)
 }
 
@@ -109,9 +107,8 @@ func TestGetWatermark_CommittedWatermark(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{values: []any{raw}}}
 	b := newBackfiller(d)
 
-	wm, found, err := b.GetWatermark(context.Background(), "conn1", `{"p":1}`)
+	wm, err := b.GetWatermark(context.Background(), "conn1", `{"p":1}`)
 	require.NoError(t, err)
-	assert.True(t, found)
 	assert.Equal(t, map[string]any{"offset": float64(42)}, wm)
 }
 
@@ -120,7 +117,7 @@ func TestGetWatermark_DBError(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{scanErr: boom}}
 	b := newBackfiller(d)
 
-	_, _, err := b.GetWatermark(context.Background(), "conn1", "{}")
+	_, err := b.GetWatermark(context.Background(), "conn1", "{}")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, boom)
 }
@@ -132,7 +129,7 @@ func TestGetWatermark_CancelledContext(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{scanErr: context.Canceled}}
 	b := newBackfiller(d)
 
-	_, _, err := b.GetWatermark(ctx, "conn1", "{}")
+	_, err := b.GetWatermark(ctx, "conn1", "{}")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -354,7 +351,7 @@ func TestAllMethods_EmptyConnectorID_NoPanic(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{scanErr: pgx.ErrNoRows}}
 	b := newBackfiller(d)
 
-	_, _, err := b.GetWatermark(context.Background(), "", "{}")
+	_, err := b.GetWatermark(context.Background(), "", "{}")
 	require.NoError(t, err)
 
 	d.execErr = nil
@@ -399,9 +396,8 @@ func TestGetWatermark_EmptyPartitionStruct(t *testing.T) {
 	d := &fakeDB{row: &fakeRow{values: []any{raw}}}
 	b := newBackfiller(d)
 
-	wm, found, err := b.GetWatermark(context.Background(), "conn1", "{}")
+	wm, err := b.GetWatermark(context.Background(), "conn1", "{}")
 	require.NoError(t, err)
-	assert.True(t, found)
 	assert.NotNil(t, wm)
 }
 
