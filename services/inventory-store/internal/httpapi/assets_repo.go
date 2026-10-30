@@ -14,21 +14,21 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/operational-context-graph/inventory-store/api/v1"
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
 )
 
 // assetReader and assetWriter are the narrow ports the repo-backed asset handlers require. They are
 // satisfied by the inventory domain repository. This stack speaks domain types only and never
 // imports the legacy store package: it is a fully parallel implementation that maps the same v1
-// wire contract to and from inventory.Update / *inventory.Asset.
+// wire contract to and from asset.Update / *asset.Asset.
 type assetReader interface {
-	GetAsset(ctx context.Context, id uuid.UUID) (*inventory.Asset, error)
-	ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *inventory.Cursor) ([]*inventory.Asset, *inventory.Cursor, error)
+	GetAsset(ctx context.Context, id uuid.UUID) (*asset.Asset, error)
+	ListAssets(ctx context.Context, artifactType, sourceSystem, sourceID string, limit int, after *asset.Cursor) ([]*asset.Asset, *asset.Cursor, error)
 }
 
 type assetWriter interface {
-	Upsert(ctx context.Context, u inventory.Update) (*inventory.Asset, bool, error)
-	UpsertBatch(ctx context.Context, updates []inventory.Update) ([]inventory.UpsertResult, error)
+	Upsert(ctx context.Context, u asset.Update) (*asset.Asset, bool, error)
+	UpsertBatch(ctx context.Context, updates []asset.Update) ([]asset.UpsertResult, error)
 }
 
 // registerAssetRoutesRepo mounts the repo-backed asset handlers on the same paths as the legacy
@@ -99,9 +99,9 @@ func handleListAssetsRepo(ar assetReader) gin.HandlerFunc {
 		if limit <= 0 {
 			limit = 100
 		}
-		var cursor *inventory.Cursor
+		var cursor *asset.Cursor
 		if after := c.Query("after"); after != "" {
-			decoded, err := inventory.DecodeCursor(after)
+			decoded, err := asset.DecodeCursor(after)
 			if err != nil {
 				renderError(c, fmt.Errorf("%w: invalid cursor", apperr.ErrInvalidInput))
 				return
@@ -136,7 +136,7 @@ func handleUpsertAssetBatchRepo(aw assetWriter) gin.HandlerFunc {
 			renderError(c, fmt.Errorf("%w: assets must not be empty", apperr.ErrInvalidInput))
 			return
 		}
-		updates := make([]inventory.Update, len(req.Assets))
+		updates := make([]asset.Update, len(req.Assets))
 		for i, a := range req.Assets {
 			if err := validateRequired(
 				requiredField{"iri", a.IRI},
@@ -168,7 +168,7 @@ func handleUpsertAssetBatchRepo(aw assetWriter) gin.HandlerFunc {
 }
 
 // batchOutcome maps a domain UpsertResult to the same outcome strings the legacy batch path emits.
-func batchOutcome(r inventory.UpsertResult) string {
+func batchOutcome(r asset.UpsertResult) string {
 	switch {
 	case r.Redelivery:
 		return "unchanged"
@@ -181,9 +181,9 @@ func batchOutcome(r inventory.UpsertResult) string {
 
 // assetUpdateFromRequest maps a v1 request to a domain Update, parsing the RFC3339 timestamps. The
 // prefix (e.g. "item 3 ") is woven into error messages so batch errors keep their index context.
-func assetUpdateFromRequest(req v1.UpsertAssetRequest, prefix string) (inventory.Update, error) {
-	u := inventory.Update{
-		Key:          inventory.NaturalKey{SourceSystem: req.SourceSystem, SourceID: req.SourceID},
+func assetUpdateFromRequest(req v1.UpsertAssetRequest, prefix string) (asset.Update, error) {
+	u := asset.Update{
+		Key:          asset.NaturalKey{SourceSystem: req.SourceSystem, SourceID: req.SourceID},
 		IRI:          optStr(req.IRI),
 		Name:         optStr(req.Name),
 		ArtifactType: req.ArtifactType,
@@ -191,13 +191,13 @@ func assetUpdateFromRequest(req v1.UpsertAssetRequest, prefix string) (inventory
 	}
 	var err error
 	if u.IngestedAt, err = parseOptTime(req.IngestedAt, prefix+"invalid ingested_at"); err != nil {
-		return inventory.Update{}, err
+		return asset.Update{}, err
 	}
 	if u.CreatedAtSource, err = parseOptTime(req.CreatedAtSource, prefix+"invalid created_at_source"); err != nil {
-		return inventory.Update{}, err
+		return asset.Update{}, err
 	}
 	if u.LastUpdatedAtSource, err = parseOptTime(req.LastUpdatedAtSource, prefix+"invalid last_updated_at_source"); err != nil {
-		return inventory.Update{}, err
+		return asset.Update{}, err
 	}
 	return u, nil
 }
@@ -226,7 +226,7 @@ func optStr(s string) *string {
 
 // toAssetResponseDomain maps a domain Asset to the v1 wire response. It produces the identical shape
 // as the legacy toAssetResponse, reading from domain accessors instead of the store struct.
-func toAssetResponseDomain(a *inventory.Asset) v1.AssetResponse {
+func toAssetResponseDomain(a *asset.Asset) v1.AssetResponse {
 	v := a.Validity()
 	r := v1.AssetResponse{
 		ID:           a.ID(),

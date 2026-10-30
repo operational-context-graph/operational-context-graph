@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
 // SPDX-License-Identifier: Apache-2.0
 
-package inventory
+package asset
 
 import (
 	"encoding/json"
@@ -13,9 +13,9 @@ import (
 	"github.com/operational-context-graph/inventory-store/internal/apperr"
 )
 
-// ReconstituteAssetParams carries the raw values read from storage into the factory.
+// AssetFromStorageParams carries the raw values read from storage into the factory.
 // Pointers mirror nullable columns; the factory validates and assembles a domain Asset.
-type ReconstituteAssetParams struct {
+type AssetFromStorageParams struct {
 	ID                  uuid.UUID
 	SourceSystem        string
 	SourceID            string
@@ -31,13 +31,13 @@ type ReconstituteAssetParams struct {
 	ValidTo             *time.Time
 }
 
-// ReconstituteAsset rebuilds a domain Asset from persisted values, enforcing the invariants
+// NewAssetFromStorage rebuilds a domain Asset from persisted values, enforcing the invariants
 // that the schema guarantees. It is the only way to obtain an Asset from outside the package,
 // so an Asset in memory is always well-formed.
 //
-// This is the reconstitution factory (cf. Wild Workouts' UnmarshalHourFromDatabase): it does
-// not generate new identity or timestamps; it validates data that already exists.
-func ReconstituteAsset(p ReconstituteAssetParams) (*Asset, error) {
+// It is a from-storage factory, not a create-new one: it does not generate new identity or
+// timestamps; it validates data that already exists.
+func NewAssetFromStorage(p AssetFromStorageParams) (*Asset, error) {
 	if p.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: asset id is required", apperr.ErrInvalidInput)
 	}

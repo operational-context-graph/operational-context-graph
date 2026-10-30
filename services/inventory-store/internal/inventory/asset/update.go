@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
 // SPDX-License-Identifier: Apache-2.0
 
-package inventory
+package asset
 
 import "time"
 
 // Update carries the source-reported fields of an incoming asset delivery. It is the write-side
-// counterpart to ReconstituteAssetParams (which is read-side): it holds what a source sent, not a
+// counterpart to AssetFromStorageParams (which is read-side): it holds what a source sent, not a
 // persisted row, so it has no id, created_at, or validity window.
 type Update struct {
 	Key                 NaturalKey

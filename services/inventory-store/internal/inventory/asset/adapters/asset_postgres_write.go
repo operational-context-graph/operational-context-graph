@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
 )
 
 // Upsert applies one asset delivery under the temporal-versioning contract and returns the
@@ -19,12 +19,12 @@ import (
 // existing one).
 //
 // The adapter does persistence only. The domain decides the outcome:
-//   - inventory.Update.IsRedeliveryOf — is this the same source change already stored?
-//   - inventory.Update.ValidityBoundary — the contiguous close/open timestamp.
+//   - asset.Update.IsRedeliveryOf — is this the same source change already stored?
+//   - asset.Update.ValidityBoundary — the contiguous close/open timestamp.
 //
 // Everything else here (FOR UPDATE lock, expire-then-insert, column order, null handling) mirrors
 // the legacy store so the two write paths are row-for-row equivalent.
-func (r *PostgresAssetRepository) Upsert(ctx context.Context, u inventory.Update) (*inventory.Asset, bool, error) {
+func (r *PostgresAssetRepository) Upsert(ctx context.Context, u asset.Update) (*asset.Asset, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("begin tx: %w", err)
@@ -43,20 +43,20 @@ func (r *PostgresAssetRepository) Upsert(ctx context.Context, u inventory.Update
 
 // UpsertBatch applies many deliveries in a single transaction, each under the same contract.
 // Results preserve input order. Any error rolls back the whole batch, matching the legacy store.
-func (r *PostgresAssetRepository) UpsertBatch(ctx context.Context, updates []inventory.Update) ([]inventory.UpsertResult, error) {
+func (r *PostgresAssetRepository) UpsertBatch(ctx context.Context, updates []asset.Update) ([]asset.UpsertResult, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	results := make([]inventory.UpsertResult, 0, len(updates))
+	results := make([]asset.UpsertResult, 0, len(updates))
 	for _, u := range updates {
 		a, created, redelivery, err := r.upsertTx(ctx, tx, u)
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, inventory.UpsertResult{Asset: a, Created: created, Redelivery: redelivery})
+		results = append(results, asset.UpsertResult{Asset: a, Created: created, Redelivery: redelivery})
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit batch: %w", err)
@@ -66,14 +66,14 @@ func (r *PostgresAssetRepository) UpsertBatch(ctx context.Context, updates []inv
 
 // upsertTx runs one delivery inside an open transaction. On re-delivery it returns the unchanged
 // current asset with created=false, redelivery=true and performs no writes.
-func (r *PostgresAssetRepository) upsertTx(ctx context.Context, tx pgx.Tx, u inventory.Update) (a *inventory.Asset, created, redelivery bool, err error) {
+func (r *PostgresAssetRepository) upsertTx(ctx context.Context, tx pgx.Tx, u asset.Update) (a *asset.Asset, created, redelivery bool, err error) {
 	// Load the current open version and lock it so concurrent upserts on the same key serialise.
 	const checkCurrent = `SELECT ` + assetColumns + `
 		FROM assets WHERE source_system = $1 AND source_id = $2 AND valid_to IS NULL
 		FOR UPDATE`
 	var curRow postgresAsset
 	scanErr := scanAsset(tx.QueryRow(ctx, checkCurrent, u.Key.SourceSystem, u.Key.SourceID), &curRow)
-	var current *inventory.Asset
+	var current *asset.Asset
 	switch {
 	case errors.Is(scanErr, pgx.ErrNoRows):
 		current = nil

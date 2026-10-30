@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
-	"github.com/operational-context-graph/inventory-store/internal/inventory/adapters"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset/adapters"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 
 // This file proves the new repository READ path returns the same data as the legacy store (DAO)
 // read path. Both read the same rows from the same pool; the legacy path returns store.Asset and
-// the repo path returns *inventory.Asset, so equivalence is asserted field-by-field via
+// the repo path returns *asset.Asset, so equivalence is asserted field-by-field via
 // assertAssetEquivalent rather than a struct compare. The two never share a conversion shim.
 
 // readPaths builds the legacy store and the repository over the same pool.
@@ -38,7 +38,7 @@ func seed(t *testing.T, s *store.Store, in store.AssetInput) store.Asset {
 
 // assertAssetEquivalent asserts the domain Asset read by the repo path carries the same values as
 // the store.Asset read by the legacy path.
-func assertAssetEquivalent(t *testing.T, want store.Asset, got *inventory.Asset) {
+func assertAssetEquivalent(t *testing.T, want store.Asset, got *asset.Asset) {
 	t.Helper()
 	require.NotNil(t, got)
 	v := got.Validity()
@@ -144,8 +144,8 @@ func TestListAssets_DAOvsRepo_Equivalent(t *testing.T) {
 }
 
 // assertListEquivalent compares a legacy page (store.Asset + store.Cursor) against a repo page
-// (*inventory.Asset + inventory.Cursor) element-by-element, including the next-cursor position.
-func assertListEquivalent(t *testing.T, want []store.Asset, got []*inventory.Asset, wantCur *store.Cursor, gotCur *inventory.Cursor) {
+// (*asset.Asset + asset.Cursor) element-by-element, including the next-cursor position.
+func assertListEquivalent(t *testing.T, want []store.Asset, got []*asset.Asset, wantCur *store.Cursor, gotCur *asset.Cursor) {
 	t.Helper()
 	require.Equal(t, len(want), len(got), "page length")
 	for i := range want {

@@ -6,7 +6,7 @@
 // The domain types here never import a database driver. They are constructed only
 // through the reconstitution factory (see reconstitute.go), which guards the temporal
 // invariants so an invalid Asset cannot exist in memory.
-package inventory
+package asset
 
 import (
 	"encoding/json"

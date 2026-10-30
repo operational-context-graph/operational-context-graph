@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
-	"github.com/operational-context-graph/inventory-store/internal/inventory/adapters"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset/adapters"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 
@@ -48,9 +48,9 @@ func (w writeInput) legacyInput(sourceID string) store.AssetInput {
 	}
 }
 
-func (w writeInput) update(sourceID string) inventory.Update {
-	return inventory.Update{
-		Key:          inventory.NaturalKey{SourceSystem: "cmdb", SourceID: sourceID},
+func (w writeInput) update(sourceID string) asset.Update {
+	return asset.Update{
+		Key:          asset.NaturalKey{SourceSystem: "cmdb", SourceID: sourceID},
 		IRI:          ptrOrNil(w.iri),
 		Name:         ptrOrNil(w.name),
 		ArtifactType: w.artifactType,
@@ -260,7 +260,7 @@ func TestWriteBatch_MixedOutcomes_Equivalent(t *testing.T) {
 	daoBatch := []store.AssetInput{
 		reKeep.legacyInput("b-keep-dao"), doUpdate.legacyInput("b-upd-dao"), fresh.legacyInput("b-fresh-dao"),
 	}
-	repoBatch := []inventory.Update{
+	repoBatch := []asset.Update{
 		reKeep.update("b-keep-repo"), doUpdate.update("b-upd-repo"), fresh.update("b-fresh-repo"),
 	}
 
@@ -289,7 +289,7 @@ func TestWriteBatch_MixedOutcomes_Equivalent(t *testing.T) {
 }
 
 // repoOutcome maps a structured repo result to the legacy outcome vocabulary for comparison.
-func repoOutcome(r inventory.UpsertResult) string {
+func repoOutcome(r asset.UpsertResult) string {
 	switch {
 	case r.Redelivery:
 		return "unchanged"

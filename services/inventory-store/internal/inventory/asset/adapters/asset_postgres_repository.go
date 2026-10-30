@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 
@@ -31,7 +31,7 @@ type PostgresAssetRepository struct {
 
 // Compile-time proof that the Postgres adapter satisfies the domain ports. If a signature drifts
 // from the interface, this fails to build instead of surfacing at a call site.
-var _ inventory.AssetRepository = (*PostgresAssetRepository)(nil)
+var _ asset.AssetRepository = (*PostgresAssetRepository)(nil)
 
 // NewPostgresAssetRepository builds a repository over an existing connection pool.
 func NewPostgresAssetRepository(pool *pgxpool.Pool) *PostgresAssetRepository {
@@ -47,7 +47,7 @@ func scanAsset(row pgx.Row, r *postgresAsset) error {
 }
 
 // GetAsset fetches the current version of an asset by internal UUID.
-func (r *PostgresAssetRepository) GetAsset(ctx context.Context, id uuid.UUID) (*inventory.Asset, error) {
+func (r *PostgresAssetRepository) GetAsset(ctx context.Context, id uuid.UUID) (*asset.Asset, error) {
 	const q = `SELECT ` + assetColumns + `
 		FROM assets WHERE id = $1 AND valid_to IS NULL`
 	var row postgresAsset
@@ -67,8 +67,8 @@ func (r *PostgresAssetRepository) ListAssets(
 	ctx context.Context,
 	artifactType, sourceSystem, sourceID string,
 	limit int,
-	after *inventory.Cursor,
-) ([]*inventory.Asset, *inventory.Cursor, error) {
+	after *asset.Cursor,
+) ([]*asset.Asset, *asset.Cursor, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
@@ -108,7 +108,7 @@ func (r *PostgresAssetRepository) ListAssets(
 	}
 	defer rows.Close()
 
-	var assets []*inventory.Asset
+	var assets []*asset.Asset
 	for rows.Next() {
 		var row postgresAsset
 		if err := scanAsset(rows, &row); err != nil {
@@ -124,10 +124,10 @@ func (r *PostgresAssetRepository) ListAssets(
 		return nil, nil, fmt.Errorf("list assets: %w", err)
 	}
 
-	var nextCursor *inventory.Cursor
+	var nextCursor *asset.Cursor
 	if len(assets) > limit {
 		last := assets[limit-1]
-		nextCursor = &inventory.Cursor{CreatedAt: last.CreatedAt(), ID: last.ID()}
+		nextCursor = &asset.Cursor{CreatedAt: last.CreatedAt(), ID: last.ID()}
 		assets = assets[:limit]
 	}
 	return assets, nextCursor, nil

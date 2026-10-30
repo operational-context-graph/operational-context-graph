@@ -18,7 +18,7 @@ import (
 	"github.com/operational-context-graph/inventory-store/internal/config"
 	"github.com/operational-context-graph/inventory-store/internal/database"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
-	"github.com/operational-context-graph/inventory-store/internal/inventory/adapters"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset/adapters"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 )
 

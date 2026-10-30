@@ -16,44 +16,44 @@ import (
 
 	v1 "github.com/operational-context-graph/inventory-store/api/v1"
 	"github.com/operational-context-graph/inventory-store/internal/httpapi"
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
 	"github.com/operational-context-graph/inventory-store/internal/store"
 	"github.com/operational-context-graph/inventory-store/internal/test"
 )
 
 // These tests exercise the REPO-backed asset stack end to end through the HTTP layer with no
-// database: a fake inventory.AssetReader/Writer feeds the handlers. They prove the parallel stack
+// database: a fake asset.AssetReader/Writer feeds the handlers. They prove the parallel stack
 // maps the same v1 wire contract as the legacy stack, and that batch outcomes line up.
 
 // fakeAssetBackend satisfies both asset ports the repo handlers require.
 type fakeAssetBackend struct {
-	upsert      func(ctx context.Context, u inventory.Update) (*inventory.Asset, bool, error)
-	upsertBatch func(ctx context.Context, us []inventory.Update) ([]inventory.UpsertResult, error)
-	get         func(ctx context.Context, id uuid.UUID) (*inventory.Asset, error)
-	list        func(ctx context.Context, at, ss, sid string, limit int, after *inventory.Cursor) ([]*inventory.Asset, *inventory.Cursor, error)
+	upsert      func(ctx context.Context, u asset.Update) (*asset.Asset, bool, error)
+	upsertBatch func(ctx context.Context, us []asset.Update) ([]asset.UpsertResult, error)
+	get         func(ctx context.Context, id uuid.UUID) (*asset.Asset, error)
+	list        func(ctx context.Context, at, ss, sid string, limit int, after *asset.Cursor) ([]*asset.Asset, *asset.Cursor, error)
 }
 
-func (f *fakeAssetBackend) Upsert(ctx context.Context, u inventory.Update) (*inventory.Asset, bool, error) {
+func (f *fakeAssetBackend) Upsert(ctx context.Context, u asset.Update) (*asset.Asset, bool, error) {
 	return f.upsert(ctx, u)
 }
 
-func (f *fakeAssetBackend) UpsertBatch(ctx context.Context, us []inventory.Update) ([]inventory.UpsertResult, error) {
+func (f *fakeAssetBackend) UpsertBatch(ctx context.Context, us []asset.Update) ([]asset.UpsertResult, error) {
 	return f.upsertBatch(ctx, us)
 }
 
-func (f *fakeAssetBackend) GetAsset(ctx context.Context, id uuid.UUID) (*inventory.Asset, error) {
+func (f *fakeAssetBackend) GetAsset(ctx context.Context, id uuid.UUID) (*asset.Asset, error) {
 	return f.get(ctx, id)
 }
 
-func (f *fakeAssetBackend) ListAssets(ctx context.Context, at, ss, sid string, limit int, after *inventory.Cursor) ([]*inventory.Asset, *inventory.Cursor, error) {
+func (f *fakeAssetBackend) ListAssets(ctx context.Context, at, ss, sid string, limit int, after *asset.Cursor) ([]*asset.Asset, *asset.Cursor, error) {
 	return f.list(ctx, at, ss, sid, limit, after)
 }
 
-// mkDomainAsset builds a well-formed domain Asset via the reconstitution factory.
-func mkDomainAsset(t *testing.T, id uuid.UUID, system, sid string, from time.Time) *inventory.Asset {
+// mkDomainAsset builds a well-formed domain Asset via the from-storage factory.
+func mkDomainAsset(t *testing.T, id uuid.UUID, system, sid string, from time.Time) *asset.Asset {
 	t.Helper()
 	name := "srv"
-	a, err := inventory.ReconstituteAsset(inventory.ReconstituteAssetParams{
+	a, err := asset.NewAssetFromStorage(asset.AssetFromStorageParams{
 		ID:           id,
 		SourceSystem: system,
 		SourceID:     sid,
@@ -76,9 +76,9 @@ func repoServer(b *fakeAssetBackend) *http.Server {
 func TestRepoHandleUpsertAsset_Created(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC().Truncate(time.Second)
-	var gotKey inventory.NaturalKey
+	var gotKey asset.NaturalKey
 	b := &fakeAssetBackend{
-		upsert: func(_ context.Context, u inventory.Update) (*inventory.Asset, bool, error) {
+		upsert: func(_ context.Context, u asset.Update) (*asset.Asset, bool, error) {
 			gotKey = u.Key
 			return mkDomainAsset(t, id, u.Key.SourceSystem, u.Key.SourceID, now), true, nil
 		},
@@ -93,7 +93,7 @@ func TestRepoHandleUpsertAsset_Created(t *testing.T) {
 
 	require.Equal(t, http.StatusCreated, rr.Code)
 	assert.Equal(t, "application/json; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Equal(t, inventory.NaturalKey{SourceSystem: "cmdb", SourceID: "srv-001"}, gotKey)
+	assert.Equal(t, asset.NaturalKey{SourceSystem: "cmdb", SourceID: "srv-001"}, gotKey)
 
 	var resp v1.UpsertAssetResponse
 	test.DecodeJSON(t, rr, &resp)
@@ -112,7 +112,7 @@ func TestRepoHandleUpsertAsset_WireEquivalentToLegacy(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC().Truncate(time.Second)
 	b := &fakeAssetBackend{
-		upsert: func(_ context.Context, u inventory.Update) (*inventory.Asset, bool, error) {
+		upsert: func(_ context.Context, u asset.Update) (*asset.Asset, bool, error) {
 			return mkDomainAsset(t, id, u.Key.SourceSystem, u.Key.SourceID, now), false, nil
 		},
 	}
@@ -147,7 +147,7 @@ func TestRepoHandleUpsertAsset_WireEquivalentToLegacy(t *testing.T) {
 
 func TestRepoHandleGetAsset_NotFound(t *testing.T) {
 	b := &fakeAssetBackend{
-		get: func(_ context.Context, _ uuid.UUID) (*inventory.Asset, error) {
+		get: func(_ context.Context, _ uuid.UUID) (*asset.Asset, error) {
 			return nil, store.ErrAssetNotFound
 		},
 	}
@@ -163,12 +163,12 @@ func TestRepoHandleGetAsset_InvalidUUID(t *testing.T) {
 func TestRepoHandleListAssets_CursorRoundTrips(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	a1 := mkDomainAsset(t, uuid.New(), "cmdb", "a", now)
-	next := &inventory.Cursor{CreatedAt: now, ID: a1.ID()}
-	var gotAfter *inventory.Cursor
+	next := &asset.Cursor{CreatedAt: now, ID: a1.ID()}
+	var gotAfter *asset.Cursor
 	b := &fakeAssetBackend{
-		list: func(_ context.Context, _, _, _ string, _ int, after *inventory.Cursor) ([]*inventory.Asset, *inventory.Cursor, error) {
+		list: func(_ context.Context, _, _, _ string, _ int, after *asset.Cursor) ([]*asset.Asset, *asset.Cursor, error) {
 			gotAfter = after
-			return []*inventory.Asset{a1}, next, nil
+			return []*asset.Asset{a1}, next, nil
 		},
 	}
 	srv := repoServer(b)
@@ -196,9 +196,9 @@ func TestRepoHandleUpsertAssetBatch_Outcomes(t *testing.T) {
 	updated := mkDomainAsset(t, uuid.New(), "cmdb", "upd", now)
 	unchanged := mkDomainAsset(t, uuid.New(), "cmdb", "same", now)
 	b := &fakeAssetBackend{
-		upsertBatch: func(_ context.Context, us []inventory.Update) ([]inventory.UpsertResult, error) {
+		upsertBatch: func(_ context.Context, us []asset.Update) ([]asset.UpsertResult, error) {
 			require.Len(t, us, 3)
-			return []inventory.UpsertResult{
+			return []asset.UpsertResult{
 				{Asset: created, Created: true},
 				{Asset: updated},
 				{Asset: unchanged, Redelivery: true},

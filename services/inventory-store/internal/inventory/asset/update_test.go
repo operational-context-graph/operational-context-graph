@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
 // SPDX-License-Identifier: Apache-2.0
 
-package inventory
+package asset
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ import (
 // nil), for exercising Update.IsRedeliveryOf without a database.
 func assetWithLUAS(t *testing.T, luas *time.Time) *Asset {
 	t.Helper()
-	a, err := ReconstituteAsset(ReconstituteAssetParams{
+	a, err := NewAssetFromStorage(AssetFromStorageParams{
 		ID:                  uuid.New(),
 		SourceSystem:        "cmdb",
 		SourceID:            "x",

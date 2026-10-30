@@ -3,7 +3,7 @@
 
 // Package adapters holds repository implementations for the inventory domain.
 // Each implementation maps between its backend's row representation and the
-// DB-agnostic domain types in package inventory.
+// DB-agnostic domain types in package asset.
 package adapters
 
 import (
@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/operational-context-graph/inventory-store/internal/inventory"
+	"github.com/operational-context-graph/inventory-store/internal/inventory/asset"
 )
 
 // postgresAsset mirrors a row of the assets table. It is the persistence DTO:
@@ -34,8 +34,8 @@ type postgresAsset struct {
 }
 
 // toDomain maps a scanned row to a domain Asset, passing through the invariant-guarding factory.
-func (r postgresAsset) toDomain() (*inventory.Asset, error) {
-	return inventory.ReconstituteAsset(inventory.ReconstituteAssetParams{
+func (r postgresAsset) toDomain() (*asset.Asset, error) {
+	return asset.NewAssetFromStorage(asset.AssetFromStorageParams{
 		ID:                  r.ID,
 		SourceSystem:        r.SourceSystem,
 		SourceID:            r.SourceID,
