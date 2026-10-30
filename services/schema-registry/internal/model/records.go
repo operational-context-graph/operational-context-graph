@@ -135,6 +135,29 @@ type MappingTransformation struct {
 	Cardinality        string
 }
 
+// Descriptor combines immutable artifact metadata, resources, and dependencies.
+type Descriptor struct {
+	Artifact           Artifact
+	Resources          []Resource
+	Dependencies       []Dependency
+	SourceArtifactType string
+}
+
+// Mapping is an enriched, release-selected source mapping.
+type Mapping struct {
+	Descriptor Descriptor
+	Detail     SourceMappingDetail
+}
+
+// MappingPackage contains one release-consistent mapping and its dependencies.
+type MappingPackage struct {
+	Mapping  Descriptor
+	Detail   SourceMappingDetail
+	Programs []Resource
+	Schemas  []Descriptor
+	Stores   []StorageEntry
+}
+
 // ProjectionFamily names one independently verified normalized projection.
 type ProjectionFamily string
 
