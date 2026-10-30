@@ -115,15 +115,15 @@ func TestStartGap_Valid(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ── 5.6: StartGap — nil partition → INVALID_ARGUMENT ─────────────────────────
+// ── 5.6: StartGap — nil partition → global connector watermark ───────────────
 
 func TestStartGap_NilPartition(t *testing.T) {
 	bf := NewMockBackfiller(t)
+	bf.On("StartGap", mock.Anything, "conn-1", "").Return(nil)
 	srv := newBackfillReceiver(t, bf, noop(t))
 
 	_, err := srv.StartGap(ctxWithConnectorID("conn-1"), &ingestionv1.StartGapRequest{Partition: nil})
-	require.Error(t, err)
-	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.NoError(t, err)
 }
 
 // ── 5.7: StartGap — no connector identity → UNAUTHENTICATED ──────────────────
@@ -170,15 +170,15 @@ func TestCloseGap_Valid(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ── 5.10: CloseGap — nil partition → INVALID_ARGUMENT ────────────────────────
+// ── 5.10: CloseGap — nil partition → global connector watermark ──────────────
 
 func TestCloseGap_NilPartition(t *testing.T) {
 	bf := NewMockBackfiller(t)
+	bf.On("CloseGap", mock.Anything, "conn-1", "").Return(nil)
 	srv := newBackfillReceiver(t, bf, noop(t))
 
 	_, err := srv.CloseGap(ctxWithConnectorID("conn-1"), &ingestionv1.CloseGapRequest{Partition: nil})
-	require.Error(t, err)
-	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.NoError(t, err)
 }
 
 // ── 5.11: CloseGap — no connector identity → UNAUTHENTICATED ─────────────────

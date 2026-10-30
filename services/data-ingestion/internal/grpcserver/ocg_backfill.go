@@ -115,9 +115,6 @@ func (recv *OCGBackfillReceiver) StartGap(ctx context.Context, req *ingestionv1.
 	if connectorID == "" {
 		return nil, status.Error(codes.Unauthenticated, "connector identity required")
 	}
-	if req.GetPartition() == nil {
-		return nil, status.Error(codes.InvalidArgument, "partition is required")
-	}
 
 	partitionKey, err := partitionToKey(req.GetPartition())
 	if err != nil {
@@ -135,9 +132,6 @@ func (recv *OCGBackfillReceiver) CloseGap(ctx context.Context, req *ingestionv1.
 	connectorID := connectorIDFromContext(ctx)
 	if connectorID == "" {
 		return nil, status.Error(codes.Unauthenticated, "connector identity required")
-	}
-	if req.GetPartition() == nil {
-		return nil, status.Error(codes.InvalidArgument, "partition is required")
 	}
 
 	partitionKey, err := partitionToKey(req.GetPartition())
