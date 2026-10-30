@@ -120,7 +120,7 @@ nothing above the adapter changes.
 
 ### Why three ports (reader / writer / repository)?
 
-The domain (`inventory/asset/ports.go`) declares the asset port in three pieces:
+The domain (`inventory/asset/asset_repository.go`) declares the asset port in three pieces:
 
 ```go
 type AssetReader interface { GetAsset(...); ListAssets(...) }      // read only
