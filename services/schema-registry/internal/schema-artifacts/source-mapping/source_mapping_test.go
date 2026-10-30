@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,7 @@ func TestValidateRejectsInvalidAncillaryResources(t *testing.T) {
 		{"invalid media type", func(r *artifact.Resource) { r.MediaType = "not a media type;" }},
 		{"invalid path", func(r *artifact.Resource) { r.BundlePath = "../metadata.bin" }},
 		{"negative size", func(r *artifact.Resource) { r.Size = -1 }},
-		{"oversized resource", func(r *artifact.Resource) { r.Size = artifact.MaxArtifactBytes + 1 }},
+		{"oversized resource", func(r *artifact.Resource) { r.Size = config.MaxArtifactBytes + 1 }},
 		{"size mismatch", func(r *artifact.Resource) { r.Size++ }},
 		{"invalid digest", func(r *artifact.Resource) { r.Digest = "invalid" }},
 		{"digest mismatch", func(r *artifact.Resource) { r.Digest = descriptor(nil, r.MediaType, r.BundlePath).Digest }},
@@ -370,7 +371,7 @@ func TestTransformationAndDescriptorCapacity(t *testing.T) {
 	require.Error(t, err)
 
 	mapping, _ = validMapping(t, nil)
-	exact := append(bytes.Repeat([]byte(" "), artifact.MaxArtifactBytes-len(mapping.PayloadBytes)), mapping.PayloadBytes...)
+	exact := append(bytes.Repeat([]byte(" "), config.MaxArtifactBytes-len(mapping.PayloadBytes)), mapping.PayloadBytes...)
 	_, err = Parse(exact)
 	require.NoError(t, err)
 	_, err = Parse(append(exact, ' '))

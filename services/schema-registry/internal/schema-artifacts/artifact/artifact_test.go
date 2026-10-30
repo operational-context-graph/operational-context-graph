@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
 const origin = "https://registry.example.test"
@@ -105,10 +107,10 @@ func TestMultiProgramResourcesAndDistinctDependencies(t *testing.T) {
 }
 
 func TestProgramByteDescriptorBoundaries(t *testing.T) {
-	for _, size := range []int{0, 1, MaxArtifactBytes, MaxArtifactBytes + 1} {
+	for _, size := range []int{0, 1, config.MaxArtifactBytes, config.MaxArtifactBytes + 1} {
 		data := bytes.Repeat([]byte{255}, size)
 		err := ValidateDescriptor(descriptor(data, "application/octet-stream", "mapping/program.bin"), data)
-		if size > MaxArtifactBytes {
+		if size > config.MaxArtifactBytes {
 			require.Error(t, err)
 		} else {
 			require.NoError(t, err)

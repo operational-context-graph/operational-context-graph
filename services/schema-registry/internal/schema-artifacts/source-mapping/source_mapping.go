@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
 )
@@ -347,7 +348,7 @@ func validateDescriptor(descriptor Descriptor) error {
 	if !artifact.ValidLogicalType(descriptor.ID) || !validReference(descriptor.SourceSchema) {
 		return fmt.Errorf("%w: invalid schema reference", errInvalid)
 	}
-	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > artifact.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > artifact.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
+	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > config.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > config.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
 		return fmt.Errorf("%w: invalid engine metadata", errInvalid)
 	}
 	if len(descriptor.Programs.Transformations) == 0 || len(descriptor.Programs.Transformations) > strictjson.MaxArrayEntries {

@@ -12,7 +12,7 @@ import (
 	"github.com/piprate/json-gold/ld"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
 var errExternalReference = errors.New("external document references are disabled")
@@ -74,8 +74,8 @@ func NewCatalogJSONSchemaCompiler(catalog map[string]any) *jsonschema.Compiler {
 
 // ValidateInputSize rejects bytes that future parser phases must not accept.
 func ValidateInputSize(value []byte) error {
-	if len(value) > int(introspection.MaxArtifactBytes) {
-		return fmt.Errorf("input exceeds %d byte limit", introspection.MaxArtifactBytes)
+	if len(value) > config.MaxArtifactBytes {
+		return fmt.Errorf("input exceeds %d byte limit", config.MaxArtifactBytes)
 	}
 	return nil
 }

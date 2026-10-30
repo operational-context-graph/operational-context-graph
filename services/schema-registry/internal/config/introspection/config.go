@@ -27,7 +27,9 @@ const (
 
 // Serviceability limits are fixed by the version 1 contract.
 const (
-	MaxArtifactBytes      int64 = 16 * 1024 * 1024
+	MaxIdentifierBytes          = 255
+	MaxURIBytes                 = 8192
+	MaxArtifactBytes            = 16 * 1024 * 1024
 	MaxGeneratedJSONBytes int64 = 64 * 1024 * 1024
 	MaxJSONDepth                = 64
 	MaxObjectMembers            = 256

@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
@@ -545,7 +546,7 @@ ORDER BY resource.role COLLATE "C", resource.name COLLATE "C"`
 			return nil, fmt.Errorf("scan artifact resource: %w", err)
 		}
 		resources = append(resources, resource)
-		if resource.Size < 0 || resource.Size > artifact.MaxArtifactBytes || !artifact.ValidDigest(resource.Digest) {
+		if resource.Size < 0 || resource.Size > config.MaxArtifactBytes || !artifact.ValidDigest(resource.Digest) {
 			return nil, ErrInconsistentState
 		}
 	}

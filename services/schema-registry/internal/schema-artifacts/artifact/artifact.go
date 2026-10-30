@@ -17,15 +17,12 @@ import (
 
 	"github.com/piprate/json-gold/ld"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/offline"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
 )
 
 const (
-	MaxIdentifierBytes = 255
-	MaxURIBytes        = 8192
-	MaxArtifactBytes   = 16 * 1024 * 1024
-
 	SchemaMediaType  = "application/schema+json"
 	ContextMediaType = "application/ld+json;profile=\"http://www.w3.org/ns/json-ld#context\""
 )
@@ -178,7 +175,7 @@ func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error
 
 // ValidateDescriptor verifies descriptor metadata and exact byte integrity.
 func ValidateDescriptor(descriptor Descriptor, data []byte) error {
-	if descriptor.MediaType == "" || len(descriptor.MediaType) > MaxIdentifierBytes || descriptor.BundlePath == "" {
+	if descriptor.MediaType == "" || len(descriptor.MediaType) > config.MaxIdentifierBytes || descriptor.BundlePath == "" {
 		return errors.New("descriptor requires a bounded media type and bundle path")
 	}
 	if _, _, err := mime.ParseMediaType(descriptor.MediaType); err != nil {
@@ -187,7 +184,7 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 	if !ValidBundlePath(descriptor.BundlePath) || !ValidDigest(descriptor.Digest) || descriptor.Size < 0 || descriptor.Size > strictjson.MaxBytes {
 		return errors.New("invalid byte descriptor")
 	}
-	if len(data) > MaxArtifactBytes || int64(len(data)) != descriptor.Size {
+	if len(data) > config.MaxArtifactBytes || int64(len(data)) != descriptor.Size {
 		return errors.New("descriptor size does not match bytes")
 	}
 	digest := sha256.Sum256(data)
@@ -199,12 +196,12 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 
 // ValidLogicalType validates format logical type and role identifiers.
 func ValidLogicalType(value string) bool {
-	return value != "" && len(value) <= MaxIdentifierBytes && logicalTypePattern.MatchString(value)
+	return value != "" && len(value) <= config.MaxIdentifierBytes && logicalTypePattern.MatchString(value)
 }
 
 // ValidRevision validates opaque URI-safe artifact revisions.
 func ValidRevision(value string) bool {
-	return value != "" && value != "." && value != ".." && len(value) <= MaxIdentifierBytes && revisionPattern.MatchString(value)
+	return value != "" && value != "." && value != ".." && len(value) <= config.MaxIdentifierBytes && revisionPattern.MatchString(value)
 }
 
 // ValidResourceName validates an RFC 3986 unreserved resource name.
@@ -231,7 +228,7 @@ func ValidBundlePath(value string) bool {
 
 // ValidateCanonicalURI ensures a Registry-owned immutable resource URI.
 func ValidateCanonicalURI(value, origin string, kind Kind, artifactType, revision string) error {
-	if len(value) == 0 || len(value) > MaxURIBytes {
+	if len(value) == 0 || len(value) > config.MaxURIBytes {
 		return errors.New("invalid canonical URI length")
 	}
 	parsed, err := url.Parse(value)

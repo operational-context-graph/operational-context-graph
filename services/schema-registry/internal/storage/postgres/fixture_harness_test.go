@@ -18,6 +18,7 @@ import (
 	"github.com/gowebpki/jcs"
 	"github.com/stretchr/testify/require"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/releasevalidation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
@@ -83,7 +84,7 @@ func verifyLoadedFixture(t *testing.T, ctx context.Context, database *sql.DB, fi
 	case "exact-size":
 		var size int64
 		require.NoError(t, database.QueryRowContext(ctx, `SELECT payload_size FROM schema_registry.artifacts WHERE artifact_revision = 'rev-exact-size-v1'`).Scan(&size))
-		require.EqualValues(t, artifact.MaxArtifactBytes, size)
+		require.EqualValues(t, config.MaxArtifactBytes, size)
 	case "1001-items":
 		var count int
 		require.NoError(t, database.QueryRowContext(ctx, `SELECT count(*) FROM schema_registry.release_artifacts WHERE schema_version = '6.0.0'`).Scan(&count))
@@ -91,7 +92,7 @@ func verifyLoadedFixture(t *testing.T, ctx context.Context, database *sql.DB, fi
 	case "maximum-serviceable":
 		var size int64
 		require.NoError(t, database.QueryRowContext(ctx, `SELECT size FROM schema_registry.artifact_resources WHERE artifact_revision = 'rev-maximum-resource-v1' AND name = 'maximum'`).Scan(&size))
-		require.EqualValues(t, artifact.MaxArtifactBytes, size)
+		require.EqualValues(t, config.MaxArtifactBytes, size)
 	}
 }
 
@@ -128,7 +129,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 	}
 	exactSize := registryFixture{
 		name: "exact-size", version: "5.0.0",
-		artifacts: []artifact.Artifact{fixtureSchema("exact-size", "rev-exact-size-v1", "5.0.0", append([]byte("true"), []byte(strings.Repeat(" ", artifact.MaxArtifactBytes-4))...), nil)},
+		artifacts: []artifact.Artifact{fixtureSchema("exact-size", "rev-exact-size-v1", "5.0.0", append([]byte("true"), []byte(strings.Repeat(" ", config.MaxArtifactBytes-4))...), nil)},
 	}
 	many := registryFixture{name: "1001-items", version: "6.0.0", artifacts: make([]artifact.Artifact, 0, 1001)}
 	for number := 0; number < 1001; number++ {
@@ -137,7 +138,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 	}
 	maximumServiceable := registryFixture{
 		name: "maximum-serviceable", version: "7.0.0",
-		artifacts: []artifact.Artifact{fixtureSchema("maximum-resource", "rev-maximum-resource-v1", "7.0.0", []byte("true"), []artifact.Resource{fixtureResource("maximum", "auxiliary", "application/octet-stream", make([]byte, artifact.MaxArtifactBytes))})},
+		artifacts: []artifact.Artifact{fixtureSchema("maximum-resource", "rev-maximum-resource-v1", "7.0.0", []byte("true"), []artifact.Resource{fixtureResource("maximum", "auxiliary", "application/octet-stream", make([]byte, config.MaxArtifactBytes))})},
 	}
 	return []registryFixture{initial, multi, rollback, inactive, booleanSchema, emptyByte, exactSize, many, maximumServiceable, candidateFixture(t)}
 }
@@ -209,7 +210,7 @@ func validatedFixture(t *testing.T, fixture registryFixture) manifest.Release {
 func TestFixtureAcceptanceRejectsOversizedPackageBeforeDatabaseAccess(t *testing.T) {
 	fixture := candidateFixture(t)
 	mapping := &fixture.artifacts[3]
-	data := make([]byte, artifact.MaxArtifactBytes)
+	data := make([]byte, config.MaxArtifactBytes)
 	mapping.Resources = []artifact.Resource{
 		fixtureResource("a.bin", "program", "application/octet-stream", data),
 		fixtureResource("b.bin", "program", "application/octet-stream", data),

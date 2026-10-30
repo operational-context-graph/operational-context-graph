@@ -317,7 +317,7 @@ func loadMapping(ctx context.Context, snapshot release.Snapshot, version, mappin
 	resources := make(map[string]model.Resource, len(descriptor.Resources))
 	for _, resource := range descriptor.Resources {
 		_, _, mediaErr := mime.ParseMediaType(resource.MediaType)
-		if _, duplicate := resources[resource.Name]; duplicate || resource.ArtifactRevision != detail.MappingRevision || !artifactmodel.ValidLogicalType(resource.Role) || !artifactmodel.ValidResourceName(resource.Name) || mediaErr != nil || len(resource.MediaType) > artifactmodel.MaxIdentifierBytes || resource.Size < 0 || resource.Size > artifactmodel.MaxArtifactBytes || !artifactmodel.ValidDigest(resource.Digest) || resource.Bytes != nil && !validPayload(resource.ByteDescriptor) {
+		if _, duplicate := resources[resource.Name]; duplicate || resource.ArtifactRevision != detail.MappingRevision || !artifactmodel.ValidLogicalType(resource.Role) || !artifactmodel.ValidResourceName(resource.Name) || mediaErr != nil || len(resource.MediaType) > config.MaxIdentifierBytes || resource.Size < 0 || resource.Size > config.MaxArtifactBytes || !artifactmodel.ValidDigest(resource.Digest) || resource.Bytes != nil && !validPayload(resource.ByteDescriptor) {
 			return Mapping{}, postgres.ErrInconsistentState
 		}
 		resources[resource.Name] = resource
@@ -685,7 +685,7 @@ func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, ve
 
 func validPayload(value model.ByteDescriptor) bool {
 	digest := sha256.Sum256(value.Bytes)
-	return value.Size >= 0 && value.Size <= artifactmodel.MaxArtifactBytes && int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])
+	return value.Size >= 0 && value.Size <= config.MaxArtifactBytes && int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])
 }
 
 // History returns activated logical artifact selections in descending sequence.

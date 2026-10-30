@@ -334,7 +334,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		return
 	}
 	for key := range values {
-		if values.Get(key) == "" || len(values.Get(key)) > artifactmodel.MaxIdentifierBytes && key != "cursor" {
+		if values.Get(key) == "" || len(values.Get(key)) > config.MaxIdentifierBytes && key != "cursor" {
 			s.writeArtifactValidationError(c, InvalidQueryParameter)
 			return
 		}

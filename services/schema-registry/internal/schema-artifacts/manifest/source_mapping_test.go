@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/stretchr/testify/require"
 )
@@ -128,7 +129,7 @@ func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
 	m, context := mappingClosure(t)
 	key := Key{artifact.KindSourceMapping, "mapping-a", "mapping-a-r1"}
 	item := context.Artifacts[key]
-	program := bytes.Repeat([]byte{255}, artifact.MaxArtifactBytes)
+	program := bytes.Repeat([]byte{255}, config.MaxArtifactBytes)
 	item.Resources = make([]artifact.Resource, 0, 3)
 	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
 		item.Resources = append(item.Resources, artifact.Resource{Name: name, Role: "program", Descriptor: descriptor(program, "application/octet-stream", "mappings/mapping-a/"+name), Bytes: program})
@@ -155,7 +156,7 @@ func TestManifestFormatAcceptsLargeAncillaryResources(t *testing.T) {
 	m, context := mappingClosure(t)
 	key := Key{artifact.KindSourceMapping, "mapping-a", "mapping-a-r1"}
 	item := context.Artifacts[key]
-	ancillary := bytes.Repeat([]byte{255}, artifact.MaxArtifactBytes)
+	ancillary := bytes.Repeat([]byte{255}, config.MaxArtifactBytes)
 	resources := make([]artifact.Resource, 0, 4)
 	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
 		resources = append(resources, artifact.Resource{Name: name, Role: "metadata", Descriptor: descriptor(ancillary, "application/octet-stream", "mappings/mapping-a/"+name), Bytes: ancillary})
@@ -170,7 +171,7 @@ func TestManifestFormatAcceptsLargeSharedProgram(t *testing.T) {
 	m, context := mappingClosure(t)
 	key := Key{artifact.KindSourceMapping, "mapping-a", "mapping-a-r1"}
 	item := context.Artifacts[key]
-	program := bytes.Repeat([]byte{255}, artifact.MaxArtifactBytes)
+	program := bytes.Repeat([]byte{255}, config.MaxArtifactBytes)
 	item.Resources[0].Bytes = program
 	item.Resources[0].Descriptor = descriptor(program, "application/octet-stream", "mappings/mapping-a/shared.bin")
 	var document map[string]any
