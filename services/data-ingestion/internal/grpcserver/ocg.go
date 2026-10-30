@@ -18,13 +18,15 @@ import (
 	errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
-// OCGHandler owns the shared state for OCG receivers (ingestor, limits, retry).
-// OCGReceiver holds a pointer back to OCGHandler and implements the gRPC interface.
-// OCGHandler is safe for concurrent use by multiple goroutines.
+// OCGHandler owns the shared state for OCG receivers (ingestor, limits, retry,
+// backfiller). OCGReceiver holds a pointer back to OCGHandler and implements
+// the gRPC interface. OCGHandler is safe for concurrent use by multiple
+// goroutines.
 type OCGHandler struct {
-	ingestor ingest.Ingestor
-	limits   *config.LimitsConfig
-	retry    *config.RetryConfig
+	ingestor  ingest.Ingestor
+	limits    *config.LimitsConfig
+	retry     *config.RetryConfig
+	backfiller Backfiller
 }
 
 // NewOCGHandler constructs an OCGHandler. Returns an error when any
@@ -33,6 +35,7 @@ func NewOCGHandler(
 	ingestor ingest.Ingestor,
 	limits *config.LimitsConfig,
 	retry *config.RetryConfig,
+	backfiller Backfiller,
 ) (*OCGHandler, error) {
 	if ingestor == nil {
 		return nil, fmt.Errorf("grpcserver: ingestor must not be nil")
@@ -43,7 +46,10 @@ func NewOCGHandler(
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: retry must not be nil")
 	}
-	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry}, nil
+	if backfiller == nil {
+		return nil, fmt.Errorf("grpcserver: backfiller must not be nil")
+	}
+	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry, backfiller: backfiller}, nil
 }
 
 // register mounts the OCG receivers onto grpcSrv.
@@ -70,32 +76,39 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		return nil, status.Error(codes.InvalidArgument, "messages must not be empty")
 	}
 
+	connectorID := connectorIDFromContext(ctx)
+	if connectorID == "" {
+		return nil, status.Error(codes.Unauthenticated, "connector identity required")
+	}
+
 	if len(req.Messages) > recv.handler.limits.MaxMessages {
 		return nil, status.Errorf(codes.ResourceExhausted,
 			"batch exceeds maximum message count (%d)", recv.handler.limits.MaxMessages)
 	}
 
 	batch := make([]ingest.IngestRecord, len(req.Messages))
-	for i, env := range req.Messages {
+	partitions := make(map[string]struct{}, len(req.Messages))
+	for i, msg := range req.Messages {
 		batch[i] = ingest.IngestRecord{
 			Schema: ingest.SchemaKey{
-				LogicalArtifactType: env.GetLogicalArtifactId(),
-				Version:             env.GetSchemaVersion(),
+				LogicalArtifactType: msg.GetLogicalArtifactId(),
+				Version:             msg.GetSchemaVersion(),
 			},
-			Payload:     env.GetPayload(),
-			ContentType: env.GetContentType(),
+			Payload:     msg.GetPayload(),
+			ContentType: msg.GetContentType(),
 		}
-		if env.Partition != nil {
+		if msg.Partition != nil {
 			// Encode partition struct as a stable JSON string used as storage key.
-			b, err := json.Marshal(env.Partition.AsMap())
+			partitionJSON, err := json.Marshal(msg.Partition.AsMap())
 			if err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid partition field: %v", err)
 			}
-			batch[i].Partition = string(b)
+			batch[i].Partition = string(partitionJSON)
 		}
-		if env.Watermark != nil {
-			batch[i].Watermark = env.Watermark.AsMap()
+		if msg.Watermark != nil {
+			batch[i].Watermark = msg.Watermark.AsMap()
 		}
+		partitions[batch[i].Partition] = struct{}{}
 	}
 
 	result, err := recv.handler.ingestor.Ingest(ctx, batch)
@@ -103,9 +116,17 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 		return nil, recv.handler.mapIngestError(err)
 	}
 
+	// Collect last accepted watermark per partition (message order = last wins).
+	lastWM := lastAcceptedWatermarks(batch, result.Accepted, len(partitions))
+	for partition, wm := range lastWM {
+		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, partition, wm); err != nil {
+			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
+		}
+	}
+
 	return &ingestionv1.IngestResponse{
 		PartialSuccess: &ingestionv1.IngestPartialSuccess{
-			RejectedMessages: int64(result.Rejected),
+			RejectedMessages: int64(result.RejectedCount),
 		},
 	}, nil
 }
@@ -134,14 +155,20 @@ func (h *OCGHandler) mapIngestError(err error) error {
 }
 
 // unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
-func (s *OCGHandler) unavailableWithRetry(msg string) error {
+// Both OCGHandler and OCGBackfillHandler delegate to this shared function so
+// retry-delay policy stays in one place.
+func unavailableWithRetry(msg string, retry *config.RetryConfig) error {
 	base := status.New(codes.Unavailable, msg)
 	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
-		RetryDelay: durationpb.New(s.retry.RetryDelay),
+		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if err != nil {
 		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
 		return base.Err()
 	}
 	return withRetry.Err()
+}
+
+func (s *OCGHandler) unavailableWithRetry(msg string) error {
+	return unavailableWithRetry(msg, s.retry)
 }

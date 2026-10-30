@@ -50,9 +50,13 @@ type IngestRecord struct {
 }
 
 // IngestResult summarises the outcome of a batch ingest call.
+// Accepted has one entry per input record in the same order: true means the
+// record was accepted and written to the outbox, false means it was rejected.
+// AcceptedCount and RejectedCount are convenience totals derived from Accepted.
 type IngestResult struct {
-	Accepted int
-	Rejected int
+	AcceptedCount int
+	RejectedCount int
+	Accepted      []bool
 }
 
 // SourceMapping is the source-mapping artifact fetched from the Schema Registry.

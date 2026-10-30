@@ -21,6 +21,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/httpserver"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/ingest"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/outbox"
+	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/schemaregistry"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/sourcemapping"
 	"github.com/operational-context-graph/operational-context-graph/services/data-ingestion/internal/store/inventory"
@@ -63,7 +64,12 @@ func run() error {
 
 	pipeline := ingest.NewPipeline(&schemaRegistry, &mappingEngine, outbox.New(pool))
 
-	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline, &schemaRegistry)
+	backfiller, err := backfill.NewPostgresBackfiller(pool)
+	if err != nil {
+		return fmt.Errorf("create backfiller: %w", err)
+	}
+
+	grpcSrv, err := grpcserver.NewServer(&cfg.GRPC, &cfg.Limits, &cfg.Retry, pipeline, &schemaRegistry, backfiller)
 	if err != nil {
 		return err
 	}
