@@ -7,9 +7,6 @@ package representation
 
 import "encoding/json"
 
-// MaxGeneratedJSONBytes limits complete, uncompressed API-generated JSON representations.
-const MaxGeneratedJSONBytes = 64 << 20
-
 // DescriptorResponse describes an artifact without embedding its stored bytes.
 type DescriptorResponse struct {
 	SchemaVersion             string               `json:"schemaVersion,omitempty"`

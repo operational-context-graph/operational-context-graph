@@ -16,9 +16,9 @@ import (
 	"mime"
 	"sort"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	format "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
@@ -419,7 +419,7 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 	for _, resource := range result.Programs {
 		budget += (resource.Size + 2) / 3 * 4
 	}
-	if budget > representation.MaxGeneratedJSONBytes {
+	if budget > config.MaxGeneratedJSONBytes {
 		return MappingPackage{}, postgres.ErrInconsistentState
 	}
 	for index, resource := range result.Programs {
@@ -444,7 +444,7 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 		return MappingPackage{}, err
 	}
 	budget += int64(len(source.Artifact.Payload.Bytes))
-	if budget > representation.MaxGeneratedJSONBytes {
+	if budget > config.MaxGeneratedJSONBytes {
 		return MappingPackage{}, postgres.ErrInconsistentState
 	}
 	result.Schemas = []Descriptor{source}
@@ -467,7 +467,7 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 				return MappingPackage{}, err
 			}
 			budget += int64(len(target.Artifact.Payload.Bytes))
-			if budget > representation.MaxGeneratedJSONBytes {
+			if budget > config.MaxGeneratedJSONBytes {
 				return MappingPackage{}, postgres.ErrInconsistentState
 			}
 			result.Schemas = append(result.Schemas, target)
@@ -568,7 +568,7 @@ func (s *Service) Mappings(ctx context.Context, version string, filter model.Art
 				return err
 			}
 			minimumBytes += minimumMappingBytes(mapping, version)
-			if minimumBytes > representation.MaxGeneratedJSONBytes {
+			if minimumBytes > config.MaxGeneratedJSONBytes {
 				return postgres.ErrInconsistentState
 			}
 			mappings = append(mappings, mapping)
@@ -620,7 +620,7 @@ func (s *Service) MappingPackages(ctx context.Context, version string, filter mo
 				minimumBytes += int64(len(schema.Artifact.Payload.Bytes))
 				minimumBytes += extensionBytes(schema.Artifact.Extensions)
 			}
-			if minimumBytes > representation.MaxGeneratedJSONBytes {
+			if minimumBytes > config.MaxGeneratedJSONBytes {
 				return postgres.ErrInconsistentState
 			}
 			result.Value = append(result.Value, value)
@@ -637,7 +637,7 @@ func extensionBytes(raw []byte) int64 {
 	}
 	encoded, err := json.Marshal(json.RawMessage(raw))
 	if err != nil {
-		return representation.MaxGeneratedJSONBytes + 1
+		return config.MaxGeneratedJSONBytes + 1
 	}
 	return int64(len(encoded))
 }

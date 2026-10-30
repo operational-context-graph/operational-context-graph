@@ -18,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
 func TestWriteRepresentationEncodesGzipAndSuppressesHeadBody(t *testing.T) {
@@ -83,7 +85,7 @@ func TestWriteRepresentationDoesNotCommitAfterClientCancellation(t *testing.T) {
 }
 
 func TestWriteRepresentationStopsOnClientDisconnect(t *testing.T) {
-	body := bytes.Repeat([]byte("x"), MaxIdentityRepresentationBytes)
+	body := bytes.Repeat([]byte("x"), int(config.MaxGeneratedJSONBytes))
 	started := make(chan struct{})
 	finished := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -203,7 +205,7 @@ func TestWriteRedirectIsConditionalAndDoesNotUseRequestAuthority(t *testing.T) {
 func TestWriteRepresentationDoesNotCommitOnLateFailure(t *testing.T) {
 	response := httptest.NewRecorder()
 	err := WriteRepresentation(response, Representation{
-		Status: http.StatusOK, MediaType: "application/json", Body: make([]byte, MaxIdentityRepresentationBytes+1), Method: http.MethodGet,
+		Status: http.StatusOK, MediaType: "application/json", Body: make([]byte, int(config.MaxGeneratedJSONBytes)+1), Method: http.MethodGet,
 	})
 	require.ErrorIs(t, err, ErrRepresentationTooLarge)
 	assert.Empty(t, response.Header())

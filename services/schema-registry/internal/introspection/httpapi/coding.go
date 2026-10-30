@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
 type ContentCoding string
@@ -22,9 +22,6 @@ type ContentCoding string
 const (
 	Identity ContentCoding = "identity"
 	Gzip     ContentCoding = "gzip"
-
-	// MaxIdentityRepresentationBytes is the version 1 identity JSON limit.
-	MaxIdentityRepresentationBytes = representation.MaxGeneratedJSONBytes
 )
 
 var ErrRepresentationTooLarge = errors.New("identity representation exceeds 64 MiB")
@@ -99,7 +96,7 @@ func EncodeRepresentation(identity []byte, coding ContentCoding) ([]byte, error)
 // EncodeRepresentationContext returns either identity bytes or a deterministic
 // RFC 1952 stream. It checks cancellation between bounded write chunks.
 func EncodeRepresentationContext(ctx context.Context, identity []byte, coding ContentCoding) ([]byte, error) {
-	if len(identity) > MaxIdentityRepresentationBytes {
+	if int64(len(identity)) > config.MaxGeneratedJSONBytes {
 		return nil, ErrRepresentationTooLarge
 	}
 	if err := ctx.Err(); err != nil {

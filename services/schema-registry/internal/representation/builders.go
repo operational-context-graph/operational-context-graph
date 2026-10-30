@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 )
 
@@ -98,7 +99,7 @@ func BuildMappingPackage(value model.MappingPackage, version string) (MappingPac
 	if err != nil {
 		return MappingPackageResponse{}, err
 	}
-	if _, err := mappingPackageSize(value, body, MaxGeneratedJSONBytes); err != nil {
+	if _, err := mappingPackageSize(value, body, config.MaxGeneratedJSONBytes); err != nil {
 		return MappingPackageResponse{}, err
 	}
 	for index, schema := range value.Schemas {

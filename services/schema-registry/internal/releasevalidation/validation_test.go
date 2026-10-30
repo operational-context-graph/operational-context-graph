@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/representation"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
@@ -84,7 +85,7 @@ func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	size, err := representation.MappingPackageSize(pack, value.SchemaVersion)
 	require.NoError(t, err)
 	require.Greater(t, size, int64(artifact.MaxArtifactBytes))
-	require.Less(t, size, int64(representation.MaxGeneratedJSONBytes))
+	require.Less(t, size, config.MaxGeneratedJSONBytes)
 }
 
 func TestMappingPackagePreservesValidatedClosure(t *testing.T) {

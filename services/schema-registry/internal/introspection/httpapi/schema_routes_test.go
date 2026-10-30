@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	usecase "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -869,7 +870,7 @@ func TestGeneratedPackageSizeBoundary(t *testing.T) {
 	type packageBody struct {
 		Content string `json:"content"`
 	}
-	const limit = maxGeneratedJSONBytes
+	const limit = int(config.MaxGeneratedJSONBytes)
 	base, err := json.Marshal(packageBody{})
 	require.NoError(t, err)
 	content := strings.Repeat("x", limit-len(base))
