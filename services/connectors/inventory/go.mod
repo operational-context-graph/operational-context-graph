@@ -2,8 +2,6 @@ module github.com/operational-context-graph/operational-context-graph/services/c
 
 go 1.27.3
 
-toolchain go1.27.3
-
 require (
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/knadh/koanf/providers/env v1.1.0
