@@ -225,7 +225,7 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 	}
 
 	// Reverse scan: last accepted watermark per partition, stop once all open-gap partitions covered.
-	lastWM := lastAcceptedWatermarks(batch, result.Accepted, openPartitions)
+	lastWM := lastAcceptedWatermarks(batch, result.Accepted, openPartitions, connectorID)
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")

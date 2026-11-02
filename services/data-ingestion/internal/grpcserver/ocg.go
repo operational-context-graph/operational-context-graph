@@ -117,7 +117,7 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	// Collect last accepted watermark per partition (message order = last wins).
-	lastWM := lastAcceptedWatermarks(batch, result.Accepted, len(partitions))
+	lastWM := lastAcceptedWatermarks(batch, result.Accepted, len(partitions), connectorID)
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
