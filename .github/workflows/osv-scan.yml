@@ -1,9 +1,11 @@
+# Scans all dependency manifests in the repository using OSV-Scanner. Runs on
+# every push to main and on a daily schedule. PR diff scanning runs separately
+# via osv-scan-pr.yml.
+# Docs: https://google.github.io/osv-scanner/github-action/
 ---
 name: OSV-Scanner
 
 on:
-  pull_request:
-    branches: ["main"]
   push:
     branches: ["main"]
   schedule:
@@ -11,18 +13,8 @@ on:
   workflow_dispatch: ~
 
 jobs:
-  osv-scan-pr:
-    name: OSV-Scanner (PR diff)
-    if: github.event_name == 'pull_request'
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
   osv-scan-full:
     name: OSV-Scanner (full)
-    if: github.event_name != 'pull_request'
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     permissions:
       actions: read
