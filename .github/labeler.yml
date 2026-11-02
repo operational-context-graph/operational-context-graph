@@ -16,15 +16,31 @@
 
 "proto":
   - changed-files:
-      - any-glob-to-any-file: "proto/**"
+      - any-glob-to-any-file:
+          - "proto/**"
+          - "buf.yaml"
 
 "scripts":
   - changed-files:
       - any-glob-to-any-file: "scripts/**"
 
-"ci":
+"devops":
   - changed-files:
-      - any-glob-to-any-file: ".github/**"
+      - any-glob-to-any-file:
+          - ".github/**"
+          - ".claude/**"
+          - ".opencode/**"
+          - "openspec/**"
+          - ".editorconfig"
+          - ".golangci.yml"
+          - ".grant.yml"
+          - ".npmrc"
+          - ".nvmrc"
+          - ".syft.yml"
+          - "AGENTS.md"
+          - "CLAUDE.md"
+          - "MAKEFILE"
+          - "renovate.json"
 
 "infrastructure":
   - changed-files:
@@ -44,3 +60,10 @@
           - "go.sum"
           - "renovate.json"
           - "pnpm-lock.yaml"
+
+"license":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "LICENSES/**"
+          - "REUSE.toml"
+          - "LICENSE*"
