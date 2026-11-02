@@ -15,11 +15,13 @@ import (
 const (
 	routeQueryLogs    = "query-logs"
 	routeQueryMetrics = "query-metrics"
+	routeQueryTraces  = "query-traces"
 )
 
 func registerTelemetryRoutes(rg *gin.RouterGroup, d telemetryDB) {
 	rg.GET("/logs", setRoute(routeQueryLogs), handleQueryLogs(d))
 	rg.GET("/metrics", setRoute(routeQueryMetrics), handleQueryMetrics(d))
+	rg.GET("/traces/:trace_id", setRoute(routeQueryTraces), handleQueryTraces(d))
 }
 
 func handleQueryLogs(d telemetryDB) gin.HandlerFunc {
@@ -133,6 +135,43 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 			resp.NextCursor = cur.Encode()
 		}
 		c.JSON(http.StatusOK, resp)
+	}
+}
+
+func handleQueryTraces(d telemetryDB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		traceID := c.Param("trace_id")
+		if traceID == "" {
+			renderError(c, fmt.Errorf("%w: trace_id is required", apperr.ErrInvalidInput))
+			return
+		}
+		spans, err := d.QueryTrace(c.Request.Context(), store.TraceQuery{TraceID: traceID})
+		if err != nil {
+			renderError(c, err)
+			return
+		}
+		items := make([]v1.SpanResponse, len(spans))
+		for i, s := range spans {
+			item := v1.SpanResponse{
+				Timestamp:          s.Timestamp.UTC().Format(time.RFC3339Nano),
+				IRI:                s.IRI,
+				HostName:           s.HostName,
+				TraceID:            s.TraceID,
+				SpanID:             s.SpanID,
+				ParentSpanID:       s.ParentSpanID,
+				SpanName:           s.SpanName,
+				DurationNanos:      s.DurationNanos,
+				StatusCode:         s.StatusCode,
+				ResourceAttributes: s.ResourceAttributes,
+				Attributes:         s.Attributes,
+			}
+			if s.ObservedTimestamp != nil {
+				ts := s.ObservedTimestamp.UTC().Format(time.RFC3339Nano)
+				item.ObservedTimestamp = &ts
+			}
+			items[i] = item
+		}
+		c.JSON(http.StatusOK, v1.TraceResponse{Items: items})
 	}
 }
 

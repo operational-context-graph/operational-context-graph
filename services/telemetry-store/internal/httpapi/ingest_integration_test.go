@@ -206,3 +206,22 @@ func TestHandleIngest_Logs_ReadBackViaQueryAPI(t *testing.T) {
 	}
 	assert.True(t, found, "ingested row must be returned by the query API")
 }
+
+func TestHandleIngest_Traces_RoundTrip(t *testing.T) {
+	ts := time.Now().UTC().Truncate(time.Second)
+	iri := "urn:ocg:span:test:hi-" + fmt.Sprintf("%d", ts.UnixNano())
+	traceID := fmt.Sprintf("4bf92f3577b34da6%08x", ts.UnixNano()%0xffffffff)
+	ndjson := fmt.Sprintf(
+		`{"timestamp":%q,"iri":%q,"host_name":"node-hi","trace_id":%q,"span_id":"00f067aa0ba902b7","span_name":"POST /ingest","duration_nanos":5000000,"status_code":"OK"}`+"\n",
+		ts.Format(time.RFC3339), iri, traceID,
+	)
+
+	rr := postNDJSON(t, "/v1/telemetry/traces", ingestLabel("traces"), ndjson)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp v1.IngestResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal(t, int64(1), resp.LoadedRows)
+
+	assert.Equal(t, 1, countRows(t, "traces", iri, ts), "span must be in ocg.traces after ingest")
+}
