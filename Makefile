@@ -117,6 +117,7 @@ tidy: require-target
 
 # Tidy go.mod for every module, including the shared gen/go stubs.
 tidy-all: require-targets
+	go work sync
 	cd gen/go && go mod tidy
 	@for s in $(TARGETS); do \
 		echo "==> tidy $$s"; \
