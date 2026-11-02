@@ -1,0 +1,46 @@
+"data-ingestion":
+  - changed-files:
+      - any-glob-to-any-file: "services/data-ingestion/**"
+
+"inventory-store":
+  - changed-files:
+      - any-glob-to-any-file: "services/inventory-store/**"
+
+"telemetry-store":
+  - changed-files:
+      - any-glob-to-any-file: "services/telemetry-store/**"
+
+"connectors":
+  - changed-files:
+      - any-glob-to-any-file: "services/connectors/**"
+
+"proto":
+  - changed-files:
+      - any-glob-to-any-file: "proto/**"
+
+"scripts":
+  - changed-files:
+      - any-glob-to-any-file: "scripts/**"
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+"infrastructure":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "helm/**"
+          - "Dockerfile*"
+
+"documentation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.md"
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "go.mod"
+          - "go.sum"
+          - "renovate.json"
+          - "pnpm-lock.yaml"
