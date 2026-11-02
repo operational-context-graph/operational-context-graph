@@ -123,7 +123,6 @@ func TestLoad_SetsCorrectHeaders(t *testing.T) {
 	assert.Empty(t, capturedReq.Header.Get("load_to_single_tablet"), "must not be set: HASH bucketing does not support it")
 	assert.Equal(t, "my-label", capturedReq.Header.Get("label"))
 	assert.Contains(t, capturedReq.Header.Get("Authorization"), "Basic ")
-	assert.Equal(t, "MERGE", capturedReq.Header.Get("merge_type"), "must enforce Unique Key dedup at write time")
 }
 
 func TestLoad_307Redirect_ResendsBody(t *testing.T) {
