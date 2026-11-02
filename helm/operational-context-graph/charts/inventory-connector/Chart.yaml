@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
 apiVersion: v2
 name: inventory-connector
 description: Inventory connector — reads NetBox, delivers to Data Ingestion

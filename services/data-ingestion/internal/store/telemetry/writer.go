@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package telemetry implements the Telemetry Store writer. It maps batches of
 // canonical records to the Telemetry Store ingestion API wire format: NDJSON
 // over HTTP with an X-OCG-Label idempotency header derived from the batch ID.

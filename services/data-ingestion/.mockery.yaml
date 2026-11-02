@@ -1,7 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
 # Optional mockery configuration (github.com/vektra/mockery).
 # Generated mocks use testify/mock, so they introduce no new paradigm.
 # Run `make mocks` to regenerate. Adopt per component only where interfaces

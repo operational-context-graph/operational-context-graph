@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package ingest holds the synchronous ingest pipeline and the domain types and
 // interfaces it depends on. It is wire-neutral: receivers map their protocol
 // (OTLP, gRPC) into IngestRecord batches and call Ingestor.
