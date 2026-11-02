@@ -169,10 +169,10 @@ func (handler *OTLPHandler) ingest(ctx context.Context, key ingest.SchemaKey, ba
 		handler.log.ErrorContext(ctx, "unexpected pipeline error", "err", err)
 		return status.Error(codes.Internal, "internal error")
 	}
-	if result.Rejected > 0 {
+	if result.RejectedCount > 0 {
 		handler.log.WarnContext(ctx, "otlp export: pipeline rejected records",
-			"accepted", result.Accepted,
-			"rejected", result.Rejected,
+			"accepted", result.AcceptedCount,
+			"rejected", result.RejectedCount,
 			"schema", key.LogicalArtifactType+"@"+key.Version,
 		)
 	}

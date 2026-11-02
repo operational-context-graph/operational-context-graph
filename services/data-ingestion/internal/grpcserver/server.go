@@ -38,7 +38,7 @@ type Server struct {
 
 // NewServer constructs a Server. All arguments are required and must not be nil.
 // Returns an error when any argument is nil.
-func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient) (*Server, error) {
+func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient, backfiller Backfiller) (*Server, error) {
 	if grpcCfg == nil {
 		return nil, errors.New("grpcserver: grpcCfg must not be nil")
 	}
@@ -51,7 +51,13 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if ingestor == nil {
 		return nil, errors.New("grpcserver: ingestor must not be nil")
 	}
-	ocgHandler, err := NewOCGHandler(ingestor, limits, retry)
+	if schemaClient == nil {
+		return nil, errors.New("grpcserver: schemaClient must not be nil")
+	}
+	if backfiller == nil {
+		return nil, errors.New("grpcserver: backfiller must not be nil")
+	}
+	ocgHandler, err := NewOCGHandler(ingestor, limits, retry, backfiller)
 	if err != nil {
 		return nil, err
 	}
@@ -59,10 +65,14 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if err != nil {
 		return nil, err
 	}
+	backfillHandler, err := NewOCGBackfillHandler(backfiller, ingestor, limits, retry)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		grpcCfg:  grpcCfg,
 		limits:   limits,
-		services: []serviceRegistrar{ocgHandler, otlpHandler},
+		services: []serviceRegistrar{ocgHandler, otlpHandler, backfillHandler},
 		log:      slog.Default(),
 	}, nil
 }
