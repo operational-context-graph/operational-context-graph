@@ -58,6 +58,8 @@ jobs:
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
+      - name: Check go.mod tidy
+        run: make tidy-check-all
       - name: Build
         run: make build-all
 

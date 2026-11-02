@@ -12,7 +12,7 @@ TARGETS    := $(SERVICES) $(CONNECTORS)
 TARGET_DIR = services/$(TARGET)
 
 .PHONY: init build build-all run \
-        vet vet-all test test-all lint lint-all tidy tidy-all mocks \
+        vet vet-all test test-all lint lint-all tidy tidy-all tidy-check-all mocks \
         go-modules-json \
         proto-lint proto-format proto-generate \
         require-target require-targets
@@ -107,6 +107,15 @@ mocks:
 # Output example: ["services/data-ingestion","services/connectors/inventory"]
 go-modules-json: require-targets
 	@echo $(addprefix services/,$(TARGETS)) | tr ' ' '\n' | jq -R . | jq -cs .
+
+# Check that go.mod and go.sum are tidy (no changes after running go mod tidy).
+# Fails if any module is out of sync; run make tidy-all to fix.
+tidy-check-all: require-targets
+	cd gen/go && go mod tidy && git diff --exit-code go.mod go.sum
+	@for s in $(TARGETS); do \
+		echo "==> tidy-check $$s"; \
+		cd $(CURDIR)/services/$$s && go mod tidy && git diff --exit-code go.mod go.sum; \
+	done
 
 # =============================================================================
 # Protobuf
