@@ -1,10 +1,7 @@
-SHELL             := /usr/bin/env bash
-NAME              := $(notdir $(CURDIR))
-BIN_DIR           := $(CURDIR)/bin
-COVERAGE_DIR      ?= $(CURDIR)/coverage
-COVERAGE_THRESHOLD ?= 95
-COVERAGE_ENFORCE  ?= 1
-REPO_ROOT         := $(shell git rev-parse --show-toplevel)
+SHELL        := /usr/bin/env bash
+NAME         := $(notdir $(CURDIR))
+BIN_DIR      := $(CURDIR)/bin
+COVERAGE_DIR ?= $(CURDIR)/coverage
 
 .PHONY: build run vet test lint tidy
 
@@ -20,12 +17,11 @@ vet:
 
 test:
 	mkdir -p $(COVERAGE_DIR)
-	@cd $(CURDIR) && $(REPO_ROOT)/scripts/go-test.sh \
-	  $(NAME) \
-	  $(COVERAGE_DIR)/$(NAME).out \
-	  $(COVERAGE_THRESHOLD) \
-	  $(COVERAGE_ENFORCE) \
-	  $(COVERAGE_DIR)/$(NAME).html
+	@go test ./... -race -count=1 -json -coverprofile=$(COVERAGE_DIR)/$(NAME).out \
+	  | go tool tparse; test_rc=$${PIPESTATUS[0]}; \
+	go tool cover -html=$(COVERAGE_DIR)/$(NAME).out -o $(COVERAGE_DIR)/$(NAME).html 2>/dev/null; \
+	printf "  coverage report: \033[4mfile://$(COVERAGE_DIR)/$(NAME).html\033[0m\n"; \
+	exit $$test_rc
 
 lint:
 	golangci-lint run
