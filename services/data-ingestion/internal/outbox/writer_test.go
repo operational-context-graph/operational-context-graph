@@ -161,7 +161,7 @@ func TestWriter_Write_Concurrent(t *testing.T) {
 	dbs := make([]*fakeDB, goroutines)
 	errs := make([]error, goroutines)
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		dbs[g] = &fakeDB{tx: &recordingTx{}}
 		wg.Add(1)
 		go func(idx int) {
@@ -172,7 +172,7 @@ func TestWriter_Write_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		require.NoError(t, errs[g])
 		assert.True(t, dbs[g].tx.committed)
 	}

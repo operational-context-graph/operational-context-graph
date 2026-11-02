@@ -1,4 +1,4 @@
-module github.com/operational-context-graph/telemetry-store
+module github.com/operational-context-graph/operational-context-graph/services/telemetry-store
 
 go 1.27.3
 

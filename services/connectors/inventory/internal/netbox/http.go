@@ -44,6 +44,7 @@ func backoff(attempt int) time.Duration {
 	if d > 16*time.Second {
 		d = 16 * time.Second
 	}
+	//nolint:gosec // G404: math/rand is sufficient for backoff jitter; cryptographic randomness is not required and just adds unnecessary complexity.
 	jitter := float64(d) * 0.2 * (rand.Float64()*2 - 1)
 	return d + time.Duration(jitter)
 }

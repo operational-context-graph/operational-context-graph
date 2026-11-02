@@ -23,10 +23,11 @@ import (
 // the gRPC interface. OCGHandler is safe for concurrent use by multiple
 // goroutines.
 type OCGHandler struct {
-	ingestor  ingest.Ingestor
-	limits    *config.LimitsConfig
-	retry     *config.RetryConfig
+	ingestor   ingest.Ingestor
+	limits     *config.LimitsConfig
+	retry      *config.RetryConfig
 	backfiller Backfiller
+	log        *slog.Logger
 }
 
 // NewOCGHandler constructs an OCGHandler. Returns an error when any
@@ -49,7 +50,7 @@ func NewOCGHandler(
 	if backfiller == nil {
 		return nil, fmt.Errorf("grpcserver: backfiller must not be nil")
 	}
-	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry, backfiller: backfiller}, nil
+	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry, backfiller: backfiller, log: slog.Default()}, nil
 }
 
 // register mounts the OCG receivers onto grpcSrv.
@@ -150,7 +151,7 @@ func (h *OCGHandler) mapIngestError(err error) error {
 		return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 	}
 
-	slog.Error("unexpected pipeline error", "err", err)
+	h.log.Error("unexpected pipeline error", "err", err)
 	return status.Error(codes.Internal, "internal error")
 }
 

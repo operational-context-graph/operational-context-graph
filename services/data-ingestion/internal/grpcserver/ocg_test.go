@@ -241,7 +241,7 @@ func TestErrUnavailableReturnsUnavailable(t *testing.T) {
 // --- 6.5: unexpected error → INTERNAL; message does not contain original error text ---
 
 func TestUnexpectedErrorReturnsInternal(t *testing.T) {
-	const secretMsg = "secret-db-connection-string"
+	const secretMsg = "secret-db-connection-string" //nolint:gosec // G101: test-only string used to verify errors are not leaked; not a real credential.
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.New(secretMsg))
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
@@ -356,7 +356,7 @@ func TestConcurrentIngest(t *testing.T) {
 	const goroutines = 20
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			_, _ = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
