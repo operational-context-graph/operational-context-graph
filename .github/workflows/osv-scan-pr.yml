@@ -9,7 +9,7 @@ on:
     branches: ["main"]
 
 jobs:
-  osv-scan:
+  osv-scan-pr:
     name: OSV-Scanner
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     permissions:
