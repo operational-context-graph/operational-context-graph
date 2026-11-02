@@ -13,6 +13,7 @@ TARGET_DIR = services/$(TARGET)
 
 .PHONY: init build build-all run \
         vet vet-all test test-all lint lint-all tidy tidy-all mocks \
+        go-modules-json \
         proto-lint proto-format proto-generate \
         require-target require-targets
 
@@ -97,6 +98,15 @@ tidy-all: require-targets
 # Regenerate mocks for data-ingestion (requires mockery).
 mocks:
 	$(MAKE) -C services/data-ingestion mocks
+
+# =============================================================================
+# CI
+# =============================================================================
+
+# Emit discovered Go module paths as a JSON array. Used by CI to drive matrix jobs.
+# Output example: ["services/data-ingestion","services/connectors/inventory"]
+go-modules-json: require-targets
+	@echo $(addprefix services/,$(TARGETS)) | tr ' ' '\n' | jq -R . | jq -cs .
 
 # =============================================================================
 # Protobuf
