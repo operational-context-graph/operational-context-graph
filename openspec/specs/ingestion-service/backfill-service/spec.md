@@ -82,7 +82,7 @@ The backfill-service capability implements the gRPC `BackfillService` receiving 
 
 ### Requirement: BackfillService.Ingest writes gap-filtered messages to the outbox
 
-`BackfillService.Ingest` SHALL apply the same request-level validations as `IngestionService.Ingest` (empty messages → `INVALID_ARGUMENT`; batch exceeding `MaxMessages` → `RESOURCE_EXHAUSTED`). For each message, it SHALL check whether a gap is open for the `(connector, partition)` pair. Messages for a pair with no open gap SHALL be silently dropped — they are NOT counted as rejected in `IngestResponse.partial_success.rejected_messages`. Messages with an open gap go through the ingestion pipeline. After a successful pipeline write, `Backfiller.AdvanceBackfill` SHALL be called for each accepted message that carries a non-nil watermark.
+`BackfillService.Ingest` SHALL apply the same request-level validations as `IngestionService.Ingest`. For each message, it SHALL check whether a gap is open for the `(connector, partition)` pair. Messages for a closed gap SHALL be silently dropped and NOT counted as rejected. Messages for an open gap go through the ingestion pipeline. After a successful pipeline write, `Backfiller.AdvanceBackfill` SHALL be called per accepted message with a non-nil watermark.
 
 #### Scenario: All messages pass gap filter — written to outbox
 - **WHEN** `BackfillService.Ingest` is called and all messages belong to partitions with open gaps
