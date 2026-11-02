@@ -119,6 +119,10 @@ func (c *Client) setHeaders(req *http.Request, label string) {
 	req.Header.Set("read_json_by_line", "true")
 	req.Header.Set("strip_outer_array", "false")
 	req.Header.Set("label", label)
+	// MERGE enforces the UNIQUE KEY constraint at write time (Merge-on-Write),
+	// so re-ingesting the same (timestamp, iri) replaces the existing row
+	// immediately rather than waiting for background compaction.
+	req.Header.Set("merge_type", "MERGE")
 }
 
 // streamLoadResponse is the JSON body Doris always returns with HTTP 200.

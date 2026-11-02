@@ -4,12 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/telemetry-store/api/v1"
@@ -78,41 +76,20 @@ func handleIngest(sl streamLoader, table string) gin.HandlerFunc {
 	}
 }
 
-// readAndValidateNDJSON reads NDJSON from r, validates the partition-boundary
-// constraint (all rows must share the same UTC calendar day), and returns the
-// raw bytes to forward to Doris.
+// readAndValidateNDJSON reads NDJSON from r and returns the raw bytes to
+// forward to Doris. It rejects an empty batch and propagates body-size errors.
 func readAndValidateNDJSON(r io.Reader) ([]byte, error) {
 	var buf bytes.Buffer
 	scanner := bufio.NewScanner(r)
 	// Allow lines up to 10 MB (large attribute payloads).
 	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
 
-	var partitionDay time.Time
 	lineCount := 0
-
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-
-		ts, err := extractTimestamp(line)
-		if err != nil {
-			return nil, fmt.Errorf("%w: line %d: %s", apperr.ErrInvalidInput, lineCount+1, err.Error())
-		}
-
-		day := ts.UTC().Truncate(24 * time.Hour)
-		if lineCount == 0 {
-			partitionDay = day
-		} else if !day.Equal(partitionDay) {
-			return nil, fmt.Errorf(
-				"%w: batch spans multiple partitions (%s and %s); flush before the day boundary",
-				apperr.ErrInvalidInput,
-				partitionDay.Format("2006-01-02"),
-				day.Format("2006-01-02"),
-			)
-		}
-
 		buf.Write(line)
 		buf.WriteByte('\n')
 		lineCount++
@@ -130,22 +107,4 @@ func readAndValidateNDJSON(r io.Reader) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-// extractTimestamp parses only the "timestamp" field from one NDJSON line.
-func extractTimestamp(line []byte) (time.Time, error) {
-	var row struct {
-		Timestamp string `json:"timestamp"`
-	}
-	if err := json.Unmarshal(line, &row); err != nil {
-		return time.Time{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if row.Timestamp == "" {
-		return time.Time{}, fmt.Errorf("missing timestamp field")
-	}
-	ts, err := time.Parse(time.RFC3339, row.Timestamp)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("unparseable timestamp %q", row.Timestamp)
-	}
-	return ts, nil
 }

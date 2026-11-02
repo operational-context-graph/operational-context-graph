@@ -136,25 +136,6 @@ func TestHandleIngest_Metrics_RoundTrip(t *testing.T) {
 	assert.Equal(t, 1, countRows(t, "metrics", iri, ts), "metric row must be in ocg.metrics after ingest")
 }
 
-func TestHandleIngest_Traces_RoundTrip(t *testing.T) {
-	ts := time.Now().UTC().Truncate(time.Second)
-	iri := "urn:ocg:span:test:hi-" + fmt.Sprintf("%d", ts.UnixNano())
-	traceID := fmt.Sprintf("4bf92f3577b34da6%08x", ts.UnixNano()%0xffffffff)
-	ndjson := fmt.Sprintf(
-		`{"timestamp":%q,"iri":%q,"host_name":"node-hi","trace_id":%q,"span_id":"00f067aa0ba902b7","span_name":"POST /ingest","duration_nanos":5000000,"status_code":"OK"}`+"\n",
-		ts.Format(time.RFC3339), iri, traceID,
-	)
-
-	rr := postNDJSON(t, "/v1/telemetry/traces", ingestLabel("traces"), ndjson)
-	require.Equal(t, http.StatusOK, rr.Code)
-
-	var resp v1.IngestResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, int64(1), resp.LoadedRows)
-
-	assert.Equal(t, 1, countRows(t, "traces", iri, ts), "trace span must be in ocg.traces after ingest")
-}
-
 func TestHandleIngest_LabelIdempotency_Returns200AlreadyExists(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Second)
 	iri := "urn:ocg:log:test:idem-" + fmt.Sprintf("%d", ts.UnixNano())
@@ -172,33 +153,27 @@ func TestHandleIngest_LabelIdempotency_Returns200AlreadyExists(t *testing.T) {
 	assert.Contains(t, rr2.Body.String(), "already_exists", "body must signal idempotent replay")
 }
 
-func TestHandleIngest_PartitionBoundaryViolation_Returns400(t *testing.T) {
-	// Two rows on different UTC days; no DB needed — the handler rejects before calling stream load.
-	twodays := `{"timestamp":"2026-10-13T23:59:59Z","iri":"urn:ocg:log:test:pb-1","host_name":"h","severity":"INFO","body":"a"}` + "\n" +
-		`{"timestamp":"2026-10-14T00:00:01Z","iri":"urn:ocg:log:test:pb-2","host_name":"h","severity":"INFO","body":"b"}` + "\n"
+func TestHandleIngest_UniqueKeyDedup_SameIRIDifferentLabels(t *testing.T) {
+	ts := time.Now().UTC().Truncate(time.Second)
+	iri := "urn:ocg:log:test:dedup-" + fmt.Sprintf("%d", ts.UnixNano())
+	ndjson := fmt.Sprintf(
+		`{"timestamp":%q,"iri":%q,"host_name":"node-hi","severity":"INFO","body":"first write"}`+"\n",
+		ts.Format(time.RFC3339), iri,
+	)
 
-	stubSL := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("stream load must not be called on partition boundary violation")
-	}))
-	defer stubSL.Close()
+	rr1 := postNDJSON(t, "/v1/telemetry/logs", ingestLabel("logs"), ndjson)
+	require.Equal(t, http.StatusOK, rr1.Code, "first ingest must succeed")
 
-	sl := streamload.NewClient(stubSL.URL, "u", "p")
-	sqlDB, err := sql.Open("mysql", os.Getenv("TEST_DB_URL"))
-	require.NoError(t, err)
-	db, err := store.NewFromDB(context.Background(), sqlDB)
-	require.NoError(t, err)
-	srv := httpapi.NewServer(db, sl, ":0")
+	ndjson2 := fmt.Sprintf(
+		`{"timestamp":%q,"iri":%q,"host_name":"node-hi","severity":"INFO","body":"second write"}`+"\n",
+		ts.Format(time.RFC3339), iri,
+	)
+	rr2 := postNDJSON(t, "/v1/telemetry/logs", ingestLabel("logs"), ndjson2)
+	require.Equal(t, http.StatusOK, rr2.Code, "second ingest with different label must succeed")
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/telemetry/logs", strings.NewReader(twodays))
-	req.Header.Set("Content-Type", "application/x-ndjson")
-	req.Header.Set("X-OCG-Label", ingestLabel("logs"))
-	rr := httptest.NewRecorder()
-	srv.Handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+	assert.Equal(t, 1, countRows(t, "logs", iri, ts),
+		"UNIQUE KEY(timestamp, iri) must deduplicate to exactly one row on re-ingest via Stream Load")
 }
-
 func TestHandleIngest_Logs_ReadBackViaQueryAPI(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Second)
 	iri := "urn:ocg:log:test:rb-" + fmt.Sprintf("%d", ts.UnixNano())

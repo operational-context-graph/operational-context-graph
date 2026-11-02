@@ -186,6 +186,12 @@ func TestHandleIngestLogs_OK(t *testing.T) {
 	assert.Equal(t, int64(1), resp.LoadedRows)
 }
 
+func TestHandleIngestMetrics_OK(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
+	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/metrics", "metrics-2026-10-13-001", validLogLine)
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
 func TestHandleIngestLogs_MissingLabel_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
 	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "", validLogLine)
@@ -206,14 +212,6 @@ func TestHandleIngestLogs_WrongContentType_Returns415(t *testing.T) {
 func TestHandleIngestLogs_EmptyBatch_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
 	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "logs-2026-10-13-001", "\n\n")
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-func TestHandleIngestLogs_PartitionBoundaryViolation_Returns400(t *testing.T) {
-	twodays := `{"timestamp":"2026-10-13T23:59:59Z","host":"h","severity":"INFO","body":"a"}` + "\n" +
-		`{"timestamp":"2026-10-14T00:00:01Z","host":"h","severity":"INFO","body":"b"}` + "\n"
-	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
-	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "logs-2026-10-13-001", twodays)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
