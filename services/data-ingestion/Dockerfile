@@ -24,7 +24,7 @@ FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659ecea
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
 COPY --from=goose /go/bin/goose /usr/local/bin/goose
-COPY services/data-ingestion/internal/outbox/migrations /migrations
+COPY services/data-ingestion/migrations /migrations
 EXPOSE 8080 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/data-ingestion"]
