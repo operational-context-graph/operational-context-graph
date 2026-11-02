@@ -1,6 +1,6 @@
 package httpapi
 
-import "github.com/operational-context-graph/inventory-store/internal/apperr"
+import "github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
 
 // requiredField pairs a field name with its value for required-string validation.
 type requiredField struct {

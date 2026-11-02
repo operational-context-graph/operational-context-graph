@@ -37,11 +37,11 @@ func toProto(msg envelope.Message) (*pb.MessageEnvelope, error) {
 	ct := msg.ContentType
 	return &pb.MessageEnvelope{
 		LogicalArtifactId: msg.LogicalArtifactId,
-		SchemaVersion:       msg.SchemaVersion,
-		Payload:             msg.Payload,
-		Partition:           part,
-		Watermark:           wm,
-		ContentType:         &ct,
+		SchemaVersion:     msg.SchemaVersion,
+		Payload:           msg.Payload,
+		Partition:         part,
+		Watermark:         wm,
+		ContentType:       &ct,
 	}, nil
 }
 

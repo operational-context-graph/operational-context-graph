@@ -25,6 +25,7 @@ type OCGHandler struct {
 	ingestor ingest.Ingestor
 	limits   *config.LimitsConfig
 	retry    *config.RetryConfig
+	log      *slog.Logger
 }
 
 // NewOCGHandler constructs an OCGHandler. Returns an error when any
@@ -43,7 +44,7 @@ func NewOCGHandler(
 	if retry == nil {
 		return nil, fmt.Errorf("grpcserver: retry must not be nil")
 	}
-	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry}, nil
+	return &OCGHandler{ingestor: ingestor, limits: limits, retry: retry, log: slog.Default()}, nil
 }
 
 // register mounts the OCG receivers onto grpcSrv.
@@ -129,7 +130,7 @@ func (h *OCGHandler) mapIngestError(err error) error {
 		return status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 	}
 
-	slog.Error("unexpected pipeline error", "err", err)
+	h.log.Error("unexpected pipeline error", "err", err)
 	return status.Error(codes.Internal, "internal error")
 }
 
@@ -140,7 +141,7 @@ func (s *OCGHandler) unavailableWithRetry(msg string) error {
 		RetryDelay: durationpb.New(s.retry.RetryDelay),
 	})
 	if err != nil {
-		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
+		s.log.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
 		return base.Err()
 	}
 	return withRetry.Err()

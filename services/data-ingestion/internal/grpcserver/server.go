@@ -32,6 +32,7 @@ type Server struct {
 	grpcCfg  *config.GRPCConfig
 	limits   *config.LimitsConfig
 	services []serviceRegistrar
+	log      *slog.Logger
 	running  atomic.Bool
 }
 
@@ -62,6 +63,7 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 		grpcCfg:  grpcCfg,
 		limits:   limits,
 		services: []serviceRegistrar{ocgHandler, otlpHandler},
+		log:      slog.Default(),
 	}, nil
 }
 
@@ -85,7 +87,7 @@ func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		return errors.New("grpcserver: Run is already active on this Server")
 	}
 	defer srv.running.Store(false)
-	defer lis.Close()
+	defer func() { _ = lis.Close() }() // Close errors are non-actionable on shutdown.
 
 	// Respect already-cancelled context before serving.
 	select {
@@ -110,7 +112,7 @@ func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		services = append(services, name)
 	}
 	slices.Sort(services)
-	slog.Info("grpc services registered", "services", services)
+	srv.log.InfoContext(ctx, "grpc services registered", "services", services)
 
 	serveErr := make(chan error, 1)
 	go func() {
