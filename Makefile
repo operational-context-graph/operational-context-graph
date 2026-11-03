@@ -13,7 +13,7 @@ TARGET_DIR = services/$(TARGET)
 
 .PHONY: init build build-all run \
         vet vet-all test test-all lint lint-all tidy tidy-all tidy-check-all mocks \
-        go-modules-json \
+        go-modules-json workspace-sync-check \
         proto-lint proto-format proto-generate \
         require-target require-targets
 
@@ -29,7 +29,6 @@ init:
 		go work init; \
 	fi
 	go work use gen/go $(addprefix services/,$(TARGETS))
-	go work sync
 
 # =============================================================================
 # Development
@@ -116,6 +115,18 @@ tidy-check-all: require-targets
 		echo "==> tidy-check $$s"; \
 		cd $(CURDIR)/services/$$s && go mod tidy && git diff --exit-code go.mod go.sum; \
 	done
+
+# Check that the Go workspace is in sync with all module go.mod files.
+# Fails if go work sync would change go.work, go.mod, or go.sum in any module.
+# Run "go work sync" locally and commit the resulting changes to fix.
+workspace-sync-check: require-targets
+	go work sync
+	git diff --exit-code go.work
+	@for s in $(TARGETS); do \
+		echo "==> workspace-sync-check $$s"; \
+		git diff --exit-code services/$$s/go.mod services/$$s/go.sum; \
+	done
+	git diff --exit-code gen/go/go.mod gen/go/go.sum
 
 # =============================================================================
 # Protobuf

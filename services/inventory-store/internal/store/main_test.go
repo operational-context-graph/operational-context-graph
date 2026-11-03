@@ -15,10 +15,13 @@ import (
 const ddl = `
 CREATE TABLE IF NOT EXISTS assets (
     id                      UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    iri                     TEXT,
+    name                    TEXT,
     artifact_type           TEXT          NOT NULL,
     source_system           TEXT          NOT NULL,
     source_id               TEXT          NOT NULL,
     extensions              JSONB,
+    ingested_at             TIMESTAMPTZ,
     created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     created_at_source       TIMESTAMPTZ,
     last_updated_at_source  TIMESTAMPTZ,
