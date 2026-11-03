@@ -79,11 +79,14 @@ ignore-packages:
   # The following packages have known permissive licenses but Syft also emits a LicenseRef-* hash
   # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
 
-  # github.com/grpc-ecosystem/grpc-gateway/v2 is BSD-3-Clause
+  # github.com/grpc-ecosystem/grpc-gateway/v2 licensed under BSD-3-Clause
   - github.com/grpc-ecosystem/grpc-gateway/v2
 
-  # github.com/jackc/pgx/v5 is MIT
+  # github.com/jackc/pgx/v5 licensed under MIT
   - github.com/jackc/pgx/v5
 
-  # github.com/quic-go/quic-go is MIT
+  # github.com/quic-go/quic-go licensed under MIT
   - github.com/quic-go/quic-go
+
+  # github.com/coreos/go-semver licensed under Apache-2.0
+  - github.com/coreos/go-semver
