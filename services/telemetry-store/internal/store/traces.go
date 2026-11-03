@@ -11,14 +11,12 @@ import (
 func (d *DB) QueryTrace(ctx context.Context, q TraceQuery) ([]Span, error) {
 	q.Limit = clampLimit(q.Limit)
 
-	//nolint:gosec // G201: where clause uses only internal filter strings, not user input; Limit is an integer.
-	stmt := fmt.Sprintf(
-		`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name,
+	const stmt = `SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name,
 		 trace_id, span_id, parent_span_id, span_name, duration_nanos, status_code,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
-		 FROM ocg.traces WHERE trace_id = ? ORDER BY timestamp, iri LIMIT %d`, q.Limit)
+		 FROM ocg.traces WHERE trace_id = ? ORDER BY timestamp, iri LIMIT ?`
 
-	rows, err := d.db.QueryContext(ctx, stmt, q.TraceID)
+	rows, err := d.db.QueryContext(ctx, stmt, q.TraceID, q.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("query trace: %w", err)
 	}
@@ -26,13 +24,18 @@ func (d *DB) QueryTrace(ctx context.Context, q TraceQuery) ([]Span, error) {
 
 	var spans []Span
 	for rows.Next() {
-		var s Span
-		var ts dorissql.DateTime
-		var obsTS dorissql.NullDateTime
-		if err := rows.Scan(&ts, &s.IRI, &obsTS, &s.HostName,
+		var (
+			s     Span
+			ts    dorissql.DateTime
+			obsTS dorissql.NullDateTime
+		)
+		err := rows.Scan(
+			&ts, &s.IRI, &obsTS, &s.HostName,
 			&s.TraceID, &s.SpanID, &s.ParentSpanID, &s.SpanName,
 			&s.DurationNanos, &s.StatusCode,
-			&s.ResourceAttributes, &s.Attributes); err != nil {
+			&s.ResourceAttributes, &s.Attributes,
+		)
+		if err != nil {
 			return nil, fmt.Errorf("scan span: %w", err)
 		}
 		s.Timestamp = ts.Time

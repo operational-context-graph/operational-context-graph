@@ -50,31 +50,22 @@ func newStore(t *testing.T) *store.DB {
 
 func insertLog(t *testing.T, ts time.Time, iri, hostName, severity, body string) {
 	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body,
-	)
-	_, err := testDB.Exec(q)
+	const q = `INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body)
 	require.NoError(t, err)
 }
 
 func insertMetric(t *testing.T, ts time.Time, iri, hostName, metricName string, value float64) {
 	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES ('%s', '%s', '%s', '%s', %f)`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value,
-	)
-	_, err := testDB.Exec(q)
+	const q = `INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value)
 	require.NoError(t, err)
 }
 
 func insertSpan(t *testing.T, ts time.Time, iri, traceID, spanID, spanName string) {
 	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.traces (timestamp, iri, trace_id, span_id, span_name) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, traceID, spanID, spanName,
-	)
-	_, err := testDB.Exec(q)
+	const q = `INSERT INTO ocg.traces (timestamp, iri, trace_id, span_id, span_name) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, traceID, spanID, spanName)
 	require.NoError(t, err)
 }
 

@@ -139,15 +139,15 @@ func handleQueryMetrics(d telemetryDB) gin.HandlerFunc {
 }
 
 func handleQueryTraces(d telemetryDB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		traceID := c.Param("trace_id")
+	return func(ctx *gin.Context) {
+		traceID := ctx.Param("trace_id")
 		if traceID == "" {
-			renderError(c, fmt.Errorf("%w: trace_id is required", apperr.ErrInvalidInput))
+			renderError(ctx, fmt.Errorf("%w: trace_id is required", apperr.ErrInvalidInput))
 			return
 		}
-		spans, err := d.QueryTrace(c.Request.Context(), store.TraceQuery{TraceID: traceID})
+		spans, err := d.QueryTrace(ctx.Request.Context(), store.TraceQuery{TraceID: traceID})
 		if err != nil {
-			renderError(c, err)
+			renderError(ctx, err)
 			return
 		}
 		items := make([]v1.SpanResponse, len(spans))
@@ -171,7 +171,7 @@ func handleQueryTraces(d telemetryDB) gin.HandlerFunc {
 			}
 			items[i] = item
 		}
-		c.JSON(http.StatusOK, v1.TraceResponse{Items: items})
+		ctx.JSON(http.StatusOK, v1.TraceResponse{Items: items})
 	}
 }
 
