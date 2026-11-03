@@ -39,6 +39,7 @@ feSpec:
     javaOpts: "-Xmx4096m -Xms4096m"
     queryTimeout: 300
     streamLoadTimeout: 600
+    enableFqdnMode: true
 
 beSpec:
   replicas: 1
