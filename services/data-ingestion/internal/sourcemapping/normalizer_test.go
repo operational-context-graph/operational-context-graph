@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package sourcemapping_test
 
 import (
@@ -20,6 +16,7 @@ const inputBase = "../schemaregistry/testdata/"
 // normalize reads a raw input file and calls Stub.Normalize.
 func normalize(t *testing.T, schemaType, file string) []ingest.IngestRecord {
 	t.Helper()
+	//nolint:gosec // G304: path is constructed from a test-controlled constant base directory; no user input involved.
 	payload, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatalf("read %s: %v", file, err)
@@ -52,6 +49,7 @@ func assertSnapshot(t *testing.T, actual []byte, snapshotPath string) {
 		delete(m, "ingested_at")
 	}
 
+	//nolint:gosec // G304: snapshotPath is constructed from test-controlled constants; no user input involved.
 	expected, err := os.ReadFile(snapshotPath)
 	if err != nil {
 		t.Fatalf("read snapshot %s: %v", snapshotPath, err)

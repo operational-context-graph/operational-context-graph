@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 //go:build integration
 
 package store_test
@@ -11,17 +8,20 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/operational-context-graph/inventory-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/store"
 	"github.com/stretchr/testify/require"
 )
 
 const ddl = `
 CREATE TABLE IF NOT EXISTS assets (
     id                      UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    iri                     TEXT,
+    name                    TEXT,
     artifact_type           TEXT          NOT NULL,
     source_system           TEXT          NOT NULL,
     source_id               TEXT          NOT NULL,
     extensions              JSONB,
+    ingested_at             TIMESTAMPTZ,
     created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     created_at_source       TIMESTAMPTZ,
     last_updated_at_source  TIMESTAMPTZ,

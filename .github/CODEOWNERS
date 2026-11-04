@@ -1,8 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-# ----
-
 # Default ownership
 * @operational-context-graph/sap-dev
 
@@ -15,7 +10,9 @@
 # Continuous integration, releases, and repository automation
 /.github/workflows/ @operational-context-graph/dev-ops
 /.github/workflows/codeql.yml @operational-context-graph/sec-ops
+/.github/labeler.yml @operational-context-graph/dev-ops
 /renovate.json @operational-context-graph/sec-ops
+/.golangci.yml @operational-context-graph/sec-ops
 
 # Agent harness and architecture guidance
 /AGENTS.md @operational-context-graph/dev-ops

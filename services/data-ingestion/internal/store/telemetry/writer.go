@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package telemetry implements the Telemetry Store writer. It maps batches of
 // canonical records to the Telemetry Store ingestion API wire format: NDJSON
 // over HTTP with an X-OCG-Label idempotency header derived from the batch ID.
@@ -36,6 +32,7 @@ type Config struct {
 type Writer struct {
 	cfg    Config
 	client *http.Client
+	log    *slog.Logger
 }
 
 var _ store.StoreWriter = (*Writer)(nil)
@@ -55,6 +52,7 @@ func New(cfg Config) *Writer {
 	return &Writer{
 		cfg:    cfg,
 		client: &http.Client{Timeout: timeout},
+		log:    slog.Default(),
 	}
 }
 
@@ -114,7 +112,7 @@ func (w *Writer) post(ctx context.Context, path string, batchID int64, recs []st
 	if err != nil {
 		return fmt.Errorf("%w: telemetry writer: %w", store.ErrOverloaded, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return w.handleResponse(resp, label)
 }
@@ -142,7 +140,7 @@ func (w *Writer) handleResponse(resp *http.Response, label string) error {
 	}
 
 	if result.FilteredRows > 0 {
-		slog.Warn("telemetry writer: store filtered rows — silent data loss",
+		w.log.Warn("telemetry writer: store filtered rows — silent data loss",
 			"label", label,
 			"filtered_rows", result.FilteredRows,
 			"error_url", result.ErrorURL,

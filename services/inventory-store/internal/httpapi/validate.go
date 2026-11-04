@@ -1,9 +1,6 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package httpapi
 
-import "github.com/operational-context-graph/inventory-store/internal/apperr"
+import "github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
 
 // requiredField pairs a field name with its value for required-string validation.
 type requiredField struct {

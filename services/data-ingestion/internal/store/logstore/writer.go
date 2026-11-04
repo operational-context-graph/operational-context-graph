@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package logstore provides a placeholder store writer that acknowledges every batch and logs its batch_id.
 package logstore
 
@@ -29,8 +25,8 @@ func New(log *slog.Logger) Writer {
 func (w Writer) StoreID() store.StoreID { return "stub" }
 
 // Write acknowledges the batch (returns nil) and logs its identity, so the drain deletes the rows.
-func (w Writer) Write(_ context.Context, b store.Batch) error {
-	w.log.Info("logstore: delivered batch", "batch_id", b.ID, "records", len(b.Records))
+func (w Writer) Write(ctx context.Context, b store.Batch) error {
+	w.log.InfoContext(ctx, "logstore: delivered batch", "batch_id", b.ID, "records", len(b.Records))
 	return nil
 }
 

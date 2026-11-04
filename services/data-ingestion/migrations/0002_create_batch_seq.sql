@@ -1,7 +1,3 @@
--- SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
---
--- SPDX-License-Identifier: Apache-2.0
-
 -- +goose Up
 -- Dedicated sequence that assigns batch_id values when the drain pins a batch.
 -- The drain reserves one value per batch and stamps it on every row of that

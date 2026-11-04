@@ -19,9 +19,9 @@ type Result struct {
 }
 
 type Connector struct {
-	publisher    publisher.Publisher
-	netbox       netbox.Client
-	cfg          *config.Config
+	publisher publisher.Publisher
+	netbox    netbox.Client
+	cfg       *config.Config
 }
 
 func New(pub publisher.Publisher, nb netbox.Client, cfg *config.Config) *Connector {

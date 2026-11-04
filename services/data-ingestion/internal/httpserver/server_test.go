@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package httpserver
 
 import (
@@ -56,7 +52,7 @@ func TestRunListenerError(t *testing.T) {
 	// Bind the port first so srv.Run fails immediately.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	_, portStr, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)

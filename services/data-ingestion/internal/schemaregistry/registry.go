@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package schemaregistry provides a self-contained implementation of
 // ingest.SchemaRegistry that loads and compiles the bundled JSON Schema files
 // once on first use.
@@ -31,6 +27,7 @@ type schemaEntry struct {
 	version             string
 }
 
+//nolint:gochecknoglobals // registeredSchemas is a compile-time constant list of bundled schema entries.
 var registeredSchemas = []schemaEntry{
 	{"schemas/canonical_chassis.json", "canonical_chassis", "0.1.0"},
 	{"schemas/canonical_network_device.json", "canonical_network_device", "0.1.0"},

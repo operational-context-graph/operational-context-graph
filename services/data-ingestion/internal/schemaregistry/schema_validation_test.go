@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package schemaregistry_test
 
 import (
@@ -45,6 +41,7 @@ func TestSchemaValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.dataFile, func(t *testing.T) {
 			path := filepath.Join("testdata", tc.dataFile)
+			//nolint:gosec // G304: path is constructed from a test-controlled constant directory; no user input involved.
 			raw, err := os.ReadFile(path)
 			if errors.Is(err, os.ErrNotExist) {
 				t.Skipf("no sample payload at %s — add a file to enable this case", path)

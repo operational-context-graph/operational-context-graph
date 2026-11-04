@@ -25,7 +25,7 @@ func (f *fakeNetboxClient) Paginate(_ context.Context, _ string) ([]json.RawMess
 
 func newConnector(nb *fakeNetboxClient, artifactTypes map[string]string) *Connector {
 	cfg := &config.Config{
-		SchemaVersion:      "0.1.0",
+		SchemaVersion: "0.1.0",
 		ArtifactTypes: artifactTypes,
 	}
 	return New(&publisher.StubPublisher{}, nb, cfg)

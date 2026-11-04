@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package drain
 
 import (
@@ -77,12 +73,12 @@ func (d *Drain) logOrphans(ctx context.Context) {
 		stores, err := d.outbox.DistinctPendingStores(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
-				d.log.Warn("drain: list pending stores failed", "error", err)
+				d.log.WarnContext(ctx, "drain: list pending stores failed", "error", err)
 			}
 		} else {
 			for _, s := range stores {
 				if _, ok := d.reg.Writer(s); !ok {
-					d.log.Warn("drain: pending rows for unregistered target_store; leaving them pending",
+					d.log.WarnContext(ctx, "drain: pending rows for unregistered target_store; leaving them pending",
 						"target_store", string(s))
 				}
 			}

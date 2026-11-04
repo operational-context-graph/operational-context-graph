@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package httpapi
 
 import (
@@ -10,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/operational-context-graph/telemetry-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/apperr"
 )
 
 const (
@@ -100,7 +97,10 @@ func renderError(c *gin.Context, err error) {
 		requestID := c.GetHeader("X-Request-Id")
 		requestID = strings.ReplaceAll(requestID, "\n", "")
 		requestID = strings.ReplaceAll(requestID, "\r", "")
-		slog.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
+		log, _ := c.Get(logKey)
+		if l, ok := log.(*slog.Logger); ok {
+			l.Error("unhandled error", "err", err, "route", route, "request_id", requestID)
+		}
 		p = problem{
 			Type:   errTypeInternal,
 			Title:  "Internal Server Error",

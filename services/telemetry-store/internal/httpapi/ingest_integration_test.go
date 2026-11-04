@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 //go:build integration
 
 package httpapi_test
@@ -18,11 +15,11 @@ import (
 	"time"
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
-	v1 "github.com/operational-context-graph/telemetry-store/api/v1"
-	"github.com/operational-context-graph/telemetry-store/internal/dorissql"
-	"github.com/operational-context-graph/telemetry-store/internal/httpapi"
-	"github.com/operational-context-graph/telemetry-store/internal/store"
-	"github.com/operational-context-graph/telemetry-store/internal/streamload"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/telemetry-store/api/v1"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/store"
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/streamload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

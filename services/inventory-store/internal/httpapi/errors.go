@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package httpapi
 
 import (
@@ -11,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
 )
 
 // problem is an RFC 9457 problem details object.
@@ -83,7 +80,10 @@ func renderError(c *gin.Context, err error) {
 	default:
 		route, _ := c.Get(routeKey)
 		requestID, _ := c.Get(requestIDKey)
-		slog.Error("unhandled error", "err", sanitizeForLog(err.Error()), "route", route, "request_id", requestID)
+		log, _ := c.Get(logKey)
+		if l, ok := log.(*slog.Logger); ok {
+			l.Error("unhandled error", "err", sanitizeForLog(err.Error()), "route", route, "request_id", requestID)
+		}
 		p = problem{
 			Type:   problemTypeInternal,
 			Title:  "Internal Server Error",

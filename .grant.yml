@@ -1,7 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
 # Grant License Compliance Configuration
 # Complete configuration file with all available options
 # See: https://github.com/anchore/grant
@@ -47,12 +43,14 @@ ignore-packages:
   - zizmorcore/zizmor-action # MIT
   - bufbuild/buf-action # Apache-2.0
 
-  # Go packages
+  # Go packages that have known permissive licenses but Syft also emits a LicenseRef-* hash
+  # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
   - github.com/grpc-ecosystem/grpc-gateway/v2 # BSD-3-Clause
   - github.com/opencontainers/go-digest # Apache-2.0, documentation under CC-BY-SA-4.0, but Syft only finds CC-BY-SA-4.0
   - dario.cat/mergo # BSD-3-Clause
   - github.com/jackc/pgx/v5 # MIT
   - github.com/quic-go/quic-go # MIT
+  - github.com/coreos/go-semver # Apache-2.0
 
   # Node.js package manager
   - pnpm # MIT

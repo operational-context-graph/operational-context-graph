@@ -1,13 +1,8 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package drain
 
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"sync"
 	"testing"
@@ -20,7 +15,7 @@ import (
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // testLimits forms batches quickly: a short linger so partial batches flush.

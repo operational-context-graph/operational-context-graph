@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package inventory implements the Inventory Store writer. It maps batches of
 // canonical records to the Inventory Store REST API, enforcing write ordering
 // (assets before relationships).
@@ -114,7 +110,7 @@ func (w *Writer) postBatch(ctx context.Context, path, key string, recs []store.R
 	if err != nil {
 		return fmt.Errorf("%w: inventory writer: %w", store.ErrOverloaded, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return w.handleResponse(resp, path)
 }

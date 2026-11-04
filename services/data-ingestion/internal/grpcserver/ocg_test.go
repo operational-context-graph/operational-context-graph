@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package grpcserver_test
 
 import (
@@ -16,6 +12,7 @@ import (
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -29,7 +26,29 @@ import (
 
 func noop(t *testing.T) *Ingestor {
 	m := NewIngestor(t)
-	m.On("Ingest", mock.Anything, mock.Anything).Maybe().Return(ingest.IngestResult{}, nil)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		return ingest.IngestResult{Accepted: make([]bool, len(batch))}, nil
+	}).Maybe()
+	return m
+}
+
+// noopAccept returns an Ingestor mock that accepts all records (Outcomes all true).
+func noopAccept(t *testing.T) *Ingestor {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
+	})
+	return m
+}
+
+// noopBackfiller returns a Backfiller mock that accepts all AdvanceLive calls.
+func noopBackfiller(t *testing.T) *MockBackfiller {
+	m := NewMockBackfiller(t)
+	m.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 	return m
 }
 
@@ -43,7 +62,7 @@ func defaultRetry() *config.RetryConfig {
 
 func newServer(t *testing.T, ingestor ingest.Ingestor, limits *config.LimitsConfig, retry *config.RetryConfig) *grpcserver.OCGReceiver {
 	t.Helper()
-	h, err := grpcserver.NewOCGHandler(ingestor, limits, retry)
+	h, err := grpcserver.NewOCGHandler(ingestor, limits, retry, noopBackfiller(t))
 	require.NoError(t, err)
 	return grpcserver.NewOCGReceiver(h)
 }
@@ -91,12 +110,12 @@ func TestMaxMessagesBoundary(t *testing.T) {
 	for i := range msgs {
 		msgs[i] = envelope(nil)
 	}
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: msgs})
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 
 	// MaxMessages+1 — should be rejected
 	msgs = append(msgs, envelope(nil))
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: msgs})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.Error(t, err)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 }
@@ -107,7 +126,7 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 	limits := &config.LimitsConfig{MaxMessages: 10, MaxPayloadBytes: 50}
 	srv := newServer(t, noop(t), limits, defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope(nil)},
 	})
 	require.NoError(t, err, "nil payload is valid proto3; handler must not panic")
@@ -116,18 +135,37 @@ func TestNilPayloadIsAccepted(t *testing.T) {
 // --- 5.6: nil LimitsConfig or nil Ingestor at construction → non-nil error ---
 
 func TestNilLimitsAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(t), nil, defaultRetry())
+	_, err := grpcserver.NewOCGHandler(noop(t), nil, defaultRetry(), noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNilIngestorAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(nil, defaultLimits(), defaultRetry())
+	_, err := grpcserver.NewOCGHandler(nil, defaultLimits(), defaultRetry(), noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNilRetryAtConstruction(t *testing.T) {
-	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), nil)
+	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), nil, noopBackfiller(t))
 	require.Error(t, err)
+}
+
+func TestNilBackfillerAtConstruction(t *testing.T) {
+	_, err := grpcserver.NewOCGHandler(noop(t), defaultLimits(), defaultRetry(), nil)
+	require.Error(t, err)
+}
+
+// --- 5.7: no connector identity → UNAUTHENTICATED ---
+
+func TestIngestNoConnectorIdentityReturnsUnauthenticated(t *testing.T) {
+	m := NewIngestor(t)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	m.AssertNotCalled(t, "Ingest")
 }
 
 // --- 6.1: ErrOverloaded → UNAVAILABLE + RetryInfo ---
@@ -137,7 +175,7 @@ func TestOverloadedErrorReturnsUnavailableWithRetryInfo(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, ingest.ErrOverloaded)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -156,7 +194,7 @@ func TestWrappedOverloadedDetected(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.Join(ingest.ErrOverloaded, errors.New("context")))
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -172,7 +210,7 @@ func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
 	for i := 0; i < 5; i++ {
-		_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+		_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 		})
 		require.Error(t, err)
@@ -189,7 +227,7 @@ func TestErrUnavailableReturnsUnavailable(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, unavailErr)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -203,12 +241,12 @@ func TestErrUnavailableReturnsUnavailable(t *testing.T) {
 // --- 6.5: unexpected error → INTERNAL; message does not contain original error text ---
 
 func TestUnexpectedErrorReturnsInternal(t *testing.T) {
-	const secretMsg = "secret-db-connection-string"
+	const secretMsg = "secret-db-connection-string" //nolint:gosec // G101: test-only string used to verify errors are not leaked; not a real credential.
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, errors.New(secretMsg))
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	_, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 	})
 	require.Error(t, err)
@@ -218,41 +256,74 @@ func TestUnexpectedErrorReturnsInternal(t *testing.T) {
 	assert.NotContains(t, st.Message(), secretMsg, "internal error details must not be leaked")
 }
 
-// --- 6.5: partial rejections → OK response with correct count ---
+// --- 6.5: partial rejections → OK response; one advance per partition for accepted records ---
 
 func TestPartialRejectionReturnsOK(t *testing.T) {
 	const rejected = 2
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{Accepted: len(batch) - rejected, Rejected: rejected}, nil
+		// First (len-rejected) records accepted, last rejected ones not.
+		outcomes := make([]bool, len(batch))
+		for i := 0; i < len(batch)-rejected; i++ {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{AcceptedCount: len(batch) - rejected, RejectedCount: rejected, Accepted: outcomes}, nil
 	})
-	srv := newServer(t, m, defaultLimits(), defaultRetry())
+	bf := NewMockBackfiller(t)
+	// Accepted records carry distinct partitions → one AdvanceLive call per partition.
+	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
 
-	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
-		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("a")), envelope([]byte("b")), envelope([]byte("c")), envelope([]byte("d"))},
-	})
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+	partA, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	partB, err := structpb.NewStruct(map[string]interface{}{"shard": "b"})
+	require.NoError(t, err)
+	msgs := []*ingestionv1.MessageEnvelope{
+		// accepted
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("a"), Partition: partA, Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("b"), Partition: partB, Watermark: wmStruct},
+		// rejected
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("c"), Partition: partA, Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("d"), Partition: partB, Watermark: wmStruct},
+	}
+	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(rejected), resp.PartialSuccess.RejectedMessages)
+	// One advance per distinct accepted partition (partA and partB each accepted once).
+	bf.AssertNumberOfCalls(t, "AdvanceLive", 2)
 }
 
 func TestAllRejectedReturnsOK(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
-		return ingest.IngestResult{Rejected: len(batch)}, nil
+		return ingest.IngestResult{RejectedCount: len(batch), Accepted: make([]bool, len(batch))}, nil
 	})
-	srv := newServer(t, m, defaultLimits(), defaultRetry())
+	// All rejected: AdvanceLive must NOT be called.
+	bf := NewMockBackfiller(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
 
-	resp, err := srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
-		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x")), envelope([]byte("y"))},
-	})
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+	msgs := []*ingestionv1.MessageEnvelope{
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("x"), Watermark: wmStruct},
+		{LogicalArtifactId: "art", SchemaVersion: "v1", Payload: []byte("y"), Watermark: wmStruct},
+	}
+	resp, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: msgs})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), resp.PartialSuccess.RejectedMessages)
+	bf.AssertNotCalled(t, "AdvanceLive")
 }
 
 // --- 6.6: context cancelled ---
 
 func TestCancelledContextOnEntry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctxWithConnectorID("conn-1"))
 	cancel()
 
 	srv := newServer(t, noop(t), defaultLimits(), defaultRetry())
@@ -262,7 +333,7 @@ func TestCancelledContextOnEntry(t *testing.T) {
 }
 
 func TestContextCancelledDuringIngest(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctxWithConnectorID("conn-1"))
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(c context.Context, _ []ingest.IngestRecord) (ingest.IngestResult, error) {
 		cancel()
@@ -285,10 +356,10 @@ func TestConcurrentIngest(t *testing.T) {
 	const goroutines = 20
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			_, _ = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{
+			_, _ = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 				Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("concurrent"))},
 			})
 		}()
@@ -303,7 +374,11 @@ func TestPartitionFieldMapped(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -315,7 +390,7 @@ func TestPartitionFieldMapped(t *testing.T) {
 		Payload:           []byte("x"),
 		Partition:         partitionStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Equal(t, `{"key":"val"}`, captured[0].Partition)
@@ -327,7 +402,11 @@ func TestWatermarkFieldMapped(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -339,7 +418,7 @@ func TestWatermarkFieldMapped(t *testing.T) {
 		Payload:           []byte("x"),
 		Watermark:         watermarkStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Empty(t, captured[0].Partition, "partition must be empty when not set")
@@ -351,7 +430,11 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 	m := NewIngestor(t)
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		captured = batch
-		return ingest.IngestResult{Accepted: len(batch)}, nil
+		outcomes := make([]bool, len(batch))
+		for i := range outcomes {
+			outcomes[i] = true
+		}
+		return ingest.IngestResult{AcceptedCount: len(batch), Accepted: outcomes}, nil
 	})
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
@@ -366,9 +449,140 @@ func TestPartitionAndWatermarkMappedIndependently(t *testing.T) {
 		Partition:         partitionStruct,
 		Watermark:         watermarkStruct,
 	}
-	_, err = srv.Ingest(context.Background(), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
 	require.NoError(t, err)
 	require.Len(t, captured, 1)
 	assert.Equal(t, `{"shard":"east"}`, captured[0].Partition)
 	assert.Equal(t, map[string]interface{}{"offset": float64(99)}, captured[0].Watermark)
+}
+
+// ctxWithConnectorID injects a connector-id gRPC metadata header into a
+// context so connectorIDFromContext can extract it in unit tests (no real
+// gRPC transport needed).
+func ctxWithConnectorID(connectorID string) context.Context {
+	md := metadata.Pairs("connector-id", connectorID)
+	return metadata.NewIncomingContext(context.Background(), md)
+}
+
+// --- 2.3: AdvanceLive called/not-called based on watermark and partition ---
+
+func TestAdvanceLiveCalledWhenWatermarkAndPartitionPresent(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, "conn-1", mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+
+	m := noopAccept(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	bf.AssertExpectations(t)
+}
+
+func TestAdvanceLiveNotCalledWhenWatermarkNil(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	// no AdvanceLive expectation — if it's called, AssertExpectations will fail
+
+	m := noop(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         nil,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+}
+
+func TestAdvanceLiveCalledWhenPartitionNilButWatermarkPresent(t *testing.T) {
+	// Nil partition is valid: it produces an empty partition key ("") representing
+	// a generic per-connector watermark. AdvanceLive MUST be called.
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, "conn-1", "", mock.Anything).Once().Return(nil)
+
+	m := noopAccept(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         nil,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.NoError(t, err)
+	bf.AssertExpectations(t)
+}
+
+func TestIngestPipelineDeadlineExceeded(t *testing.T) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.DeadlineExceeded)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.DeadlineExceeded, status.Code(err))
+}
+
+func TestIngestPipelineCanceled(t *testing.T) {
+	m := NewIngestor(t)
+	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, context.Canceled)
+	srv := newServer(t, m, defaultLimits(), defaultRetry())
+
+	_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
+		Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Canceled, status.Code(err))
+}
+
+func TestAdvanceLiveErrorReturnsUnavailable(t *testing.T) {
+	bf := NewMockBackfiller(t)
+	bf.On("AdvanceLive", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("storage down"))
+
+	m := noopAccept(t)
+	h, err := grpcserver.NewOCGHandler(m, defaultLimits(), defaultRetry(), bf)
+	require.NoError(t, err)
+	srv := grpcserver.NewOCGReceiver(h)
+
+	partStruct, err := structpb.NewStruct(map[string]interface{}{"shard": "a"})
+	require.NoError(t, err)
+	wmStruct, err := structpb.NewStruct(map[string]interface{}{"offset": float64(1)})
+	require.NoError(t, err)
+
+	env := &ingestionv1.MessageEnvelope{
+		LogicalArtifactId: "art",
+		SchemaVersion:     "v1",
+		Partition:         partStruct,
+		Watermark:         wmStruct,
+	}
+	_, err = srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{Messages: []*ingestionv1.MessageEnvelope{env}})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }

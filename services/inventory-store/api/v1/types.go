@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package v1
 
 import (
@@ -81,7 +78,7 @@ type UpsertRelationshipRequest struct {
 	LastUpdatedAtSource *string         `json:"last_updated_at_source,omitempty"`
 	// ValidTime is the canonical model alias for last_updated_at_source.
 	// When both are present, last_updated_at_source takes precedence.
-	ValidTime           *string         `json:"valid_time,omitempty"`
+	ValidTime *string `json:"valid_time,omitempty"`
 }
 
 // RelationshipResponse is the body returned for a single relationship.

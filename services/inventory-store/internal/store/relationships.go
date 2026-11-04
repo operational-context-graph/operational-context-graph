@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package store
 
 import (
@@ -128,15 +125,15 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 	found := make(map[uuid.UUID]struct{}, 2)
 	for rows.Next() {
 		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		if scanErr := rows.Scan(&id); scanErr != nil {
 			rows.Close()
-			return Relationship{}, false, fmt.Errorf("scan asset id: %w", err)
+			return Relationship{}, false, fmt.Errorf("scan asset id: %w", scanErr)
 		}
 		found[id] = struct{}{}
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return Relationship{}, false, fmt.Errorf("check assets: %w", err)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return Relationship{}, false, fmt.Errorf("check assets: %w", rowsErr)
 	}
 	for _, id := range ids {
 		if _, ok := found[id]; !ok {
@@ -148,7 +145,7 @@ func (s *Store) UpsertRelationship(ctx context.Context, in RelationshipInput) (R
 	if err != nil {
 		return Relationship{}, false, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback is a no-op after Commit.
 
 	r, created, err := upsertRelationshipTx(ctx, tx, in)
 	if err != nil {
@@ -312,15 +309,15 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	found := make(map[uuid.UUID]struct{}, len(ids))
 	for rows.Next() {
 		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		if scanErr := rows.Scan(&id); scanErr != nil {
 			rows.Close()
-			return nil, fmt.Errorf("scan asset id: %w", err)
+			return nil, fmt.Errorf("scan asset id: %w", scanErr)
 		}
 		found[id] = struct{}{}
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("bulk check assets: %w", err)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("bulk check assets: %w", rowsErr)
 	}
 	for id := range seen {
 		if _, ok := found[id]; !ok {
@@ -332,7 +329,7 @@ func (s *Store) UpsertRelationshipBatch(ctx context.Context, inputs []Relationsh
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback is a no-op after Commit.
 
 	rels := make([]Relationship, 0, len(inputs))
 	for _, in := range inputs {
@@ -377,7 +374,7 @@ func (s *Store) UpsertRelationshipBatchByKey(ctx context.Context, inputs []Relat
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback is a no-op after Commit.
 
 	cache := make(map[string]uuid.UUID)
 	lookup := func(key []string) (uuid.UUID, error) {

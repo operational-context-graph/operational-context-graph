@@ -7,11 +7,11 @@ import (
 
 type Message struct {
 	LogicalArtifactId string
-	SchemaVersion       string
-	Payload             json.RawMessage
-	Partition           map[string]any
-	Watermark           map[string]any
-	ContentType         string
+	SchemaVersion     string
+	Payload           json.RawMessage
+	Partition         map[string]any
+	Watermark         map[string]any
+	ContentType       string
 }
 
 type idRecord struct {
@@ -26,10 +26,10 @@ func Build(raw json.RawMessage, endpoint, logicalArtifactType, schemaVersion str
 
 	return Message{
 		LogicalArtifactId: logicalArtifactType,
-		SchemaVersion:       schemaVersion,
-		Payload:             raw,
-		Partition:           map[string]any{"endpoint": endpoint},
-		Watermark:           map[string]any{"last_id": rec.ID},
-		ContentType:         "application/json",
+		SchemaVersion:     schemaVersion,
+		Payload:           raw,
+		Partition:         map[string]any{"endpoint": endpoint},
+		Watermark:         map[string]any{"last_id": rec.ID},
+		ContentType:       "application/json",
 	}, nil
 }

@@ -1,8 +1,6 @@
 module github.com/operational-context-graph/operational-context-graph/services/connectors/inventory
 
-go 1.26.0
-
-toolchain go1.27.3
+go 1.27.3
 
 require (
 	github.com/go-playground/validator/v10 v10.30.5
@@ -10,7 +8,7 @@ require (
 	github.com/knadh/koanf/v2 v2.4.1
 	github.com/operational-context-graph/operational-context-graph/gen/go v0.0.0
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
 

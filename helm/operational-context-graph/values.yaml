@@ -1,7 +1,3 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
 global: {}
 
 postgresql:
@@ -23,7 +19,7 @@ pgadmin:
   enabled: false
   image:
     repository: dpage/pgadmin4
-    tag: "9@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de"
+    tag: "9@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83"
     pullPolicy: IfNotPresent
   secretName: pgadmin-secret
   service:

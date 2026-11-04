@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 // Package dorissql provides time adapters for go-mysql-org/go-mysql against Apache Doris.
 //
 // Rule 1: call RegisterTimeArgs() at startup before any sql.Open call.

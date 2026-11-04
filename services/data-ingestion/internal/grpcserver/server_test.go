@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package grpcserver_test
 
 import (
@@ -29,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	ingestionv1 "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
@@ -58,7 +55,7 @@ func freeHostPort(t *testing.T) (host, port string) {
 	l := listenFree(t)
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
-	l.Close()
+	_ = l.Close() // Close errors are non-actionable here; we only use the address.
 	return h, p
 }
 
@@ -73,7 +70,7 @@ func defaultGRPCCfg(host, port string) *config.GRPCConfig {
 
 func newTestServer(t *testing.T, grpcCfg *config.GRPCConfig) *grpcserver.Server {
 	t.Helper()
-	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{})
+	srv, err := grpcserver.NewServer(grpcCfg, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t))
 	require.NoError(t, err)
 	return srv
 }
@@ -95,18 +92,6 @@ func startServer(srv *grpcserver.Server) (addr string, cancel context.CancelFunc
 	return addr, c, ch
 }
 
-// startServerOnAddr runs the server using its configured host/port (Run, not
-// RunOnListener). Used only when the TLS config embeds specific file paths that
-// must already be written and the port was freed just before this call.
-func startServerOnAddr(srv *grpcserver.Server) (context.CancelFunc, <-chan error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	errc := make(chan error, 1)
-	go func() {
-		errc <- srv.Run(ctx)
-	}()
-	return cancel, errc
-}
-
 // waitReady polls until the gRPC server accepts a plaintext connection.
 func waitReady(t *testing.T, addr string) {
 	t.Helper()
@@ -114,7 +99,7 @@ func waitReady(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -258,32 +243,32 @@ func tlsGRPCCfg(t *testing.T, fix *tlsFixture) *config.GRPCConfig {
 // --- 8.2: port already in use → error immediately ---
 
 func TestNewServerNilGRPCCfg(t *testing.T) {
-	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{})
+	_, err := grpcserver.NewServer(nil, defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNewServerNilLimits(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop(t), &spySchemaClient{})
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), nil, defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNewServerNilRetry(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop(t), &spySchemaClient{})
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), nil, noop(t), &spySchemaClient{}, noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestNewServerNilIngestor(t *testing.T) {
 	host, port := freeHostPort(t)
-	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil, &spySchemaClient{})
+	_, err := grpcserver.NewServer(defaultGRPCCfg(host, port), defaultLimits(), defaultRetry(), nil, &spySchemaClient{}, noopBackfiller(t))
 	require.Error(t, err)
 }
 
 func TestRunPortAlreadyInUse(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	host, port, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
@@ -299,7 +284,7 @@ func TestRunPortAlreadyInUse(t *testing.T) {
 func TestRunAlreadyCancelledContext(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -316,7 +301,7 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 	// Confirm nothing is listening
 	conn, dialErr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 	if dialErr == nil {
-		conn.Close()
+		_ = conn.Close()
 		t.Fatal("server should not be listening after cancelled context")
 	}
 }
@@ -326,7 +311,7 @@ func TestRunAlreadyCancelledContext(t *testing.T) {
 func TestRunReentrancy(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -374,7 +359,7 @@ func TestMTLSValidClientAccepted(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, fix.clientCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := ingestionv1.NewIngestionServiceClient(conn)
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
@@ -409,7 +394,7 @@ func TestMTLSNoClientCertRejected(t *testing.T) {
 	})
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -437,7 +422,7 @@ func TestMTLSWrongCARejected(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, wrongCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -463,7 +448,7 @@ func TestMTLSExpiredClientCertRejected(t *testing.T) {
 
 	conn, err := dialMTLS(t, addr, expiredCert, fix.clientCA)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
@@ -545,7 +530,7 @@ func TestRunMissingCAFile(t *testing.T) {
 func TestPlaintextModeStarts(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -558,10 +543,11 @@ func TestPlaintextModeStarts(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
+	ctx = metadata.AppendToOutgoingContext(ctx, "connector-id", "test-conn")
 	client := ingestionv1.NewIngestionServiceClient(conn)
 	_, err = client.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{{
@@ -586,11 +572,11 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 		case <-done:
 		case <-ctx.Done():
 		}
-		return ingest.IngestResult{Accepted: 1}, nil
+		return ingest.IngestResult{AcceptedCount: 1, Accepted: []bool{true}}, nil
 	})
 	slowSrv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), slowIngestor, &spySchemaClient{},
+		defaultLimits(), defaultRetry(), slowIngestor, &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -599,12 +585,13 @@ func TestGracefulShutdownDrainsRPC(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	rpcDone := make(chan error, 1)
 	go func() {
 		ctx2, cl := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cl()
+		ctx2 = metadata.AppendToOutgoingContext(ctx2, "connector-id", "test-conn")
 		client := ingestionv1.NewIngestionServiceClient(conn)
 		_, e := client.Ingest(ctx2, &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{{Payload: []byte("x")}},
@@ -641,7 +628,7 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 200 * time.Millisecond},
-		defaultLimits(), defaultRetry(), stuckIngestor, &spySchemaClient{},
+		defaultLimits(), defaultRetry(), stuckIngestor, &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -650,12 +637,13 @@ func TestHardStopAfterShutdownTimeout(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Fire an RPC that will block.
 	go func() {
 		ctx2, cl := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cl()
+		ctx2 = metadata.AppendToOutgoingContext(ctx2, "connector-id", "test-conn")
 		client := ingestionv1.NewIngestionServiceClient(conn)
 		_, _ = client.Ingest(ctx2, &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{{Payload: []byte("x")}},
@@ -685,7 +673,7 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(t), &spySchemaClient{},
+		limits, defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -698,13 +686,12 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 
 	conn, err := dialInsecure(t, addr)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cl := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cl()
+	ctx = metadata.AppendToOutgoingContext(ctx, "connector-id", "test-conn")
 	client := ingestionv1.NewIngestionServiceClient(conn)
-
-	// Small payload — fits within MaxRecvMsgSize including framing overhead.
 	_, err = client.Ingest(ctx, &ingestionv1.IngestRequest{
 		Messages: []*ingestionv1.MessageEnvelope{
 			{Payload: make([]byte, 100)},
@@ -734,7 +721,7 @@ func TestMaxPayloadBytesOverflow(t *testing.T) {
 	}
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		limits, defaultRetry(), noop(t), &spySchemaClient{},
+		limits, defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -748,7 +735,7 @@ func TestMaxPayloadBytesOverflow(t *testing.T) {
 func TestServer_WithOTLPHandler(t *testing.T) {
 	srv, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{},
+		defaultLimits(), defaultRetry(), noop(t), &spySchemaClient{}, noopBackfiller(t),
 	)
 	require.NoError(t, err)
 
@@ -761,7 +748,7 @@ func TestServer_WithOTLPHandler(t *testing.T) {
 
 	conn, cerr := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, cerr)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Verify OTLP logs service is reachable (empty request returns success).
 	logsClient := collectorlogsv1.NewLogsServiceClient(conn)
@@ -772,7 +759,7 @@ func TestServer_WithOTLPHandler(t *testing.T) {
 func TestServer_NilSchemaClient(t *testing.T) {
 	_, err := grpcserver.NewServer(
 		&config.GRPCConfig{Host: "127.0.0.1", Port: 0, ShutdownTimeout: 5 * time.Second},
-		defaultLimits(), defaultRetry(), noop(t), nil,
+		defaultLimits(), defaultRetry(), noop(t), nil, noopBackfiller(t),
 	)
 	require.Error(t, err)
 }

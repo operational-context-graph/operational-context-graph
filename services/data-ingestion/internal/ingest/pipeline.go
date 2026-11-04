@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package ingest
 
 import (
@@ -25,6 +21,7 @@ type Pipeline struct {
 	registry   SchemaRegistry
 	normalizer Normalizer
 	outbox     OutboxWriter
+	log        *slog.Logger
 }
 
 var _ Ingestor = (*Pipeline)(nil)
@@ -32,7 +29,7 @@ var _ Ingestor = (*Pipeline)(nil)
 // NewPipeline builds a Pipeline. All three dependencies MUST be safe for
 // concurrent use; Pipeline adds no synchronization of its own.
 func NewPipeline(registry SchemaRegistry, normalizer Normalizer, outbox OutboxWriter) *Pipeline {
-	return &Pipeline{registry: registry, normalizer: normalizer, outbox: outbox}
+	return &Pipeline{registry: registry, normalizer: normalizer, outbox: outbox, log: slog.Default()}
 }
 
 // Ingest runs the synchronous ingest half for one batch.
@@ -41,7 +38,7 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 		return IngestResult{}, nil
 	}
 
-	var result IngestResult
+	result := IngestResult{Accepted: make([]bool, len(batch))}
 	accepted := make([]OutboxRecord, 0, len(batch))
 
 	for i := range batch {
@@ -54,9 +51,11 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 			return IngestResult{}, err
 		}
 		if !ok {
-			result.Rejected++
+			result.RejectedCount++
 			continue
 		}
+		result.AcceptedCount++
+		result.Accepted[i] = true
 		accepted = append(accepted, row...)
 	}
 
@@ -66,7 +65,6 @@ func (p *Pipeline) Ingest(ctx context.Context, batch []IngestRecord) (IngestResu
 		}
 	}
 
-	result.Accepted = len(accepted)
 	return result, nil
 }
 
@@ -79,7 +77,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecor
 	schema, err := p.registry.Schema(ctx, rec.Schema)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			slog.WarnContext(ctx, "ingest: unregistered schema, record rejected",
+			p.log.WarnContext(ctx, "ingest: unregistered schema, record rejected",
 				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 			return []OutboxRecord{}, false, nil
 		}
@@ -95,7 +93,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecor
 	mapping, err := p.registry.SourceMappings(ctx, rec.Schema)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			slog.WarnContext(ctx, "ingest: no source mapping, record rejected",
+			p.log.WarnContext(ctx, "ingest: no source mapping, record rejected",
 				"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 			return []OutboxRecord{}, false, nil
 		}
@@ -106,7 +104,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecor
 	// The normalization step might return multiple records (e.g. the entity iteself and an edge to a different entity)
 	normalized_records, err := p.normalizer.Normalize(ctx, mapping, rec)
 	if err != nil {
-		slog.WarnContext(ctx, "ingest: normalization failed, record rejected",
+		p.log.WarnContext(ctx, "ingest: normalization failed, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return []OutboxRecord{}, false, nil
 	}
@@ -117,7 +115,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecor
 		store, err := p.registry.TargetStore(ctx, normalized.Schema)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				slog.WarnContext(ctx, "ingest: no target store, record rejected",
+				p.log.WarnContext(ctx, "ingest: no target store, record rejected",
 					"logical_artifact_type", normalized.Schema.LogicalArtifactType, "schema_version", normalized.Schema.Version)
 				continue
 			}
@@ -140,7 +138,7 @@ func (p *Pipeline) process(ctx context.Context, rec IngestRecord) ([]OutboxRecor
 // conforms to its schema. A false result is a record-level rejection.
 func (p *Pipeline) validate(ctx context.Context, schema Schema, rec IngestRecord) bool {
 	if len(rec.Payload) == 0 {
-		slog.WarnContext(ctx, "ingest: empty payload, record rejected",
+		p.log.WarnContext(ctx, "ingest: empty payload, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version)
 		return false
 	}
@@ -148,13 +146,13 @@ func (p *Pipeline) validate(ctx context.Context, schema Schema, rec IngestRecord
 	var doc any
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(rec.Payload))
 	if err != nil {
-		slog.WarnContext(ctx, "ingest: payload is not valid JSON, record rejected",
+		p.log.WarnContext(ctx, "ingest: payload is not valid JSON, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return false
 	}
 
 	if err := schema.Validate(doc); err != nil {
-		slog.WarnContext(ctx, "ingest: payload failed schema validation, record rejected",
+		p.log.WarnContext(ctx, "ingest: payload failed schema validation, record rejected",
 			"logical_artifact_type", rec.Schema.LogicalArtifactType, "schema_version", rec.Schema.Version, "error", err)
 		return false
 	}

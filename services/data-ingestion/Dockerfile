@@ -1,13 +1,9 @@
-# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-#
-# SPDX-License-Identifier: Apache-2.0
-
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Build stage.
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker build -f services/data-ingestion/Dockerfile .
-FROM golang:1.27@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS build
+FROM golang:1.27@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS build
 WORKDIR /src
 
 COPY gen/go/go.mod gen/go/go.sum gen/go/
@@ -20,7 +16,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/data-ingestion \
     github.com/operational-context-graph/operational-context-graph/services/data-ingestion/cmd/data-ingestion
 
 # Goose stage — build the migration CLI independently so it does not affect go.mod.
-FROM golang:1.27@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS goose
+FROM golang:1.27@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS goose
 RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 # Runtime stage.
@@ -28,7 +24,7 @@ FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659ecea
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
 COPY --from=build /out/data-ingestion /usr/local/bin/data-ingestion
 COPY --from=goose /go/bin/goose /usr/local/bin/goose
-COPY services/data-ingestion/internal/outbox/migrations /migrations
+COPY services/data-ingestion/migrations /migrations
 EXPOSE 8080 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/data-ingestion"]

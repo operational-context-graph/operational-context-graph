@@ -1,12 +1,9 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package store
 
 import (
 	"fmt"
 
-	"github.com/operational-context-graph/inventory-store/internal/apperr"
+	"github.com/operational-context-graph/operational-context-graph/services/inventory-store/internal/apperr"
 )
 
 var (

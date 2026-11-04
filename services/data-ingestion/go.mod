@@ -1,14 +1,12 @@
 module github.com/operational-context-graph/operational-context-graph/services/data-ingestion
 
-go 1.26.0
-
-toolchain go1.27.3
+go 1.27.3
 
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/knadh/koanf/parsers/yaml v1.1.1
 	github.com/knadh/koanf/providers/env/v2 v2.0.2
 	github.com/knadh/koanf/providers/file v1.2.1
@@ -18,7 +16,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/proto/otlp v1.11.1
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -67,7 +65,7 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
-	github.com/vektra/mockery/v3 v3.8.1 // indirect
+	github.com/vektra/mockery/v3 v3.9.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect

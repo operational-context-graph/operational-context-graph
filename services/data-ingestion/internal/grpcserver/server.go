@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package grpcserver
 
 import (
@@ -36,12 +32,13 @@ type Server struct {
 	grpcCfg  *config.GRPCConfig
 	limits   *config.LimitsConfig
 	services []serviceRegistrar
+	log      *slog.Logger
 	running  atomic.Bool
 }
 
 // NewServer constructs a Server. All arguments are required and must not be nil.
 // Returns an error when any argument is nil.
-func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient) (*Server, error) {
+func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *config.RetryConfig, ingestor ingest.Ingestor, schemaClient SchemaRegistryClient, backfiller Backfiller) (*Server, error) {
 	if grpcCfg == nil {
 		return nil, errors.New("grpcserver: grpcCfg must not be nil")
 	}
@@ -54,7 +51,13 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if ingestor == nil {
 		return nil, errors.New("grpcserver: ingestor must not be nil")
 	}
-	ocgHandler, err := NewOCGHandler(ingestor, limits, retry)
+	if schemaClient == nil {
+		return nil, errors.New("grpcserver: schemaClient must not be nil")
+	}
+	if backfiller == nil {
+		return nil, errors.New("grpcserver: backfiller must not be nil")
+	}
+	ocgHandler, err := NewOCGHandler(ingestor, limits, retry, backfiller)
 	if err != nil {
 		return nil, err
 	}
@@ -62,10 +65,15 @@ func NewServer(grpcCfg *config.GRPCConfig, limits *config.LimitsConfig, retry *c
 	if err != nil {
 		return nil, err
 	}
+	backfillHandler, err := NewOCGBackfillHandler(backfiller, ingestor, limits, retry)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		grpcCfg:  grpcCfg,
 		limits:   limits,
-		services: []serviceRegistrar{ocgHandler, otlpHandler},
+		services: []serviceRegistrar{ocgHandler, otlpHandler, backfillHandler},
+		log:      slog.Default(),
 	}, nil
 }
 
@@ -89,7 +97,7 @@ func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		return errors.New("grpcserver: Run is already active on this Server")
 	}
 	defer srv.running.Store(false)
-	defer lis.Close()
+	defer func() { _ = lis.Close() }() // Close errors are non-actionable on shutdown.
 
 	// Respect already-cancelled context before serving.
 	select {
@@ -114,7 +122,7 @@ func (srv *Server) RunOnListener(ctx context.Context, lis net.Listener) error {
 		services = append(services, name)
 	}
 	slices.Sort(services)
-	slog.Info("grpc services registered", "services", services)
+	srv.log.InfoContext(ctx, "grpc services registered", "services", services)
 
 	serveErr := make(chan error, 1)
 	go func() {

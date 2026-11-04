@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package store
 
 import (
@@ -26,7 +23,7 @@ func (s *Store) UpsertAsset(ctx context.Context, in AssetInput) (Asset, bool, er
 	if err != nil {
 		return Asset{}, false, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback is a no-op after Commit.
 
 	// Check for existing current row and compare last_updated_at_source.
 	// FOR UPDATE serialises concurrent upserts on the same natural key.
@@ -54,8 +51,8 @@ FOR UPDATE`
 	if rowExists && in.LastUpdatedAtSource != nil && cur.LastUpdatedAtSource != nil {
 		if cur.LastUpdatedAtSource.Equal(*in.LastUpdatedAtSource) {
 			// Re-delivery — commit (no writes) and return the already-scanned row.
-			if err := tx.Commit(ctx); err != nil {
-				return Asset{}, false, fmt.Errorf("commit redelivery tx: %w", err)
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return Asset{}, false, fmt.Errorf("commit redelivery tx: %w", commitErr)
 			}
 			return cur, false, nil
 		}
@@ -198,7 +195,7 @@ func (s *Store) UpsertAssetBatch(ctx context.Context, inputs []AssetInput) ([]Ba
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback is a no-op after Commit.
 
 	const checkCurrent = `
 SELECT id, last_updated_at_source

@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 package drain
 
 import (
@@ -42,7 +38,7 @@ func (f *fakeOutbox) seed(storeID ingest.StoreID, n int, bytesEach int64) []int6
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	ids := make([]int64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		f.seq++
 		id := f.seq
 		f.rows = append(f.rows, fakeRow{store: storeID, id: id, bytes: bytesEach})

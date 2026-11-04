@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package ingest holds the synchronous ingest pipeline and the domain types and
 // interfaces it depends on. It is wire-neutral: receivers map their protocol
 // (OTLP, gRPC) into IngestRecord batches and call Ingestor.
@@ -54,9 +50,13 @@ type IngestRecord struct {
 }
 
 // IngestResult summarises the outcome of a batch ingest call.
+// Accepted has one entry per input record in the same order: true means the
+// record was accepted and written to the outbox, false means it was rejected.
+// AcceptedCount and RejectedCount are convenience totals derived from Accepted.
 type IngestResult struct {
-	Accepted int
-	Rejected int
+	AcceptedCount int
+	RejectedCount int
+	Accepted      []bool
 }
 
 // SourceMapping is the source-mapping artifact fetched from the Schema Registry.
