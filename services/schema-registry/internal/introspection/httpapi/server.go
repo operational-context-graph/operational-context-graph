@@ -32,7 +32,7 @@ type Server struct {
 	artifacts *artifact.Service
 	cursors   *pagination.Codec
 	// discoveryLinks is server-owned. Tests may replace it before requests.
-	discoveryLinks func(string) links
+	discoveryLinks func(string) map[string]string
 	engine         *gin.Engine
 	api            *gin.RouterGroup
 	http           *http.Server

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
@@ -40,42 +41,6 @@ func (s *Server) registerReleaseRoutes() {
 	}
 }
 
-type links map[string]string
-type registryResponse struct {
-	SchemaVersion  string `json:"schemaVersion"`
-	ManifestDigest string `json:"manifestDigest"`
-	Links          links  `json:"links"`
-}
-type releaseResponse struct {
-	SchemaVersion   string          `json:"schemaVersion"`
-	ManifestDigest  string          `json:"manifestDigest"`
-	PreviousRelease any             `json:"previousRelease"`
-	Source          sourceResponse  `json:"source"`
-	Compatibility   string          `json:"compatibility,omitempty"`
-	Changes         json.RawMessage `json:"changes,omitempty"`
-	Links           links           `json:"links"`
-}
-type sourceResponse struct {
-	Repository string `json:"repository"`
-	Commit     string `json:"commit"`
-}
-type releaseCollection struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Items         []releaseResponse `json:"items"`
-	NextCursor    *string           `json:"nextCursor"`
-	Links         links             `json:"links"`
-}
-type changesResponse struct {
-	FromSchemaVersion     string `json:"fromSchemaVersion"`
-	ToSchemaVersion       string `json:"toSchemaVersion"`
-	Compatibility         string `json:"compatibility"`
-	Artifacts             any    `json:"artifacts"`
-	SchemaContextBindings any    `json:"schemaContextBindings"`
-	URICatalog            any    `json:"uriCatalog"`
-	StorageCatalog        any    `json:"storageCatalog"`
-	Links                 links  `json:"links"`
-}
-
 func (s *Server) registry(c *gin.Context) {
 	value, err := s.releases.Discovery(c.Request.Context())
 	if err != nil {
@@ -83,12 +48,15 @@ func (s *Server) registry(c *gin.Context) {
 		return
 	}
 	version := value.Current.SchemaVersion
-	body := registryResponse{version, value.Current.ManifestDigest, s.discoveryLinks(version)}
-	s.writeJSON(c, http.StatusOK, version, "", body)
+	s.writeJSON(c, http.StatusOK, version, "", v1.Registry{
+		SchemaVersion:  version,
+		ManifestDigest: value.Current.ManifestDigest,
+		Links:          s.discoveryLinks(version),
+	})
 }
 
-func defaultDiscoveryLinks(version string) links {
-	return links{"self": "/v1/registry", "release": "/v1/releases/" + version, "manifest": "/v1/releases/" + version + "/manifest", "artifacts": "/v1/releases/" + version + "/artifacts", "schemas": "/v1/releases/" + version + "/schemas", "sourceMappings": "/v1/releases/" + version + "/source-mappings", "releases": "/v1/releases"}
+func defaultDiscoveryLinks(version string) map[string]string {
+	return map[string]string{"self": "/v1/registry", "release": "/v1/releases/" + version, "manifest": "/v1/releases/" + version + "/manifest", "artifacts": "/v1/releases/" + version + "/artifacts", "schemas": "/v1/releases/" + version + "/schemas", "sourceMappings": "/v1/releases/" + version + "/source-mappings", "releases": "/v1/releases"}
 }
 
 func (s *Server) listReleases(c *gin.Context) {
@@ -136,11 +104,16 @@ func (s *Server) listReleases(c *gin.Context) {
 		next = &token
 		page.Items = page.Items[:limit]
 	}
-	items := make([]releaseResponse, 0, len(page.Items))
+	items := make([]v1.Release, 0, len(page.Items))
 	for _, item := range page.Items {
 		items = append(items, releaseItem(item, false))
 	}
-	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, "", releaseCollection{page.Current.SchemaVersion, items, next, links{"self": "/v1/releases"}})
+	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, "", v1.Page[v1.Release]{
+		SchemaVersion: page.Current.SchemaVersion,
+		Items:         items,
+		NextCursor:    next,
+		Links:         map[string]string{"self": "/v1/releases"},
+	})
 }
 
 func (s *Server) releaseDescriptor(c *gin.Context) {
@@ -192,26 +165,82 @@ func (s *Server) changes(c *gin.Context) {
 		s.writeReleaseError(c, err)
 		return
 	}
-	body := changesResponse{values.Get("from"), values.Get("to"), changeSet.Compatibility, changeSet.Artifacts, changeSet.SchemaContextBindings, changeSet.URICatalog, changeSet.StorageCatalog, links{"from": "/v1/releases/" + values.Get("from"), "to": "/v1/releases/" + values.Get("to")}}
+	body := buildChanges(values.Get("from"), values.Get("to"), changeSet)
 	s.writeJSON(c, http.StatusOK, current.SchemaVersion, "", body)
 }
 
-func releaseItem(item model.Release, includeChanges bool) releaseResponse {
-	var previous any
+func releaseItem(item model.Release, includeChanges bool) v1.Release {
+	var previous *v1.ReleaseReference
 	if item.PreviousSchemaVersion != nil && item.PreviousManifestDigest != nil {
-		previous = map[string]string{"schemaVersion": *item.PreviousSchemaVersion, "manifestDigest": *item.PreviousManifestDigest}
+		previous = &v1.ReleaseReference{SchemaVersion: *item.PreviousSchemaVersion, ManifestDigest: *item.PreviousManifestDigest}
 	}
-	result := releaseResponse{SchemaVersion: item.SchemaVersion, ManifestDigest: item.ManifestDigest, PreviousRelease: previous, Source: sourceResponse{item.SourceRepository, item.SourceCommit}, Links: links{"self": "/v1/releases/" + item.SchemaVersion, "manifest": "/v1/releases/" + item.SchemaVersion + "/manifest", "artifacts": "/v1/releases/" + item.SchemaVersion + "/artifacts", "schemas": "/v1/releases/" + item.SchemaVersion + "/schemas", "sourceMappings": "/v1/releases/" + item.SchemaVersion + "/source-mappings"}}
+	result := v1.Release{SchemaVersion: item.SchemaVersion, ManifestDigest: item.ManifestDigest, PreviousRelease: previous, Source: v1.ReleaseSource{Repository: item.SourceRepository, Commit: item.SourceCommit}, Links: map[string]string{"self": "/v1/releases/" + item.SchemaVersion, "manifest": "/v1/releases/" + item.SchemaVersion + "/manifest", "artifacts": "/v1/releases/" + item.SchemaVersion + "/artifacts", "schemas": "/v1/releases/" + item.SchemaVersion + "/schemas", "sourceMappings": "/v1/releases/" + item.SchemaVersion + "/source-mappings"}}
 	if len(item.Changes) > 0 {
-		var changes struct {
-			Compatibility string `json:"compatibility"`
-		}
+		var changes v1.Changes
 		if json.Unmarshal(item.Changes, &changes) == nil {
 			result.Compatibility = changes.Compatibility
 			if includeChanges {
 				result.Changes = append(json.RawMessage(nil), item.Changes...)
 			}
 		}
+	}
+	return result
+}
+
+func buildChanges(from, to string, value manifest.Changes) v1.Changes {
+	result := v1.Changes{
+		FromSchemaVersion:     from,
+		ToSchemaVersion:       to,
+		Compatibility:         value.Compatibility,
+		Artifacts:             make([]v1.ArtifactChange, 0, len(value.Artifacts)),
+		SchemaContextBindings: make([]v1.SchemaContextBindingChange, 0, len(value.SchemaContextBindings)),
+		URICatalog:            make([]v1.URIChange, 0, len(value.URICatalog)),
+		StorageCatalog:        make([]v1.StorageChange, 0, len(value.StorageCatalog)),
+		Links:                 map[string]string{"from": "/v1/releases/" + from, "to": "/v1/releases/" + to},
+	}
+
+	for _, change := range value.Artifacts {
+		artifactChange := v1.ArtifactChange{
+			Operation:      change.Operation,
+			Kind:           string(change.Kind),
+			ArtifactType:   change.ArtifactType,
+			BeforeRevision: change.BeforeRevision,
+			AfterRevision:  change.AfterRevision,
+			Impact:         change.Impact,
+		}
+		result.Artifacts = append(result.Artifacts, artifactChange)
+	}
+
+	for _, change := range value.SchemaContextBindings {
+		schemaContextBindingChange := v1.SchemaContextBindingChange{
+			Operation:       change.Operation,
+			SchemaRevision:  change.SchemaRevision,
+			ContextRevision: change.ContextRevision,
+			Impact:          change.Impact,
+		}
+		result.SchemaContextBindings = append(result.SchemaContextBindings, schemaContextBindingChange)
+	}
+	for _, change := range value.URICatalog {
+		uriChange := v1.URIChange{
+			Operation:      change.Operation,
+			URI:            change.URI,
+			BeforeRevision: change.BeforeRevision,
+			BeforeResource: change.BeforeResource,
+			AfterRevision:  change.AfterRevision,
+			AfterResource:  change.AfterResource,
+			Impact:         change.Impact,
+		}
+		result.URICatalog = append(result.URICatalog, uriChange)
+	}
+	for _, change := range value.StorageCatalog {
+		storageChange := v1.StorageChange{
+			Operation:    change.Operation,
+			Kind:         string(change.Kind),
+			ArtifactType: change.ArtifactType,
+			Store:        change.Store,
+			Impact:       change.Impact,
+		}
+		result.StorageCatalog = append(result.StorageCatalog, storageChange)
 	}
 	return result
 }

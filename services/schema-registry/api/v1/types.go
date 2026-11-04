@@ -15,6 +15,86 @@ type Page[T any] struct {
 	Links         map[string]string `json:"links"`
 }
 
+// Registry identifies the active release and its discovery links.
+type Registry struct {
+	SchemaVersion  string            `json:"schemaVersion"`
+	ManifestDigest string            `json:"manifestDigest"`
+	Links          map[string]string `json:"links"`
+}
+
+// Release describes an activated schema release.
+type Release struct {
+	SchemaVersion   string            `json:"schemaVersion"`
+	ManifestDigest  string            `json:"manifestDigest"`
+	PreviousRelease *ReleaseReference `json:"previousRelease"`
+	Source          ReleaseSource     `json:"source"`
+	Compatibility   string            `json:"compatibility,omitempty"`
+	Changes         json.RawMessage   `json:"changes,omitempty"`
+	Links           map[string]string `json:"links"`
+}
+
+// ReleaseReference identifies a release and its immutable manifest.
+type ReleaseReference struct {
+	SchemaVersion  string `json:"schemaVersion"`
+	ManifestDigest string `json:"manifestDigest"`
+}
+
+// ReleaseSource identifies the source control revision for a release.
+type ReleaseSource struct {
+	Repository string `json:"repository"`
+	Commit     string `json:"commit"`
+}
+
+// Changes describes the changes between two schema releases.
+type Changes struct {
+	FromSchemaVersion     string                       `json:"fromSchemaVersion"`
+	ToSchemaVersion       string                       `json:"toSchemaVersion"`
+	Compatibility         string                       `json:"compatibility"`
+	Artifacts             []ArtifactChange             `json:"artifacts"`
+	SchemaContextBindings []SchemaContextBindingChange `json:"schemaContextBindings"`
+	URICatalog            []URIChange                  `json:"uriCatalog"`
+	StorageCatalog        []StorageChange              `json:"storageCatalog"`
+	Links                 map[string]string            `json:"links"`
+}
+
+// ArtifactChange describes one artifact change between releases.
+type ArtifactChange struct {
+	Operation      string `json:"operation"`
+	Kind           string `json:"kind"`
+	ArtifactType   string `json:"artifactType"`
+	BeforeRevision string `json:"beforeRevision,omitempty"`
+	AfterRevision  string `json:"afterRevision,omitempty"`
+	Impact         string `json:"impact"`
+}
+
+// SchemaContextBindingChange describes one schema context binding change.
+type SchemaContextBindingChange struct {
+	Operation       string `json:"operation"`
+	SchemaRevision  string `json:"schemaRevision"`
+	ContextRevision string `json:"contextRevision"`
+	Impact          string `json:"impact"`
+}
+
+// URIChange describes one Uniform Resource Identifier catalog change.
+type URIChange struct {
+	Operation      string `json:"operation"`
+	URI            string `json:"uri"`
+	BeforeRevision string `json:"beforeRevision,omitempty"`
+	BeforeResource string `json:"beforeResource,omitempty"`
+	AfterRevision  string `json:"afterRevision,omitempty"`
+	AfterResource  string `json:"afterResource,omitempty"`
+	Impact         string `json:"impact"`
+}
+
+// StorageChange describes one storage catalog change.
+type StorageChange struct {
+	Operation    string `json:"operation"`
+	Kind         string `json:"kind"`
+	ArtifactType string `json:"artifactType"`
+	Store        string `json:"store"`
+	Impact       string `json:"impact"`
+}
+
 // ArtifactDescriptor describes an artifact without embedding its stored bytes.
 type ArtifactDescriptor struct {
 	SchemaVersion             string            `json:"schemaVersion,omitempty"`

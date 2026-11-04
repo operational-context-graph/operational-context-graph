@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
@@ -151,11 +152,11 @@ func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/registry", nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Equal(t, "1.0.0", response.Header().Get("Schema-Version"))
-	var body registryResponse
+	var body v1.Registry
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 	assert.Equal(t, "1.0.0", body.SchemaVersion)
 	assert.Equal(t, release.ManifestDigest, body.ManifestDigest)
-	assert.Equal(t, links{
+	assert.Equal(t, map[string]string{
 		"self":           "/v1/registry",
 		"release":        "/v1/releases/1.0.0",
 		"manifest":       "/v1/releases/1.0.0/manifest",
@@ -171,7 +172,7 @@ func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	server.Handler().ServeHTTP(response, request)
 	assert.Equal(t, http.StatusNotModified, response.Code)
 	assert.Empty(t, response.Body.String())
-	server.discoveryLinks = func(version string) links {
+	server.discoveryLinks = func(version string) map[string]string {
 		value := defaultDiscoveryLinks(version)
 		value["releases"] = "/v1/release-history"
 		return value
@@ -219,7 +220,7 @@ func TestRegistryDiscoveryUsesOneControlledCurrentReleaseSnapshot(t *testing.T) 
 	firstResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(firstResponse, httptest.NewRequest(http.MethodGet, "/v1/registry", nil))
 	require.Equal(t, http.StatusOK, firstResponse.Code)
-	var firstBody registryResponse
+	var firstBody v1.Registry
 	require.NoError(t, json.Unmarshal(firstResponse.Body.Bytes(), &firstBody))
 	assert.Equal(t, first.SchemaVersion, firstResponse.Header().Get("Schema-Version"))
 	assert.Equal(t, first.SchemaVersion, firstBody.SchemaVersion)
@@ -230,7 +231,7 @@ func TestRegistryDiscoveryUsesOneControlledCurrentReleaseSnapshot(t *testing.T) 
 	secondResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(secondResponse, httptest.NewRequest(http.MethodGet, "/v1/registry", nil))
 	require.Equal(t, http.StatusOK, secondResponse.Code)
-	var secondBody registryResponse
+	var secondBody v1.Registry
 	require.NoError(t, json.Unmarshal(secondResponse.Body.Bytes(), &secondBody))
 	assert.Equal(t, second.SchemaVersion, secondResponse.Header().Get("Schema-Version"))
 	assert.Equal(t, second.SchemaVersion, secondBody.SchemaVersion)
@@ -264,17 +265,14 @@ func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/releases?limit=1", nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), `"schemaVersion":"2.0.0"`)
-	assert.Contains(t, response.Body.String(), `"previousRelease":{"manifestDigest":"sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaVersion":"1.0.0"}`)
+	assert.Contains(t, response.Body.String(), `"previousRelease":{"schemaVersion":"1.0.0","manifestDigest":"sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`)
 	assert.Contains(t, response.Body.String(), `"source":{"repository":"https://git.example.test/repo","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 	assert.Contains(t, response.Body.String(), `"compatibility":"additive"`)
 	assert.Contains(t, response.Body.String(), `"nextCursor":"`)
-	var firstPage struct {
-		Items      []releaseResponse `json:"items"`
-		NextCursor string            `json:"nextCursor"`
-	}
+	var firstPage v1.Page[v1.Release]
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &firstPage))
 	require.Len(t, firstPage.Items, 1)
-	assert.Equal(t, links{
+	assert.Equal(t, map[string]string{
 		"self":           "/v1/releases/2.0.0",
 		"manifest":       "/v1/releases/2.0.0/manifest",
 		"artifacts":      "/v1/releases/2.0.0/artifacts",
@@ -285,7 +283,8 @@ func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 	// second page bound to the original snapshot ceiling of two.
 	snapshot.releases = append([]model.Release{{SchemaVersion: "3.0.0", ActivationSequence: 3}}, snapshot.releases...)
 	response = httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/releases?limit=1&cursor="+firstPage.NextCursor, nil))
+	require.NotNil(t, firstPage.NextCursor)
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/releases?limit=1&cursor="+*firstPage.NextCursor, nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), `"schemaVersion":"1.0.0"`)
 	assert.NotContains(t, response.Body.String(), `"schemaVersion":"3.0.0"`)
@@ -327,10 +326,7 @@ func TestReleaseCollectionSupportsEmptyAndMaximumPages(t *testing.T) {
 	response = httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/releases?limit=1000", nil))
 	require.Equal(t, http.StatusOK, response.Code)
-	var page struct {
-		Items      []json.RawMessage `json:"items"`
-		NextCursor *string           `json:"nextCursor"`
-	}
+	var page v1.Page[v1.Release]
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
 	assert.Len(t, page.Items, 1000)
 	assert.NotNil(t, page.NextCursor)
@@ -483,15 +479,15 @@ func TestReleaseDescriptorSupportsHeadAndOptionalFields(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Equal(t, "1.0.1", response.Header().Get("Schema-Version"))
 	assert.Equal(t, "1.0.1", response.Header().Get("Selected-Schema-Version"))
-	var descriptor releaseResponse
+	var descriptor v1.Release
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &descriptor))
 	assert.Equal(t, current.SchemaVersion, descriptor.SchemaVersion)
 	assert.Equal(t, current.ManifestDigest, descriptor.ManifestDigest)
-	assert.Equal(t, map[string]any{"schemaVersion": previousVersion, "manifestDigest": previousDigest}, descriptor.PreviousRelease)
-	assert.Equal(t, sourceResponse{Repository: current.SourceRepository, Commit: current.SourceCommit}, descriptor.Source)
+	assert.Equal(t, &v1.ReleaseReference{SchemaVersion: previousVersion, ManifestDigest: previousDigest}, descriptor.PreviousRelease)
+	assert.Equal(t, v1.ReleaseSource{Repository: current.SourceRepository, Commit: current.SourceCommit}, descriptor.Source)
 	assert.Empty(t, descriptor.Compatibility)
 	assert.Empty(t, descriptor.Changes)
-	assert.Equal(t, links{
+	assert.Equal(t, map[string]string{
 		"self":           "/v1/releases/1.0.1",
 		"manifest":       "/v1/releases/1.0.1/manifest",
 		"artifacts":      "/v1/releases/1.0.1/artifacts",
@@ -581,6 +577,10 @@ func TestChangesValidatesParametersAndSupportsConditionalResponse(t *testing.T) 
 	assert.Contains(t, response.Body.String(), `"storageCatalog":`)
 	assert.Contains(t, response.Body.String(), `"from":"/v1/releases/1.0.0"`)
 	assert.Contains(t, response.Body.String(), `"to":"/v1/releases/1.0.1"`)
+	var body v1.Changes
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+	assert.Equal(t, "1.0.0", body.FromSchemaVersion)
+	assert.Equal(t, "1.0.1", body.ToSchemaVersion)
 	tag := response.Header().Get("ETag")
 	response = httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/changes?from=1.0.0&to=1.0.1", nil)

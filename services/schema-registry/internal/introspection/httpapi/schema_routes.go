@@ -114,7 +114,7 @@ func (s *Server) schemas(c *gin.Context) {
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
-		Links:         links{"self": "/v1/releases/" + version + "/schemas"},
+		Links:         map[string]string{"self": "/v1/releases/" + version + "/schemas"},
 	})
 }
 
@@ -183,7 +183,7 @@ func (s *Server) schemaContexts(c *gin.Context) {
 			ArtifactRevision: value.Value.Schema.Artifact.Revision,
 		},
 		Items: items,
-		Links: links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/contexts", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
+		Links: map[string]string{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/contexts", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
 	})
 }
 
@@ -229,7 +229,7 @@ func (s *Server) schemaPackage(c *gin.Context) {
 			Document: schema,
 		},
 		Contexts: contexts,
-		Links:    links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/package", "content": "/v1/releases/" + version + "/schemas/" + artifactType + "/content"},
+		Links:    map[string]string{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/package", "content": "/v1/releases/" + version + "/schemas/" + artifactType + "/content"},
 	})
 }
 
@@ -377,14 +377,14 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		}
 	}
 	if packages {
-		s.writeBoundedJSON(c, current, version, v1.Page[v1.SourceMappingPackage]{SchemaVersion: version, Items: packageItems, NextCursor: next, Links: links{"self": self}})
+		s.writeBoundedJSON(c, current, version, v1.Page[v1.SourceMappingPackage]{SchemaVersion: version, Items: packageItems, NextCursor: next, Links: map[string]string{"self": self}})
 		return
 	}
 	s.writeBoundedJSON(c, current, version, v1.Page[v1.SourceMapping]{
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
-		Links:         links{"self": self},
+		Links:         map[string]string{"self": self},
 	})
 }
 
@@ -461,7 +461,7 @@ func (s *Server) schemaStores(c *gin.Context) {
 			SchemaClass:      *metadata.Value.Artifact.SchemaClass,
 		},
 		Stores: stores,
-		Links:  links{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/stores", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
+		Links:  map[string]string{"self": "/v1/releases/" + version + "/schemas/" + artifactType + "/stores", "schema": "/v1/releases/" + version + "/schemas/" + artifactType},
 	})
 }
 
