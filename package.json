@@ -11,6 +11,6 @@
   "author": "Operational Context Graph contributors",
   "packageManager": "pnpm@12.16.1",
   "devDependencies": {
-    "@fission-ai/openspec": "1.15.0"
+    "@fission-ai/openspec": "1.16.0"
   }
 }
