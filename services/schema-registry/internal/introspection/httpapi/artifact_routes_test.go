@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -218,7 +219,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 	t.Run("release scoped schema descriptor", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/schema/device")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body descriptorResponse
+		var body v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		assert.Equal(t, "entity-type", *body.SchemaClass)
 		assert.Nil(t, body.TargetSchemaVersion)
@@ -235,7 +236,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 	t.Run("context descriptor omits schema relationships", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/context/device")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body descriptorResponse
+		var body v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		assert.Nil(t, body.SchemaClass)
 		assert.Nil(t, body.TargetSchemaVersion)
@@ -246,7 +247,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 	t.Run("source mapping descriptor uses source keyed package link", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/source-mapping/device-mapping")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body descriptorResponse
+		var body v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		require.NotNil(t, body.TargetSchemaVersion)
 		assert.Equal(t, "1.0.0", *body.TargetSchemaVersion)
@@ -257,7 +258,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 	t.Run("immutable reused descriptor omits release links", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema/metadata")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body descriptorResponse
+		var body v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		assert.Equal(t, "/v1/artifacts/rev-schema/metadata", body.Links["self"])
 		assert.Equal(t, "/v1/artifacts/rev-context/metadata", body.Dependencies[0].Href)
@@ -273,7 +274,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		second := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.1.0/artifacts/schema/device")
 		require.Equal(t, http.StatusOK, first.Code)
 		require.Equal(t, http.StatusOK, second.Code)
-		var before, after descriptorResponse
+		var before, after v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(first.Body.Bytes(), &before))
 		require.NoError(t, json.Unmarshal(second.Body.Bytes(), &after))
 		assert.Equal(t, before.ArtifactRevision, after.ArtifactRevision)
@@ -314,10 +315,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 	t.Run("returns ordered complete descriptors and supports HEAD", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body struct {
-			Items      []descriptorResponse `json:"items"`
-			NextCursor *string              `json:"nextCursor"`
-		}
+		var body v1.Page[v1.ArtifactDescriptor]
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		require.Len(t, body.Items, 3)
 		assert.Equal(t, []string{"context", "schema", "source-mapping"}, []string{body.Items[0].Kind, body.Items[1].Kind, body.Items[2].Kind})
@@ -331,10 +329,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 	t.Run("combines exact filters with logical AND", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?kind=schema&artifactType=device&schemaClass=entity-type&dependsOnRevision=rev-context")
 		require.Equal(t, http.StatusOK, response.Code)
-		var body struct {
-			Items      []descriptorResponse `json:"items"`
-			NextCursor *string              `json:"nextCursor"`
-		}
+		var body v1.Page[v1.ArtifactDescriptor]
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		require.Len(t, body.Items, 1)
 		assert.Equal(t, "rev-schema", body.Items[0].ArtifactRevision)
@@ -816,16 +811,7 @@ func TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot(t *testing.T) {
 
 	response := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1")
 	require.Equal(t, http.StatusOK, response.Code)
-	var first struct {
-		SchemaVersion string `json:"schemaVersion"`
-		Items         []struct {
-			SchemaVersion             string `json:"schemaVersion"`
-			ArtifactRevision          string `json:"artifactRevision"`
-			CreatedUnderSchemaVersion string `json:"createdUnderSchemaVersion"`
-			Links                     links  `json:"links"`
-		} `json:"items"`
-		NextCursor *string `json:"nextCursor"`
-	}
+	var first v1.Page[v1.ArtifactHistoryItem]
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &first))
 	require.Len(t, first.Items, 1)
 	require.NotNil(t, first.NextCursor)
@@ -839,12 +825,7 @@ func TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot(t *testing.T) {
 	snapshot.releases["1.0.3"] = model.Release{SchemaVersion: "1.0.3", ActivationSequence: 4}
 	second := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1&cursor="+url.QueryEscape(*first.NextCursor))
 	require.Equal(t, http.StatusOK, second.Code)
-	var secondBody struct {
-		Items []struct {
-			SchemaVersion    string `json:"schemaVersion"`
-			ArtifactRevision string `json:"artifactRevision"`
-		} `json:"items"`
-	}
+	var secondBody v1.Page[v1.ArtifactHistoryItem]
 	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &secondBody))
 	require.Len(t, secondBody.Items, 1)
 	assert.Equal(t, "1.0.1", secondBody.Items[0].SchemaVersion)
@@ -880,10 +861,7 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		snapshot.current.SnapshotSequence = 1001
 		maximum := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1000")
 		require.Equal(t, http.StatusOK, maximum.Code)
-		var body struct {
-			Items      []json.RawMessage `json:"items"`
-			NextCursor *string           `json:"nextCursor"`
-		}
+		var body v1.Page[v1.ArtifactHistoryItem]
 		require.NoError(t, json.Unmarshal(maximum.Body.Bytes(), &body))
 		assert.Len(t, body.Items, 1000)
 		assert.NotNil(t, body.NextCursor)
@@ -917,9 +895,7 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		server := artifactTestServer(snapshot)
 		first := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1")
 		require.Equal(t, http.StatusOK, first.Code)
-		var page struct {
-			NextCursor *string `json:"nextCursor"`
-		}
+		var page v1.Page[v1.ArtifactHistoryItem]
 		require.NoError(t, json.Unmarshal(first.Body.Bytes(), &page))
 		require.NotNil(t, page.NextCursor)
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1&cursor="+url.QueryEscape(*page.NextCursor))

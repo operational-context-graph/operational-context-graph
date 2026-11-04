@@ -108,7 +108,7 @@ func TestBuildDescriptor(t *testing.T) {
 				value.Artifact.Kind = kind
 				before := testJSON(t, value)
 				got := BuildDescriptor(value, version)
-				expected := v1.Descriptor{
+				expected := v1.ArtifactDescriptor{
 					SchemaVersion: version, Kind: kind, ArtifactType: "device-mapping", ArtifactRevision: "rev-mapping",
 					CreatedUnderSchemaVersion: "1.0.0", TargetSchemaVersion: value.Artifact.TargetSchemaVersion,
 					CanonicalURI: "https://example.test/device-mapping",
@@ -168,7 +168,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	value := testPackage([]byte{0, 0xff, 0x80, 0x7f})
 	before := testJSON(t, value)
 	mapping := BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
-	require.Equal(t, BuildDescriptor(value.Mapping, testVersion), mapping.Descriptor)
+	require.Equal(t, BuildDescriptor(value.Mapping, testVersion), mapping.ArtifactDescriptor)
 	require.Equal(t, v1.SourceMappingSourceSchema{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, mapping.SourceSchema)
 	require.Equal(t, v1.SourceMappingEngine{ExecutionProfile: "opaque-profile", Language: "opaque-language", LanguageVersion: "2026"}, mapping.Engine)
 	condition := v1.Resource{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"}

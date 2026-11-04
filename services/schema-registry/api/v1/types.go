@@ -15,8 +15,8 @@ type Page[T any] struct {
 	Links         map[string]string `json:"links"`
 }
 
-// Descriptor describes an artifact without embedding its stored bytes.
-type Descriptor struct {
+// ArtifactDescriptor describes an artifact without embedding its stored bytes.
+type ArtifactDescriptor struct {
 	SchemaVersion             string            `json:"schemaVersion,omitempty"`
 	Kind                      string            `json:"kind"`
 	ArtifactType              string            `json:"artifactType"`
@@ -30,6 +30,23 @@ type Descriptor struct {
 	Dependencies              []Dependency      `json:"dependencies"`
 	Extensions                json.RawMessage   `json:"extensions,omitempty"`
 	Links                     map[string]string `json:"links"`
+}
+
+// ArtifactHistoryItem identifies an artifact revision selected by a release.
+type ArtifactHistoryItem struct {
+	SchemaVersion             string            `json:"schemaVersion"`
+	ArtifactRevision          string            `json:"artifactRevision"`
+	CreatedUnderSchemaVersion string            `json:"createdUnderSchemaVersion"`
+	Links                     map[string]string `json:"links"`
+}
+
+// ArtifactBytes contains an artifact representation and its response metadata.
+type ArtifactBytes struct {
+	MediaType    string
+	Digest       string
+	Bytes        []byte
+	Revision     string
+	ResourceName string
 }
 
 // Payload identifies exact payload bytes and their immutable retrieval link.
@@ -60,7 +77,7 @@ type Dependency struct {
 
 // SourceMapping is the complete, enriched source-mapping JSON model.
 type SourceMapping struct {
-	Descriptor
+	ArtifactDescriptor
 	SourceSchema SourceMappingSourceSchema `json:"sourceSchema"`
 	Engine       SourceMappingEngine       `json:"engine"`
 	Programs     SourceMappingPrograms     `json:"programs"`
@@ -95,8 +112,8 @@ type SourceMappingEngine struct {
 
 // SchemaDocument embeds a JSON schema's complete metadata and parsed JSON value.
 type SchemaDocument struct {
-	Metadata Descriptor      `json:"metadata"`
-	Document json.RawMessage `json:"document"`
+	Metadata ArtifactDescriptor `json:"metadata"`
+	Document json.RawMessage    `json:"document"`
 }
 
 // SourceMappingPackage is shared by direct package bodies and collection items.
@@ -127,10 +144,10 @@ type SchemaReference struct {
 
 // SchemaContexts contains the JSON-LD context descriptors for a schema.
 type SchemaContexts struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Schema        SchemaReference   `json:"schema"`
-	Items         []Descriptor      `json:"items"`
-	Links         map[string]string `json:"links"`
+	SchemaVersion string               `json:"schemaVersion"`
+	Schema        SchemaReference      `json:"schema"`
+	Items         []ArtifactDescriptor `json:"items"`
+	Links         map[string]string    `json:"links"`
 }
 
 // SchemaPackage contains a schema document and its context documents.

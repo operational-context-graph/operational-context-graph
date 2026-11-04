@@ -111,16 +111,16 @@ func (s *Server) releaseArtifacts(c *gin.Context) {
 		next = &token
 		page.Items = page.Items[:limit]
 	}
-	items := make([]descriptorResponse, 0, len(page.Items))
+	items := make([]v1.ArtifactDescriptor, 0, len(page.Items))
 	for _, item := range page.Items {
 		items = append(items, descriptor(item, version))
 	}
-	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, struct {
-		SchemaVersion string               `json:"schemaVersion"`
-		Items         []descriptorResponse `json:"items"`
-		NextCursor    *string              `json:"nextCursor"`
-		Links         links                `json:"links"`
-	}{version, items, next, links{"self": "/v1/releases/" + version + "/artifacts"}})
+	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, v1.Page[v1.ArtifactDescriptor]{
+		SchemaVersion: version,
+		Items:         items,
+		NextCursor:    next,
+		Links:         map[string]string{"self": "/v1/releases/" + version + "/artifacts"},
+	})
 }
 
 func (s *Server) artifactHistory(c *gin.Context) {
@@ -184,37 +184,30 @@ func (s *Server) artifactHistory(c *gin.Context) {
 		next = &token
 		items = items[:limit]
 	}
-	type historyItem struct {
-		SchemaVersion             string `json:"schemaVersion"`
-		ArtifactRevision          string `json:"artifactRevision"`
-		CreatedUnderSchemaVersion string `json:"createdUnderSchemaVersion"`
-		Links                     links  `json:"links"`
-	}
-	responseItems := make([]historyItem, 0, len(items))
+	responseItems := make([]v1.ArtifactHistoryItem, 0, len(items))
 	for _, item := range items {
 		descriptorResult, descriptorErr := s.artifacts.GetArtifact(c.Request.Context(), item.ArtifactRevision)
 		if descriptorErr != nil {
 			s.writeArtifactError(c, descriptorErr, LogicalArtifactNotFound)
 			return
 		}
-		responseItems = append(responseItems, historyItem{item.SchemaVersion, item.ArtifactRevision, descriptorResult.Value.CreatedUnderSchemaVersion, links{"artifact": "/v1/releases/" + item.SchemaVersion + "/artifacts/" + kind + "/" + artifactType, "metadata": "/v1/artifacts/" + item.ArtifactRevision + "/metadata"}})
+		responseItems = append(responseItems, v1.ArtifactHistoryItem{
+			SchemaVersion:             item.SchemaVersion,
+			ArtifactRevision:          item.ArtifactRevision,
+			CreatedUnderSchemaVersion: descriptorResult.Value.CreatedUnderSchemaVersion,
+			Links: map[string]string{
+				"artifact": "/v1/releases/" + item.SchemaVersion + "/artifacts/" + kind + "/" + artifactType,
+				"metadata": "/v1/artifacts/" + item.ArtifactRevision + "/metadata",
+			},
+		})
 	}
-	s.writeJSON(c, http.StatusOK, result.Current.SchemaVersion, "", struct {
-		SchemaVersion string        `json:"schemaVersion"`
-		Items         []historyItem `json:"items"`
-		NextCursor    *string       `json:"nextCursor"`
-		Links         links         `json:"links"`
-	}{result.Current.SchemaVersion, responseItems, next, links{"self": "/v1/artifact-kinds/" + kind + "/" + artifactType + "/history"}})
+	s.writeJSON(c, http.StatusOK, result.Current.SchemaVersion, "", v1.Page[v1.ArtifactHistoryItem]{
+		SchemaVersion: result.Current.SchemaVersion,
+		Items:         responseItems,
+		NextCursor:    next,
+		Links:         map[string]string{"self": "/v1/artifact-kinds/" + kind + "/" + artifactType + "/history"},
+	})
 }
-
-type byteResponse struct {
-	MediaType    string
-	Digest       string
-	Bytes        []byte
-	Revision     string
-	ResourceName string
-}
-type descriptorResponse = v1.Descriptor
 
 func validKind(value string) bool {
 	return value == "schema" || value == "context" || value == "source-mapping"
@@ -259,7 +252,7 @@ func (s *Server) artifactPayload(c *gin.Context) {
 		s.writeArtifactError(c, err, ArtifactNotFound)
 		return
 	}
-	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", byteResponse{value.Value.Payload.MediaType, value.Value.Payload.Digest, value.Value.Payload.Bytes, value.Value.Revision, ""})
+	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.Payload.MediaType, Digest: value.Value.Payload.Digest, Bytes: value.Value.Payload.Bytes, Revision: value.Value.Revision})
 }
 
 func (s *Server) artifactResource(c *gin.Context) {
@@ -281,7 +274,7 @@ func (s *Server) artifactResource(c *gin.Context) {
 		s.writeArtifactError(c, err, ResourceNotFound)
 		return
 	}
-	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", byteResponse{value.Value.MediaType, value.Value.Digest, value.Value.Bytes, revision, value.Value.Name})
+	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.MediaType, Digest: value.Value.Digest, Bytes: value.Value.Bytes, Revision: revision, ResourceName: value.Value.Name})
 }
 
 func (s *Server) canonicalResource(c *gin.Context) {
@@ -302,7 +295,7 @@ func (s *Server) canonicalResource(c *gin.Context) {
 		s.writeArtifactError(c, err, ArtifactNotFound)
 		return
 	}
-	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", byteResponse{value.Value.Payload.MediaType, value.Value.Payload.Digest, value.Value.Payload.Bytes, revision, ""})
+	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.Payload.MediaType, Digest: value.Value.Payload.Digest, Bytes: value.Value.Payload.Bytes, Revision: revision})
 }
 
 func (s *Server) resolveURI(c *gin.Context) {
@@ -332,7 +325,7 @@ func (s *Server) resolveURI(c *gin.Context) {
 	}
 }
 
-func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, value byteResponse) {
+func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, value v1.ArtifactBytes) {
 	if _, ok := NegotiateMediaType(c.GetHeader("Accept"), value.MediaType); !ok {
 		s.writeReleaseErrorResponse(c, NotAcceptable, 0, ErrorMetadata{SchemaVersion: schema, SelectedSchemaVersion: selected})
 		return
@@ -347,7 +340,7 @@ func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, val
 	}
 }
 
-func descriptor(value artifact.Descriptor, selected string) descriptorResponse {
+func descriptor(value artifact.Descriptor, selected string) v1.ArtifactDescriptor {
 	return BuildDescriptor(value, selected)
 }
 

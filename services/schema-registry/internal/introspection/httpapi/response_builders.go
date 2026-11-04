@@ -14,9 +14,9 @@ import (
 )
 
 // BuildDescriptor projects validated artifact metadata into the shared wire contract.
-func BuildDescriptor(value model.Descriptor, selected string) v1.Descriptor {
+func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescriptor {
 	item := value.Artifact
-	result := v1.Descriptor{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: map[string]string{"content": "/v1/artifacts/" + item.Revision, "history": "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
+	result := v1.ArtifactDescriptor{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: map[string]string{"content": "/v1/artifacts/" + item.Revision, "history": "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
 	if selected == "" {
 		result.Links["self"] = "/v1/artifacts/" + item.Revision + "/metadata"
 	} else {
@@ -57,7 +57,7 @@ func BuildMapping(value model.SourceMapping, version string) v1.SourceMapping {
 	for _, resource := range value.Descriptor.Resources {
 		resources[resource.Name] = resourceMetadata(value.Descriptor.Artifact.Revision, resource)
 	}
-	result := v1.SourceMapping{Descriptor: BuildDescriptor(value.Descriptor, version), SourceSchema: schemaReference(version, value.Detail.SourceArtifactType, value.Detail.SourceRevision), Engine: v1.SourceMappingEngine{Language: value.Detail.EngineLanguage, LanguageVersion: value.Detail.EngineLanguageVersion, ExecutionProfile: value.Detail.ExecutionProfile}, Programs: v1.SourceMappingPrograms{Transformations: make([]v1.SourceMappingTransformation, 0, len(value.Detail.Transformations))}}
+	result := v1.SourceMapping{ArtifactDescriptor: BuildDescriptor(value.Descriptor, version), SourceSchema: schemaReference(version, value.Detail.SourceArtifactType, value.Detail.SourceRevision), Engine: v1.SourceMappingEngine{Language: value.Detail.EngineLanguage, LanguageVersion: value.Detail.EngineLanguageVersion, ExecutionProfile: value.Detail.ExecutionProfile}, Programs: v1.SourceMappingPrograms{Transformations: make([]v1.SourceMappingTransformation, 0, len(value.Detail.Transformations))}}
 	if value.Detail.Condition != nil {
 		resource := resources[value.Detail.Condition.ProgramName]
 		result.Programs.Condition = &resource

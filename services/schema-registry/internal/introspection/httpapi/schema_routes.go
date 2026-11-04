@@ -106,11 +106,11 @@ func (s *Server) schemas(c *gin.Context) {
 		next = &token
 		page.Items = page.Items[:limit]
 	}
-	items := make([]v1.Descriptor, 0, len(page.Items))
+	items := make([]v1.ArtifactDescriptor, 0, len(page.Items))
 	for _, item := range page.Items {
 		items = append(items, descriptor(item, version))
 	}
-	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, v1.Page[v1.Descriptor]{
+	s.writeJSON(c, http.StatusOK, page.Current.SchemaVersion, version, v1.Page[v1.ArtifactDescriptor]{
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
@@ -152,7 +152,12 @@ func (s *Server) schemaContent(c *gin.Context) {
 		s.writeArtifactError(c, postgres.ErrInconsistentState, SchemaNotInRelease)
 		return
 	}
-	s.writeArtifactBytes(c, value.Current.SchemaVersion, version, byteResponse{value.Value.Payload.MediaType, value.Value.Payload.Digest, value.Value.Payload.Bytes, value.Value.Revision, ""})
+	s.writeArtifactBytes(c, value.Current.SchemaVersion, version, v1.ArtifactBytes{
+		MediaType: value.Value.Payload.MediaType,
+		Digest:    value.Value.Payload.Digest,
+		Bytes:     value.Value.Payload.Bytes,
+		Revision:  value.Value.Revision,
+	})
 }
 
 func (s *Server) schemaContexts(c *gin.Context) {
@@ -167,7 +172,7 @@ func (s *Server) schemaContexts(c *gin.Context) {
 		s.writeArtifactError(c, err, SchemaNotInRelease)
 		return
 	}
-	items := make([]v1.Descriptor, 0, len(value.Value.Contexts))
+	items := make([]v1.ArtifactDescriptor, 0, len(value.Value.Contexts))
 	for _, item := range value.Value.Contexts {
 		items = append(items, descriptor(item, version))
 	}
