@@ -29,6 +29,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
 type artifactTestReader struct{ snapshot *artifactTestSnapshot }
@@ -221,7 +222,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		require.Equal(t, http.StatusOK, response.Code)
 		var body v1.ArtifactDescriptor
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
-		assert.Equal(t, "entity-type", *body.SchemaClass)
+		assert.Equal(t, artifactmodel.SchemaClassEntity, *body.SchemaClass)
 		assert.Nil(t, body.TargetSchemaVersion)
 		assert.Equal(t, "/v1/artifacts/rev-schema", body.Payload.Href)
 		assert.Len(t, body.Resources, 1)
@@ -318,7 +319,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 		var body v1.Page[v1.ArtifactDescriptor]
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		require.Len(t, body.Items, 3)
-		assert.Equal(t, []string{"context", "schema", "source-mapping"}, []string{body.Items[0].Kind, body.Items[1].Kind, body.Items[2].Kind})
+		assert.Equal(t, []artifactmodel.Kind{artifactmodel.KindContext, artifactmodel.KindSchema, artifactmodel.KindSourceMapping}, []artifactmodel.Kind{body.Items[0].Kind, body.Items[1].Kind, body.Items[2].Kind})
 		assert.Nil(t, body.NextCursor)
 		head := serveArtifactRequest(server, http.MethodHead, "/v1/releases/1.0.0/artifacts")
 		assert.Equal(t, http.StatusOK, head.Code)

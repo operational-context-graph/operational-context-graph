@@ -24,9 +24,9 @@ import (
 
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
-	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 var (
@@ -933,7 +933,7 @@ func mappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact
 		if err := bind(transformation.ProgramReference); err != nil {
 			return nil, err
 		}
-		rows = append(rows, projectionRow("transformation", item.Revision, strconv.Itoa(ordinal), transformation.TargetSchema.ID, target, transformation.Cardinality, transformation.ProgramRef, transformation.ProgramDigest, "", ""))
+		rows = append(rows, projectionRow("transformation", item.Revision, strconv.Itoa(ordinal), transformation.TargetSchema.ID, target, string(transformation.Cardinality), transformation.ProgramRef, transformation.ProgramDigest, "", ""))
 	}
 	for _, resource := range item.Resources {
 		if resource.Role == "program" && !referenced[resource.Name] {
@@ -971,7 +971,7 @@ func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.
 	case model.ProjectionResource:
 		for _, item := range value.Artifacts {
 			for _, resource := range item.Resources {
-				rows = append(rows, projectionRow(item.Revision, resource.Name, resource.Role, resource.MediaType, resource.Digest, strconv.FormatInt(resource.Size, 10)))
+				rows = append(rows, projectionRow(item.Revision, resource.Name, string(resource.Role), resource.MediaType, resource.Digest, strconv.FormatInt(resource.Size, 10)))
 			}
 		}
 	case model.ProjectionDependency:
@@ -993,7 +993,7 @@ func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.
 	case model.ProjectionStorage:
 		for _, entry := range value.StorageCatalog {
 			for _, store := range entry.Stores {
-				rows = append(rows, projectionRow(entry.ArtifactType, store))
+				rows = append(rows, projectionRow(entry.ArtifactType, string(store)))
 			}
 		}
 	case model.ProjectionSourceMapping:

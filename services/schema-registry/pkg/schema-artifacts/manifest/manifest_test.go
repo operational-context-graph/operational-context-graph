@@ -18,11 +18,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
+// testOrigin supplies the Registry origin shared by manifest conformance fixtures and their byte closures.
 const testOrigin = "https://registry.example.test"
 
+// TestParseAndValidateConformanceFixture checks parsed selection agreement, complete closure validation, and authoritative byte preservation.
 func TestParseAndValidateConformanceFixture(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	parsed, err := Parse(data)
@@ -43,6 +45,7 @@ func TestParseAndValidateConformanceFixture(t *testing.T) {
 	assert.Equal(t, data, validated.Raw)
 }
 
+// TestParseRejectsConformanceFailures checks unknown-field and trailing-newline rejection using repository fixtures.
 func TestParseRejectsConformanceFailures(t *testing.T) {
 	tests := []struct {
 		name string
@@ -59,6 +62,7 @@ func TestParseRejectsConformanceFailures(t *testing.T) {
 	}
 }
 
+// TestConformanceCorpusNamesStableValidationOutcomes checks each fixture's declared classification, diagnostic, and canonical-byte preservation.
 func TestConformanceCorpusNamesStableValidationOutcomes(t *testing.T) {
 	data := fixtureRaw(t, "corpus.json")
 	var corpus struct {
@@ -111,6 +115,7 @@ func TestConformanceCorpusNamesStableValidationOutcomes(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsClosureAndImmutableReuseFailures checks missing catalog entries, changed revision metadata, creation releases, and unresolved targets.
 func TestValidateRejectsClosureAndImmutableReuseFailures(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	current, err := Parse(data)
@@ -138,6 +143,7 @@ func TestValidateRejectsClosureAndImmutableReuseFailures(t *testing.T) {
 	assert.Error(t, wrongCatalogTarget.Validate(contextFor(current)))
 }
 
+// TestValidateRejectsUnorderedUTF16Arrays distinguishes canonical code-unit ordering from Unicode code-point ordering.
 func TestValidateRejectsUnorderedUTF16Arrays(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	current, err := Parse(data)
@@ -153,6 +159,7 @@ func TestValidateRejectsUnorderedUTF16Arrays(t *testing.T) {
 	assert.Less(t, compareUTF16("\U00010000", "\ue000"), 0)
 }
 
+// TestDiffClassifiesChangesAndRequiredVersionIncrement checks that URI reassignment remains breaking despite an annotation-only schema update.
 func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 	beforeData := fixture(t, "valid-initial.json")
 	before, err := Parse(beforeData)
@@ -180,27 +187,29 @@ func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 	diff, err := Diff(before, after, context)
 	require.NoError(t, err)
 	assert.Empty(t, diff.SchemaContextBindings)
-	assert.Equal(t, "breaking", diff.Compatibility)
+	assert.Equal(t, CompatibilityBreaking, diff.Compatibility)
 	assert.True(t, validIncrement("1.0.0", after.SchemaVersion, diff.Compatibility))
 
 	after.Artifacts[0].Dependencies = []artifact.Dependency{{Kind: artifact.KindContext, Type: "x", Revision: "y"}}
 	diff, err = Diff(before, after, context)
 	require.NoError(t, err)
-	assert.Equal(t, "breaking", diff.Compatibility)
+	assert.Equal(t, CompatibilityBreaking, diff.Compatibility)
 }
 
+// TestDiffClassifiesVersionOneNetChangeCases checks compatibility precedence across artifact, binding, URI, and storage differences.
 func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
 	base := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-1"}}}
 	tests := []struct {
-		name, want string
-		after      Manifest
+		name  string
+		want  Compatibility
+		after Manifest
 	}{
 		{"add", "additive", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}, URICatalog: base.URICatalog}},
 		{"remove", "breaking", Manifest{Artifacts: nil, URICatalog: nil}},
 		{"schema-update-unknown", "breaking", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"uri-update", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"binding-remove", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog}},
-		{"storage-add", "additive", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []string{"telemetry-store"}}}}},
+		{"storage-add", "additive", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []Store{StoreTelemetryStore}}}}},
 	}
 	base.SchemaContextBindings = []Binding{{SchemaRevision: "rev-1", ContextRevisions: []string{"ctx-1"}}}
 	for _, test := range tests {
@@ -215,6 +224,7 @@ func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
 	}
 }
 
+// TestDiffClassifiesContextAndSourceMappingUpdatesDirectly keeps non-schema revision updates conservatively breaking.
 func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 	t.Parallel()
 	baseArtifacts := []Artifact{
@@ -240,16 +250,17 @@ func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 			diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
 			require.NoError(t, err)
 			require.Len(t, diff.Artifacts, 1)
-			assert.Equal(t, "update", diff.Artifacts[0].Operation)
+			assert.Equal(t, OperationUpdate, diff.Artifacts[0].Operation)
 			assert.Equal(t, test.artifactType, diff.Artifacts[0].ArtifactType)
 			assert.Equal(t, test.beforeRevision, diff.Artifacts[0].BeforeRevision)
 			assert.Equal(t, test.afterRevision, diff.Artifacts[0].AfterRevision)
-			assert.Equal(t, "breaking", diff.Artifacts[0].Impact)
-			assert.Equal(t, "breaking", diff.Compatibility)
+			assert.Equal(t, ImpactBreaking, diff.Artifacts[0].Impact)
+			assert.Equal(t, CompatibilityBreaking, diff.Compatibility)
 		})
 	}
 }
 
+// TestDiffUsesNetEndpointsAndDeterministicOrdering excludes intermediate changes and orders logical artifact differences consistently.
 func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
 	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}}
 	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"}, {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
@@ -258,13 +269,14 @@ func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
 	// The result compares endpoints only. It does not include an intermediate
 	// addition that was removed before the target manifest.
 	require.Len(t, diff.Artifacts, 2)
-	assert.Equal(t, "add", diff.Artifacts[0].Operation)
+	assert.Equal(t, OperationAdd, diff.Artifacts[0].Operation)
 	assert.Equal(t, "asset", diff.Artifacts[0].ArtifactType)
-	assert.Equal(t, "remove", diff.Artifacts[1].Operation)
+	assert.Equal(t, OperationRemove, diff.Artifacts[1].Operation)
 	assert.Equal(t, "location", diff.Artifacts[1].ArtifactType)
-	assert.Equal(t, "breaking", diff.Compatibility)
+	assert.Equal(t, CompatibilityBreaking, diff.Compatibility)
 }
 
+// TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational checks the narrow operational exception when schema relations remain unchanged.
 func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
 	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
 	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}}
@@ -275,10 +287,11 @@ func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
 	diff, err := Diff(before, after, context)
 	require.NoError(t, err)
 	require.Len(t, diff.Artifacts, 1)
-	assert.Equal(t, "operational", diff.Artifacts[0].Impact)
-	assert.Equal(t, "operational", diff.Compatibility)
+	assert.Equal(t, ImpactOperational, diff.Artifacts[0].Impact)
+	assert.Equal(t, CompatibilityOperational, diff.Compatibility)
 }
 
+// TestDiffOrdersEveryChangeCollection verifies canonical artifact, binding, URI, and storage change sort keys.
 func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 	before := Manifest{
 		Artifacts: []Artifact{
@@ -290,7 +303,7 @@ func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 			{SchemaRevision: "schema-a", ContextRevisions: []string{"context-b"}},
 		},
 		URICatalog:     []URIEntry{{URI: "https://example.test/z", ArtifactRevision: "rev-z-1"}, {URI: "https://example.test/a", ArtifactRevision: "rev-a-1"}},
-		StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []string{"telemetry-store", "data-center-inventory"}}},
+		StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []Store{StoreTelemetryStore, StoreDataCenterInventory}}},
 	}
 	after := Manifest{
 		Artifacts: []Artifact{
@@ -299,7 +312,7 @@ func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 		},
 		SchemaContextBindings: []Binding{{SchemaRevision: "schema-c", ContextRevisions: []string{"context-c"}}},
 		URICatalog:            []URIEntry{{URI: "https://example.test/a", ArtifactRevision: "rev-a-2"}, {URI: "https://example.test/m", ArtifactRevision: "rev-m-1"}},
-		StorageCatalog:        []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "alpha", Stores: []string{"data-center-inventory"}}, {Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []string{"telemetry-store"}}},
+		StorageCatalog:        []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "alpha", Stores: []Store{StoreDataCenterInventory}}, {Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []Store{StoreTelemetryStore}}},
 	}
 
 	diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
@@ -315,6 +328,7 @@ func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "zebra"}, []string{diff.StorageCatalog[0].ArtifactType, diff.StorageCatalog[1].ArtifactType})
 }
 
+// TestValidateIsRaceSafe validates shared immutable fixture bytes and closure data from concurrent callers.
 func TestValidateIsRaceSafe(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	parsed, err := Parse(data)
@@ -338,6 +352,7 @@ func TestValidateIsRaceSafe(t *testing.T) {
 	}
 }
 
+// TestParseRejectsCollectionLimit rejects a canonical manifest whose artifact array exceeds the entry limit.
 func TestParseRejectsCollectionLimit(t *testing.T) {
 	items := strings.TrimRight(strings.Repeat(`null,`, MaxCollectionEntries+1), ",")
 	data := []byte(`{"$schema":"https://example.test/manifest-1.0.0","artifacts":[` + items + `],"formatVersion":"1.0.0","previousRelease":null,"schemaContextBindings":[],"schemaVersion":"1.0.0","source":{"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"https://git.example.test/repo"},"storageCatalog":[],"uriCatalog":[]}`)
@@ -347,6 +362,7 @@ func TestParseRejectsCollectionLimit(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestParseRequiresExactJCSBytes checks exact canonical encoding rather than accepting equivalent JSON with extra whitespace.
 func TestParseRequiresExactJCSBytes(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	canonical, err := jcs.Transform(data)
@@ -356,6 +372,7 @@ func TestParseRequiresExactJCSBytes(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// FuzzParse exercises manifest parsing with canonical fixtures, invalid encoding, duplicate members, and arbitrary mutations.
 func FuzzParse(f *testing.F) {
 	f.Add(fixtureForFuzz("valid-initial.json"))
 	f.Add([]byte(`{"$schema":"\xff"}`))
@@ -365,6 +382,7 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// BenchmarkParseCanonicalManifest measures allocations and throughput for the initial-release conformance manifest.
 func BenchmarkParseCanonicalManifest(b *testing.B) {
 	data := fixtureForFuzz("valid-initial.json")
 	b.ReportAllocs()
@@ -377,12 +395,14 @@ func BenchmarkParseCanonicalManifest(b *testing.B) {
 	}
 }
 
+// fixture loads a repository fixture and removes one optional final newline before canonical parsing.
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data := fixtureRaw(t, name)
 	return []byte(strings.TrimSuffix(string(data), "\n"))
 }
 
+// fixtureRaw loads exact repository fixture bytes, preserving intentionally invalid encodings and trailing newlines.
 func fixtureRaw(t *testing.T, name string) []byte {
 	t.Helper()
 	// #nosec G304 -- name selects a repository-controlled fixture.
@@ -391,6 +411,7 @@ func fixtureRaw(t *testing.T, name string) []byte {
 	return data
 }
 
+// fixtureForFuzz loads newline-trimmed seed bytes and panics if a required repository fixture is unavailable.
 func fixtureForFuzz(name string) []byte {
 	// #nosec G304 -- name selects a repository-controlled fixture.
 	data, err := os.ReadFile(filepath.Join("testdata", name))
@@ -400,6 +421,7 @@ func fixtureForFuzz(name string) []byte {
 	return []byte(strings.TrimSuffix(string(data), "\n"))
 }
 
+// contextFor supplies the fixed device-schema byte closure used by initial-release fixtures.
 func contextFor(manifest Manifest) Context {
 	payload := []byte("true")
 	item := artifact.Artifact{
@@ -409,11 +431,13 @@ func contextFor(manifest Manifest) Context {
 	return Context{RegistryOrigin: testOrigin, Artifacts: map[Key]artifact.Artifact{{Kind: item.Kind, Type: item.Type, Revision: item.Revision}: item}}
 }
 
+// descriptor builds byte-integrity metadata for a test payload at its declared bundle location.
 func descriptor(data []byte, mediaType, path string) artifact.Descriptor {
 	digest := sha256.Sum256(data)
 	return artifact.Descriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(digest[:]), Size: int64(len(data)), BundlePath: path}
 }
 
+// digest computes the Registry's exact SHA-256 spelling for fixture bytes.
 func digest(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha-256:" + hex.EncodeToString(sum[:])

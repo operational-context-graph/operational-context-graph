@@ -14,6 +14,8 @@ import (
 
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,7 +111,7 @@ func TestBuildDescriptor(t *testing.T) {
 				before := testJSON(t, value)
 				got := BuildDescriptor(value, version)
 				expected := v1.ArtifactDescriptor{
-					SchemaVersion: version, Kind: kind, ArtifactType: "device-mapping", ArtifactRevision: "rev-mapping",
+					SchemaVersion: version, Kind: artifactmodel.Kind(kind), ArtifactType: "device-mapping", ArtifactRevision: "rev-mapping",
 					CreatedUnderSchemaVersion: "1.0.0", TargetSchemaVersion: value.Artifact.TargetSchemaVersion,
 					CanonicalURI: "https://example.test/device-mapping",
 					Payload:      v1.Payload{MediaType: "application/json", Digest: value.Artifact.Payload.Digest, Size: 19, Href: "/v1/artifacts/rev-mapping"},
@@ -161,7 +163,7 @@ func TestBuildDescriptorEmptyCollectionsAndOptionalFields(t *testing.T) {
 	require.Contains(t, string(testJSON(t, got)), `"resources":[],"dependencies":[]`)
 
 	schema := testPackage(nil).Schemas[0]
-	require.Equal(t, "source-record", *BuildDescriptor(schema, testVersion).SchemaClass)
+	require.Equal(t, artifactmodel.SchemaClassSource, *BuildDescriptor(schema, testVersion).SchemaClass)
 }
 
 func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
@@ -183,7 +185,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testVersion, body.SchemaVersion)
 	require.Equal(t, mapping, body.Mapping)
-	require.Equal(t, []string{"data-center-inventory", "insights-repository"}, body.TargetStores)
+	require.Equal(t, []manifest.Store{manifest.StoreDataCenterInventory, manifest.StoreInsightsRepository}, body.TargetStores)
 	require.Equal(t, v1.Links{
 		"self":    "/v1/releases/1.2.3/source-mappings/device-mapping/package",
 		"mapping": "/v1/releases/1.2.3/source-mappings/device-mapping", "descriptor": "/v1/artifacts/rev-mapping",
@@ -191,7 +193,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.Len(t, body.Programs, 2, "the already-deduplicated shared transformation appears once")
 	for index, expected := range value.Programs {
 		got := body.Programs[index]
-		require.Equal(t, v1.SourceMappingProgramContent{Name: expected.Name, Role: expected.Role, MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
+		require.Equal(t, v1.SourceMappingProgramContent{Name: expected.Name, Role: artifactmodel.ResourceRole(expected.Role), MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
 		decoded, err := base64.StdEncoding.DecodeString(got.Content)
 		require.NoError(t, err)
 		require.Equal(t, expected.Bytes, decoded)

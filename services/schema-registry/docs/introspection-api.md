@@ -163,7 +163,7 @@ make test
 Focused race-enabled verification uses the same Make target:
 
 ```sh
-make test TEST_PACKAGES='./internal/schema-artifacts/manifest ./internal/storage/postgres'
+make test TEST_PACKAGES='./pkg/schema-artifacts/manifest ./internal/storage/postgres'
 make test TEST_PACKAGES=./internal/introspection/httpapi
 make test TEST_PACKAGES=./internal/introspection/httpapi TEST_ARGS='-run=NoSuchTest -bench=BenchmarkMultiTargetPackagePage -benchtime=1x'
 ```

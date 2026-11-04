@@ -12,12 +12,13 @@ import (
 	"github.com/piprate/json-gold/ld"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
+// errExternalReference marks a document lookup outside the caller-supplied catalog.
 var errExternalReference = errors.New("external document references are disabled")
 
-// JSONSchemaLoader refuses every URL. Phase two adds a release-catalog loader.
+// JSONSchemaLoader rejects every document lookup without accessing external resources.
 type JSONSchemaLoader struct{}
 
 // Load implements jsonschema.URLLoader without accessing external resources.
@@ -38,7 +39,7 @@ func (loader CatalogJSONSchemaLoader) Load(url string) (any, error) {
 	return document, nil
 }
 
-// JSONLDLoader refuses every URL. Phase two adds a release-catalog loader.
+// JSONLDLoader rejects every context lookup without accessing external resources.
 type JSONLDLoader struct{}
 
 // LoadDocument implements ld.DocumentLoader without accessing external resources.
@@ -72,10 +73,10 @@ func NewCatalogJSONSchemaCompiler(catalog map[string]any) *jsonschema.Compiler {
 	return compiler
 }
 
-// ValidateInputSize rejects bytes that future parser phases must not accept.
+// ValidateInputSize rejects input larger than the version 1 artifact byte limit.
 func ValidateInputSize(value []byte) error {
-	if len(value) > config.MaxArtifactBytes {
-		return fmt.Errorf("input exceeds %d byte limit", config.MaxArtifactBytes)
+	if len(value) > schemaartifacts.MaxArtifactBytes {
+		return fmt.Errorf("input exceeds %d byte limit", schemaartifacts.MaxArtifactBytes)
 	}
 	return nil
 }

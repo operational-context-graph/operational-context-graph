@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package strictjson parses bounded RFC 7493 I-JSON documents.
+// Package strictjson parses bounded RFC 7493 Internet JSON (I-JSON) documents.
 package strictjson
 
 import (
@@ -14,26 +14,42 @@ import (
 	"math/big"
 	"strconv"
 	"unicode/utf8"
+
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
 const (
-	MaxBytes         = 16 * 1024 * 1024
-	MaxDepth         = 64
+	// MaxBytes bounds one complete encoded JSON document.
+	MaxBytes = schemaartifacts.MaxArtifactBytes
+	// MaxDepth bounds recursive JSON value traversal, starting at zero for the root.
+	MaxDepth = 64
+	// MaxObjectMembers bounds the number of members in each JSON object.
 	MaxObjectMembers = 256
-	MaxArrayEntries  = 10000
-	MaxStringBytes   = 1024 * 1024
-	maxSafeInteger   = 9007199254740991
+	// MaxArrayEntries bounds the number of elements in each JSON array.
+	MaxArrayEntries = 10000
+	// MaxStringBytes bounds each decoded string or object member name in UTF-8 bytes.
+	MaxStringBytes = 1024 * 1024
+	// maxSafeInteger bounds the contiguous interoperable integer range of IEEE 754 binary64.
+	maxSafeInteger = 9007199254740991
 )
 
 var (
-	ErrTooLarge       = errors.New("JSON input exceeds the byte limit")
-	ErrMalformed      = errors.New("malformed JSON")
-	ErrDuplicate      = errors.New("duplicate JSON object member")
-	ErrDepth          = errors.New("JSON nesting exceeds the limit")
-	ErrObjectMembers  = errors.New("JSON object has too many members")
-	ErrArrayEntries   = errors.New("JSON array has too many entries")
+	// ErrTooLarge identifies a document that exceeds MaxBytes.
+	ErrTooLarge = errors.New("JSON input exceeds the byte limit")
+	// ErrMalformed identifies invalid syntax, encoding, or an unexpected JSON value shape.
+	ErrMalformed = errors.New("malformed JSON")
+	// ErrDuplicate identifies repeated member names within one JSON object.
+	ErrDuplicate = errors.New("duplicate JSON object member")
+	// ErrDepth identifies a value traversal that exceeds MaxDepth.
+	ErrDepth = errors.New("JSON nesting exceeds the limit")
+	// ErrObjectMembers identifies an object that exceeds MaxObjectMembers.
+	ErrObjectMembers = errors.New("JSON object has too many members")
+	// ErrArrayEntries identifies an array that exceeds MaxArrayEntries.
+	ErrArrayEntries = errors.New("JSON array has too many entries")
+	// ErrStringTooLarge identifies a string or member name that exceeds MaxStringBytes.
 	ErrStringTooLarge = errors.New("JSON string exceeds the byte limit")
-	ErrNumber         = errors.New("value is not an I-JSON number")
+	// ErrNumber identifies a number outside the supported finite, interoperable numeric range.
+	ErrNumber = errors.New("value is not an I-JSON number")
 )
 
 // Parse decodes one complete bounded I-JSON document. Objects use map values,
@@ -90,6 +106,7 @@ func RejectUnknownFields(object map[string]any, allowed ...string) error {
 	return nil
 }
 
+// parseValue reads one JSON value and enforces depth, string, and numeric limits.
 func parseValue(decoder *json.Decoder, depth int) (any, error) {
 	if depth > MaxDepth {
 		return nil, ErrDepth
@@ -125,6 +142,7 @@ func parseValue(decoder *json.Decoder, depth int) (any, error) {
 	}
 }
 
+// parseObject reads members after an opening brace, rejecting duplicates and oversized names or objects.
 func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 	object := make(map[string]any)
 	for decoder.More() {
@@ -157,6 +175,7 @@ func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 	return object, nil
 }
 
+// parseArray reads elements after an opening bracket and enforces the array entry limit.
 func parseArray(decoder *json.Decoder, depth int) ([]any, error) {
 	array := make([]any, 0)
 	for decoder.More() {
@@ -175,6 +194,7 @@ func parseArray(decoder *json.Decoder, depth int) ([]any, error) {
 	return array, nil
 }
 
+// validateNumber requires finite binary64 conversion and restricts integral values to the exactly representable range.
 func validateNumber(number json.Number) error {
 	rational, ok := new(big.Rat).SetString(number.String())
 	if !ok {

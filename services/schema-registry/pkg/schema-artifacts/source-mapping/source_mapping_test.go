@@ -13,12 +13,13 @@ import (
 	"sync"
 	"testing"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// TestValidateAcceptsOpaqueProgramAndDerivesOutputClass preserves opaque engine metadata and derives classification solely from the resolved target schema.
 func TestValidateAcceptsOpaqueProgramAndDerivesOutputClass(t *testing.T) {
 	mapping, context := validMapping(t, []byte{0, 255, 1})
 	result, err := Validate(mapping, context)
@@ -29,6 +30,52 @@ func TestValidateAcceptsOpaqueProgramAndDerivesOutputClass(t *testing.T) {
 	assert.Equal(t, "non-registry profile", result.Descriptor.Engine.ExecutionProfile)
 }
 
+// TestParseCardinalityAndFormatVersionEnums checks supported constants and rejection of unknown, empty, null, or incorrectly typed values.
+func TestParseCardinalityAndFormatVersionEnums(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value any
+		valid bool
+	}{
+		{"cardinality", "one", true},
+		{"cardinality", "many", true},
+		{"cardinality", "unknown", false},
+		{"cardinality", "", false},
+		{"cardinality", nil, false},
+		{"cardinality", 1, false},
+		{"formatVersion", "1.0.0", true},
+		{"formatVersion", "2.0.0", false},
+		{"formatVersion", "", false},
+		{"formatVersion", nil, false},
+		{"formatVersion", 1, false},
+	} {
+		t.Run(fmt.Sprintf("%s/%v", test.name, test.value), func(t *testing.T) {
+			mapping, _ := validMapping(t, []byte("opaque"))
+			var object map[string]any
+			require.NoError(t, json.Unmarshal(mapping.PayloadBytes, &object))
+			if test.name == "cardinality" {
+				transformation := object["programs"].(map[string]any)["transformations"].([]any)[0].(map[string]any)
+				transformation["cardinality"] = test.value
+			} else {
+				object["formatVersion"] = test.value
+			}
+			data, err := json.Marshal(object)
+			require.NoError(t, err)
+			parsed, err := Parse(data)
+			if test.valid {
+				require.NoError(t, err)
+				require.Equal(t, FormatVersion, parsed.FormatVersion)
+				if test.name == "cardinality" {
+					require.Equal(t, Cardinality(test.value.(string)), parsed.Programs.Transformations[0].Cardinality)
+				}
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateAcceptsAncillaryResources permits well-formed metadata resources without interpreting them as descriptor-bound programs.
 func TestValidateAcceptsAncillaryResources(t *testing.T) {
 	mapping, context := validMapping(t, []byte("opaque"))
 	ancillary := resource("metadata.bin", []byte{0, 255})
@@ -39,6 +86,7 @@ func TestValidateAcceptsAncillaryResources(t *testing.T) {
 	assert.Equal(t, mapping.Resources[0], result.Transformations[0].Program)
 }
 
+// TestValidateRejectsInvalidAncillaryResources checks names, roles, descriptors, exact bytes, uniqueness, and program reference coverage.
 func TestValidateRejectsInvalidAncillaryResources(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -50,7 +98,7 @@ func TestValidateRejectsInvalidAncillaryResources(t *testing.T) {
 		{"invalid media type", func(r *artifact.Resource) { r.MediaType = "not a media type;" }},
 		{"invalid path", func(r *artifact.Resource) { r.BundlePath = "../metadata.bin" }},
 		{"negative size", func(r *artifact.Resource) { r.Size = -1 }},
-		{"oversized resource", func(r *artifact.Resource) { r.Size = config.MaxArtifactBytes + 1 }},
+		{"oversized resource", func(r *artifact.Resource) { r.Size = schemaartifacts.MaxArtifactBytes + 1 }},
 		{"size mismatch", func(r *artifact.Resource) { r.Size++ }},
 		{"invalid digest", func(r *artifact.Resource) { r.Digest = "invalid" }},
 		{"digest mismatch", func(r *artifact.Resource) { r.Digest = descriptor(nil, r.MediaType, r.BundlePath).Digest }},
@@ -79,6 +127,7 @@ func TestValidateRejectsInvalidAncillaryResources(t *testing.T) {
 	})
 }
 
+// TestParseRejectsStrictJSONAndStructuralFailures rejects legacy descriptor shapes, duplicate members, ambiguous selectors, and invalid resource media types.
 func TestParseRejectsStrictJSONAndStructuralFailures(t *testing.T) {
 	valid, _ := validMapping(t, []byte("opaque"))
 	tests := []struct {
@@ -105,6 +154,7 @@ func TestParseRejectsStrictJSONAndStructuralFailures(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsProgramBindingsAndSchemaMismatches checks resource ownership, exact dependencies, target classes, and release-selector consistency.
 func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -137,6 +187,7 @@ func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsEmptyProgramAndAncestorTarget permits zero-byte opaque programs and unchanged canonical targets selected by ancestor releases.
 func TestValidateAcceptsEmptyProgramAndAncestorTarget(t *testing.T) {
 	mapping, context := validMapping(t, nil)
 	mapping.TargetSchema = "1.0.0"
@@ -150,6 +201,7 @@ func TestValidateAcceptsEmptyProgramAndAncestorTarget(t *testing.T) {
 	assert.Equal(t, int64(0), result.Transformations[0].Program.Size)
 }
 
+// TestValidateRejectsRevisionReuseChange rejects a reused mapping whose selected target dependency changes.
 func TestValidateRejectsRevisionReuseChange(t *testing.T) {
 	mapping, context := validMapping(t, []byte("opaque"))
 	descriptor, err := Parse(mapping.PayloadBytes)
@@ -162,6 +214,7 @@ func TestValidateRejectsRevisionReuseChange(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestValidateReleaseAcceptsTwoMappingsForOneSource permits shared input schemas while rejecting duplicate logical mapping identities.
 func TestValidateReleaseAcceptsTwoMappingsForOneSource(t *testing.T) {
 	first, context := validMapping(t, []byte("one"))
 	second, _ := validMapping(t, []byte("two"))
@@ -176,6 +229,7 @@ func TestValidateReleaseAcceptsTwoMappingsForOneSource(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestValidateIsRaceSafe validates shared mapping bytes and release metadata concurrently without caller-side copies.
 func TestValidateIsRaceSafe(t *testing.T) {
 	mapping, context := validMapping(t, []byte{0, 1, 2, 3})
 	const workers = 32
@@ -196,6 +250,7 @@ func TestValidateIsRaceSafe(t *testing.T) {
 	}
 }
 
+// validMapping supplies one exact program binding, selected source and target dependencies, and a matching release context.
 func validMapping(t *testing.T, program []byte) (artifact.Artifact, ValidationContext) {
 	t.Helper()
 	resource := resource("program.bin", program)
@@ -212,6 +267,7 @@ func validMapping(t *testing.T, program []byte) (artifact.Artifact, ValidationCo
 	return mapping, validContext()
 }
 
+// validContext supplies a source-record schema and canonical entity target selected by release 2.0.0.
 func validContext() ValidationContext {
 	return ValidationContext{Version: "2.0.0", Lineage: []Release{{Version: "2.0.0", Schemas: []Schema{
 		{Type: "source", Revision: "source-r1", Class: artifact.SchemaClassSource},
@@ -219,10 +275,12 @@ func validContext() ValidationContext {
 	}}}}
 }
 
+// descriptorBytes builds one transformation descriptor using caller-selected JSON selector fragments and opaque publisher metadata.
 func descriptorBytes(id string, program artifact.Resource, sourceSelector, targetSelector string) []byte {
 	return []byte(fmt.Sprintf(`{"$schema":"https://example.test/source-mapping-1.0.0","formatVersion":"1.0.0","id":%q,"sourceSchema":{"id":"source",%s},"engine":{"language":"publisher language with spaces","languageVersion":"1.2.3","executionProfile":"non-registry profile"},"programs":{"transformations":[{"targetSchema":{"id":"target",%s},"cardinality":"one","programRef":%q,"programDigest":%q}]}}`, id, sourceSelector, targetSelector, program.Name, program.Digest))
 }
 
+// rewriteDescriptor applies a fixture mutation and recomputes descriptor byte metadata so structural tests retain valid integrity metadata.
 func rewriteDescriptor(t *testing.T, mapping *artifact.Artifact, mutate func(map[string]any)) {
 	t.Helper()
 	var document map[string]any
@@ -234,6 +292,7 @@ func rewriteDescriptor(t *testing.T, mapping *artifact.Artifact, mutate func(map
 	mapping.Payload = descriptor(data, DescriptorMediaType, mapping.Payload.BundlePath)
 }
 
+// TestProgramStructureBoundaries rejects missing, null, empty, unknown, and legacy program structures.
 func TestProgramStructureBoundaries(t *testing.T) {
 	for _, raw := range [][]byte{nil, {}, []byte("null"), []byte("[]"), []byte("{}")} {
 		_, err := Parse(raw)
@@ -266,6 +325,7 @@ func TestProgramStructureBoundaries(t *testing.T) {
 	}
 }
 
+// TestTransformationFieldsAndSelectors checks required binding fields, supported cardinalities, and mutually exclusive target selectors.
 func TestTransformationFieldsAndSelectors(t *testing.T) {
 	for _, field := range []string{"programRef", "programDigest", "cardinality", "targetSchema"} {
 		for _, invalid := range []any{nil, "", 42} {
@@ -296,6 +356,7 @@ func TestTransformationFieldsAndSelectors(t *testing.T) {
 	}
 }
 
+// TestSharedProgramConditionAndMixedTargets preserves transformation order when one program serves conditions and multiple canonical outputs.
 func TestSharedProgramConditionAndMixedTargets(t *testing.T) {
 	mapping, context := validMapping(t, []byte{0, 255})
 	context.Lineage[0].Schemas = append(context.Lineage[0].Schemas, Schema{Type: "relationship", Revision: "edge-r1", Class: artifact.SchemaClassEdge})
@@ -314,7 +375,7 @@ func TestSharedProgramConditionAndMixedTargets(t *testing.T) {
 	require.NotNil(t, result.Condition)
 	require.Len(t, result.Transformations, 3)
 	assert.Equal(t, artifact.SchemaClassEdge, result.Transformations[1].OutputClass)
-	assert.Equal(t, "many", result.Transformations[1].Cardinality)
+	assert.Equal(t, CardinalityMany, result.Transformations[1].Cardinality)
 	assert.Equal(t, "target", result.Transformations[2].Target.Type)
 	assert.Equal(t, result.Condition.Name, result.Transformations[1].Program.Name)
 
@@ -325,6 +386,7 @@ func TestSharedProgramConditionAndMixedTargets(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestProgramBindingFailuresAndImmutableReuse rejects unused programs, altered roles or byte metadata, and replacement bytes on reused revisions.
 func TestProgramBindingFailuresAndImmutableReuse(t *testing.T) {
 	for _, mutate := range []func(*artifact.Artifact){
 		func(m *artifact.Artifact) { m.Resources = append(m.Resources, resource("unreferenced.bin", nil)) },
@@ -348,6 +410,7 @@ func TestProgramBindingFailuresAndImmutableReuse(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestTransformationAndDescriptorCapacity verifies exact transformation-count and descriptor-byte limits and rejection immediately above each bound.
 func TestTransformationAndDescriptorCapacity(t *testing.T) {
 	mapping, context := validMapping(t, nil)
 	rewriteDescriptor(t, &mapping, func(d map[string]any) {
@@ -371,17 +434,19 @@ func TestTransformationAndDescriptorCapacity(t *testing.T) {
 	require.Error(t, err)
 
 	mapping, _ = validMapping(t, nil)
-	exact := append(bytes.Repeat([]byte(" "), config.MaxArtifactBytes-len(mapping.PayloadBytes)), mapping.PayloadBytes...)
+	exact := append(bytes.Repeat([]byte(" "), schemaartifacts.MaxArtifactBytes-len(mapping.PayloadBytes)), mapping.PayloadBytes...)
 	_, err = Parse(exact)
 	require.NoError(t, err)
 	_, err = Parse(append(exact, ' '))
 	require.Error(t, err)
 }
 
+// resource creates an opaque program fixture with an owned name, exact bytes, and matching byte metadata.
 func resource(name string, data []byte) artifact.Resource {
 	return artifact.Resource{Name: name, Role: "program", Descriptor: descriptor(data, "application/vnd.example.opaque-program", "mappings/"+name), Bytes: data}
 }
 
+// descriptor computes exact size and Registry digest metadata for a test resource or primary payload.
 func descriptor(data []byte, mediaType, bundlePath string) artifact.Descriptor {
 	digest := sha256.Sum256(data)
 	return artifact.Descriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(digest[:]), Size: int64(len(data)), BundlePath: bundlePath}

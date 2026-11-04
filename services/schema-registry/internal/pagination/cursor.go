@@ -19,7 +19,7 @@ import (
 	"maps"
 	"strconv"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
 const (

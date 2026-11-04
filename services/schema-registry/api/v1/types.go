@@ -5,7 +5,13 @@
 // Package v1 defines the version 1 artifact and package JSON contract.
 package v1
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
+)
 
 // LinkType identifies a navigation relation in an API representation.
 type LinkType string
@@ -52,13 +58,13 @@ type Registry struct {
 
 // Release describes an activated schema release.
 type Release struct {
-	SchemaVersion   string            `json:"schemaVersion"`
-	ManifestDigest  string            `json:"manifestDigest"`
-	PreviousRelease *ReleaseReference `json:"previousRelease"`
-	Source          ReleaseSource     `json:"source"`
-	Compatibility   string            `json:"compatibility,omitempty"`
-	Changes         json.RawMessage   `json:"changes,omitempty"`
-	Links           Links             `json:"links"`
+	SchemaVersion   string                      `json:"schemaVersion"`
+	ManifestDigest  string                      `json:"manifestDigest"`
+	PreviousRelease *ReleaseReference           `json:"previousRelease"`
+	Source          ReleaseSource               `json:"source"`
+	Compatibility   manifestmodel.Compatibility `json:"compatibility,omitempty"`
+	Changes         json.RawMessage             `json:"changes,omitempty"`
+	Links           Links                       `json:"links"`
 }
 
 // ReleaseReference identifies a release and its immutable manifest.
@@ -77,7 +83,7 @@ type ReleaseSource struct {
 type Changes struct {
 	FromSchemaVersion     string                       `json:"fromSchemaVersion"`
 	ToSchemaVersion       string                       `json:"toSchemaVersion"`
-	Compatibility         string                       `json:"compatibility"`
+	Compatibility         manifestmodel.Compatibility  `json:"compatibility"`
 	Artifacts             []ArtifactChange             `json:"artifacts"`
 	SchemaContextBindings []SchemaContextBindingChange `json:"schemaContextBindings"`
 	URICatalog            []URIChange                  `json:"uriCatalog"`
@@ -87,57 +93,57 @@ type Changes struct {
 
 // ArtifactChange describes one artifact change between releases.
 type ArtifactChange struct {
-	Operation      string `json:"operation"`
-	Kind           string `json:"kind"`
-	ArtifactType   string `json:"artifactType"`
-	BeforeRevision string `json:"beforeRevision,omitempty"`
-	AfterRevision  string `json:"afterRevision,omitempty"`
-	Impact         string `json:"impact"`
+	Operation      manifestmodel.Operation `json:"operation"`
+	Kind           artifactmodel.Kind      `json:"kind"`
+	ArtifactType   string                  `json:"artifactType"`
+	BeforeRevision string                  `json:"beforeRevision,omitempty"`
+	AfterRevision  string                  `json:"afterRevision,omitempty"`
+	Impact         manifestmodel.Impact    `json:"impact"`
 }
 
 // SchemaContextBindingChange describes one schema context binding change.
 type SchemaContextBindingChange struct {
-	Operation       string `json:"operation"`
-	SchemaRevision  string `json:"schemaRevision"`
-	ContextRevision string `json:"contextRevision"`
-	Impact          string `json:"impact"`
+	Operation       manifestmodel.Operation `json:"operation"`
+	SchemaRevision  string                  `json:"schemaRevision"`
+	ContextRevision string                  `json:"contextRevision"`
+	Impact          manifestmodel.Impact    `json:"impact"`
 }
 
 // URIChange describes one Uniform Resource Identifier catalog change.
 type URIChange struct {
-	Operation      string `json:"operation"`
-	URI            string `json:"uri"`
-	BeforeRevision string `json:"beforeRevision,omitempty"`
-	BeforeResource string `json:"beforeResource,omitempty"`
-	AfterRevision  string `json:"afterRevision,omitempty"`
-	AfterResource  string `json:"afterResource,omitempty"`
-	Impact         string `json:"impact"`
+	Operation      manifestmodel.Operation `json:"operation"`
+	URI            string                  `json:"uri"`
+	BeforeRevision string                  `json:"beforeRevision,omitempty"`
+	BeforeResource string                  `json:"beforeResource,omitempty"`
+	AfterRevision  string                  `json:"afterRevision,omitempty"`
+	AfterResource  string                  `json:"afterResource,omitempty"`
+	Impact         manifestmodel.Impact    `json:"impact"`
 }
 
 // StorageChange describes one storage catalog change.
 type StorageChange struct {
-	Operation    string `json:"operation"`
-	Kind         string `json:"kind"`
-	ArtifactType string `json:"artifactType"`
-	Store        string `json:"store"`
-	Impact       string `json:"impact"`
+	Operation    manifestmodel.Operation `json:"operation"`
+	Kind         artifactmodel.Kind      `json:"kind"`
+	ArtifactType string                  `json:"artifactType"`
+	Store        manifestmodel.Store     `json:"store"`
+	Impact       manifestmodel.Impact    `json:"impact"`
 }
 
 // ArtifactDescriptor describes an artifact without embedding its stored bytes.
 type ArtifactDescriptor struct {
-	SchemaVersion             string          `json:"schemaVersion,omitempty"`
-	Kind                      string          `json:"kind"`
-	ArtifactType              string          `json:"artifactType"`
-	ArtifactRevision          string          `json:"artifactRevision"`
-	CreatedUnderSchemaVersion string          `json:"createdUnderSchemaVersion"`
-	SchemaClass               *string         `json:"schemaClass,omitempty"`
-	TargetSchemaVersion       *string         `json:"targetSchemaVersion,omitempty"`
-	CanonicalURI              string          `json:"canonicalUri"`
-	Payload                   Payload         `json:"payload"`
-	Resources                 []Resource      `json:"resources"`
-	Dependencies              []Dependency    `json:"dependencies"`
-	Extensions                json.RawMessage `json:"extensions,omitempty"`
-	Links                     Links           `json:"links"`
+	SchemaVersion             string                     `json:"schemaVersion,omitempty"`
+	Kind                      artifactmodel.Kind         `json:"kind"`
+	ArtifactType              string                     `json:"artifactType"`
+	ArtifactRevision          string                     `json:"artifactRevision"`
+	CreatedUnderSchemaVersion string                     `json:"createdUnderSchemaVersion"`
+	SchemaClass               *artifactmodel.SchemaClass `json:"schemaClass,omitempty"`
+	TargetSchemaVersion       *string                    `json:"targetSchemaVersion,omitempty"`
+	CanonicalURI              string                     `json:"canonicalUri"`
+	Payload                   Payload                    `json:"payload"`
+	Resources                 []Resource                 `json:"resources"`
+	Dependencies              []Dependency               `json:"dependencies"`
+	Extensions                json.RawMessage            `json:"extensions,omitempty"`
+	Links                     Links                      `json:"links"`
 }
 
 // ArtifactHistoryItem identifies an artifact revision selected by a release.
@@ -167,20 +173,20 @@ type Payload struct {
 
 // Resource describes one immutable named resource.
 type Resource struct {
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Href      string `json:"href"`
+	Name      string                     `json:"name"`
+	Role      artifactmodel.ResourceRole `json:"role"`
+	MediaType string                     `json:"mediaType"`
+	Digest    string                     `json:"digest"`
+	Size      int64                      `json:"size"`
+	Href      string                     `json:"href"`
 }
 
 // Dependency identifies an exact dependency and its metadata link.
 type Dependency struct {
-	Kind             string `json:"kind"`
-	ArtifactType     string `json:"artifactType"`
-	ArtifactRevision string `json:"artifactRevision"`
-	Href             string `json:"href"`
+	Kind             artifactmodel.Kind `json:"kind"`
+	ArtifactType     string             `json:"artifactType"`
+	ArtifactRevision string             `json:"artifactRevision"`
+	Href             string             `json:"href"`
 }
 
 // SourceMapping is the complete, enriched source-mapping JSON model.
@@ -200,8 +206,8 @@ type SourceMappingPrograms struct {
 // SourceMappingTransformation describes one program binding and its canonical output.
 type SourceMappingTransformation struct {
 	Resource
-	TargetSchema SourceMappingSourceSchema `json:"targetSchema"`
-	Cardinality  string                    `json:"cardinality"`
+	TargetSchema SourceMappingSourceSchema      `json:"targetSchema"`
+	Cardinality  sourcemappingmodel.Cardinality `json:"cardinality"`
 }
 
 // SourceMappingSourceSchema resolves a schema reference within the selected release.
@@ -230,18 +236,18 @@ type SourceMappingPackage struct {
 	Mapping       SourceMapping                 `json:"mapping"`
 	Programs      []SourceMappingProgramContent `json:"programs"`
 	Schemas       []SchemaDocument              `json:"schemas"`
-	TargetStores  []string                      `json:"targetStores"`
+	TargetStores  []manifestmodel.Store         `json:"targetStores"`
 	Links         Links                         `json:"links"`
 }
 
 // SourceMappingProgramContent embeds canonical Base64 content for one referenced program.
 type SourceMappingProgramContent struct {
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Content   string `json:"content"`
+	Name      string                     `json:"name"`
+	Role      artifactmodel.ResourceRole `json:"role"`
+	MediaType string                     `json:"mediaType"`
+	Digest    string                     `json:"digest"`
+	Size      int64                      `json:"size"`
+	Content   string                     `json:"content"`
 }
 
 // SchemaReference identifies a schema artifact revision.
@@ -268,15 +274,15 @@ type SchemaPackage struct {
 
 // SchemaStores identifies the stores associated with a schema.
 type SchemaStores struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Schema        SchemaStoreSchema `json:"schema"`
-	Stores        []string          `json:"stores"`
-	Links         Links             `json:"links"`
+	SchemaVersion string                `json:"schemaVersion"`
+	Schema        SchemaStoreSchema     `json:"schema"`
+	Stores        []manifestmodel.Store `json:"stores"`
+	Links         Links                 `json:"links"`
 }
 
 // SchemaStoreSchema identifies a schema in a stores response.
 type SchemaStoreSchema struct {
-	ArtifactRevision string `json:"artifactRevision"`
-	ArtifactType     string `json:"artifactType"`
-	SchemaClass      string `json:"schemaClass"`
+	ArtifactRevision string                    `json:"artifactRevision"`
+	ArtifactType     string                    `json:"artifactType"`
+	SchemaClass      artifactmodel.SchemaClass `json:"schemaClass"`
 }

@@ -12,9 +12,9 @@ import (
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
-	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 // Validate checks immutable format constraints before application response limits.
@@ -65,7 +65,7 @@ func indexClosure(value manifest.Manifest, context manifest.Context) *selectedCl
 	for _, entry := range value.StorageCatalog {
 		for _, store := range entry.Stores {
 			closure.stores[entry.ArtifactType] = append(closure.stores[entry.ArtifactType], model.StorageEntry{
-				SchemaVersion: value.SchemaVersion, ArtifactType: entry.ArtifactType, Store: store,
+				SchemaVersion: value.SchemaVersion, ArtifactType: entry.ArtifactType, Store: string(store),
 			})
 		}
 	}
@@ -123,7 +123,7 @@ func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error)
 		}
 		// Size validation needs declared program sizes, not retained resource bytes.
 		value.Resources = append(value.Resources, model.Resource{
-			ArtifactRevision: key.Revision, Name: resource.Name, Role: resource.Role,
+			ArtifactRevision: key.Revision, Name: resource.Name, Role: string(resource.Role),
 			ByteDescriptor: byteDescriptor(resource.Descriptor, nil),
 		})
 	}
@@ -206,7 +206,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Sou
 		}
 		detail.Transformations = append(detail.Transformations, model.SourceMappingTransformation{
 			ProgramBinding: program, TargetArtifactType: target.Artifact.Type,
-			TargetRevision: target.Artifact.Revision, Cardinality: transformation.Cardinality,
+			TargetRevision: target.Artifact.Revision, Cardinality: string(transformation.Cardinality),
 		})
 		if !seenSchemas[target.Artifact.Revision] {
 			result.Schemas = append(result.Schemas, target)

@@ -30,8 +30,9 @@ import (
 	usecase "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
 const mappingBase = "/v1/releases/1.0.0/source-mappings/device-mapping"
@@ -1337,7 +1338,7 @@ func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 	var body v1.SourceMapping
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 	require.Len(t, body.Programs.Transformations, strictjson.MaxArrayEntries)
-	require.Equal(t, "many", body.Programs.Transformations[1].Cardinality)
+	require.Equal(t, sourcemapping.CardinalityMany, body.Programs.Transformations[1].Cardinality)
 	require.Equal(t, "located-in", body.Programs.Transformations[1].TargetSchema.ArtifactType)
 
 	// A late reference still validates its own revision against cached metadata.

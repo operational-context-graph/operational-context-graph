@@ -18,9 +18,9 @@ import (
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
-	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 const testOrigin = "https://registry.example.test"
@@ -315,8 +315,8 @@ func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 		value.URICatalog = append(value.URICatalog, manifest.URIEntry{URI: item.CanonicalURI, ArtifactRevision: item.Revision})
 	}
 	value.StorageCatalog = []manifest.StorageEntry{
-		{Kind: artifact.KindSchema, ArtifactType: "edge", Stores: []string{"data-center-inventory", "telemetry-store"}},
-		{Kind: artifact.KindSchema, ArtifactType: "entity", Stores: []string{"insights-repository", "telemetry-store"}},
+		{Kind: artifact.KindSchema, ArtifactType: "edge", Stores: []manifest.Store{manifest.StoreDataCenterInventory, manifest.StoreTelemetryStore}},
+		{Kind: artifact.KindSchema, ArtifactType: "entity", Stores: []manifest.Store{manifest.StoreInsightsRepository, manifest.StoreTelemetryStore}},
 	}
 	for _, name := range []string{"mapping-a", "mapping-b"} {
 		program := testResource("a.bin", "program", []byte{0, 255})
@@ -386,7 +386,7 @@ func updateArtifact(value *manifest.Manifest, context manifest.Context, item art
 }
 
 func testResource(name, role string, data []byte) artifact.Resource {
-	return artifact.Resource{Name: name, Role: role, Descriptor: testDescriptor(data, "application/octet-stream", "resources/"+name), Bytes: data}
+	return artifact.Resource{Name: name, Role: artifact.ResourceRole(role), Descriptor: testDescriptor(data, "application/octet-stream", "resources/"+name), Bytes: data}
 }
 
 func testDescriptor(data []byte, mediaType, path string) artifact.Descriptor {

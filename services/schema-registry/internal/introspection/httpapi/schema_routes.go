@@ -18,8 +18,9 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
-	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
 func (s *Server) registerSchemaRoutes() {
@@ -460,16 +461,16 @@ func (s *Server) schemaStores(c *gin.Context) {
 		s.writeArtifactError(c, err, SchemaNotInRelease)
 		return
 	}
-	stores := make([]string, 0, len(value.Value))
+	stores := make([]manifestmodel.Store, 0, len(value.Value))
 	for _, entry := range value.Value {
-		stores = append(stores, entry.Store)
+		stores = append(stores, manifestmodel.Store(entry.Store))
 	}
 	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, v1.SchemaStores{
 		SchemaVersion: version,
 		Schema: v1.SchemaStoreSchema{
 			ArtifactType:     artifactType,
 			ArtifactRevision: metadata.Value.Artifact.Revision,
-			SchemaClass:      *metadata.Value.Artifact.SchemaClass,
+			SchemaClass:      artifactmodel.SchemaClass(*metadata.Value.Artifact.SchemaClass),
 		},
 		Stores: stores,
 		Links: v1.Links{

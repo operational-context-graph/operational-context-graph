@@ -19,9 +19,9 @@ import (
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	format "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 // Service reads immutable artifacts through request-scoped snapshots.
@@ -301,7 +301,7 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 	if err != nil {
 		return model.SourceMapping{}, sourceMappingDependencyError(err)
 	}
-	parsed, err := format.Parse(descriptor.Artifact.Payload.Bytes)
+	parsed, err := sourcemappingmodel.Parse(descriptor.Artifact.Payload.Bytes)
 	if err != nil || parsed.ID != descriptor.Artifact.Type || detail.MappingRevision != descriptor.Artifact.Revision || detail.SchemaVersion != version || parsed.SourceSchema.ID != detail.SourceArtifactType || descriptor.Artifact.TargetSchemaVersion == nil || *descriptor.Artifact.TargetSchemaVersion != detail.TargetSchemaVersion {
 		return model.SourceMapping{}, fmt.Errorf("mapping descriptor agreement: %w", postgres.ErrInconsistentState)
 	}
@@ -317,12 +317,12 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 		resources[resource.Name] = resource
 	}
 	referenced := make(map[string]bool)
-	bind := func(reference format.ProgramReference, projected model.ProgramBinding) bool {
+	bind := func(reference sourcemappingmodel.ProgramReference, projected model.ProgramBinding) bool {
 		resource, exists := resources[reference.ProgramRef]
 		referenced[reference.ProgramRef] = true
 		return exists && resource.Role == "program" && reference.ProgramRef == projected.ProgramName && reference.ProgramDigest == projected.ProgramDigest && resource.Digest == reference.ProgramDigest
 	}
-	resolve := func(reference format.SchemaReference, artifactType, revision string, target bool) error {
+	resolve := func(reference sourcemappingmodel.SchemaReference, artifactType, revision string, target bool) error {
 		if reference.ID != artifactType || reference.Revision != "" && reference.Revision != revision || target && reference.Version != "" && reference.Version != detail.TargetSchemaVersion {
 			return postgres.ErrInconsistentState
 		}
@@ -357,7 +357,7 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 	}
 	for index, transformation := range parsed.Programs.Transformations {
 		projected := detail.Transformations[index]
-		if transformation.Cardinality != projected.Cardinality || !bind(transformation.ProgramReference, projected.ProgramBinding) {
+		if transformation.Cardinality != sourcemappingmodel.Cardinality(projected.Cardinality) || !bind(transformation.ProgramReference, projected.ProgramBinding) {
 			return model.SourceMapping{}, postgres.ErrInconsistentState
 		}
 		if err := resolve(transformation.TargetSchema, projected.TargetArtifactType, projected.TargetRevision, true); err != nil {

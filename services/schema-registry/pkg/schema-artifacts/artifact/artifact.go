@@ -17,29 +17,38 @@ import (
 
 	"github.com/piprate/json-gold/ld"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/offline"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/offline"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
 const (
-	SchemaMediaType  = "application/schema+json"
+	// SchemaMediaType identifies JSON Schema payloads.
+	SchemaMediaType = "application/schema+json"
+	// ContextMediaType identifies JSON-LD context payloads with the required context profile.
 	ContextMediaType = "application/ld+json;profile=\"http://www.w3.org/ns/json-ld#context\""
 )
 
 var (
+	// logicalTypePattern permits lowercase, hyphen-separated logical types and resource roles.
 	logicalTypePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	revisionPattern    = regexp.MustCompile(`^[A-Za-z0-9\-._~]+$`)
-	digestPattern      = regexp.MustCompile(`^sha-256:[0-9a-f]{64}$`)
-	versionPattern     = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	// revisionPattern permits only RFC 3986 unreserved characters in opaque revision identifiers.
+	revisionPattern = regexp.MustCompile(`^[A-Za-z0-9\-._~]+$`)
+	// digestPattern requires the Registry's SHA-256 prefix and 64 lowercase hexadecimal digits.
+	digestPattern = regexp.MustCompile(`^sha-256:[0-9a-f]{64}$`)
+	// versionPattern requires three decimal version components without leading zeroes or suffixes.
+	versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
 
 // Kind identifies a closed artifact category.
 type Kind string
 
 const (
-	KindSchema        Kind = "schema"
-	KindContext       Kind = "context"
+	// KindSchema identifies a JSON Schema artifact.
+	KindSchema Kind = "schema"
+	// KindContext identifies a JSON-LD context artifact.
+	KindContext Kind = "context"
+	// KindSourceMapping identifies an opaque-program mapping descriptor.
 	KindSourceMapping Kind = "source-mapping"
 )
 
@@ -47,52 +56,86 @@ const (
 type SchemaClass string
 
 const (
-	SchemaClassEntity     SchemaClass = "entity-type"
+	// SchemaClassEntity describes canonical entities.
+	SchemaClassEntity SchemaClass = "entity-type"
+	// SchemaClassIdentifier describes canonical identifier types.
 	SchemaClassIdentifier SchemaClass = "identifier-type"
-	SchemaClassEdge       SchemaClass = "edge-type"
-	SchemaClassSource     SchemaClass = "source-record"
+	// SchemaClassEdge describes canonical relationships.
+	SchemaClassEdge SchemaClass = "edge-type"
+	// SchemaClassSource describes source records without canonical store placement.
+	SchemaClassSource SchemaClass = "source-record"
 )
 
 // Descriptor identifies exact immutable bytes.
 type Descriptor struct {
-	MediaType  string
-	Digest     string
-	Size       int64
+	// MediaType declares the representation's media type, including any parameters.
+	MediaType string
+	// Digest binds the exact bytes using the Registry's sha-256: spelling.
+	Digest string
+	// Size declares the exact uncompressed byte count.
+	Size int64
+	// BundlePath locates the bytes within an offline release bundle, not within the host filesystem.
 	BundlePath string
 }
 
+// ResourceRole identifies a resource's purpose. Ancillary roles remain extensible.
+type ResourceRole string
+
+// ResourceRoleProgram identifies a descriptor-bound condition or transformation program.
+const ResourceRoleProgram ResourceRole = "program"
+
 // Resource describes an immutable additional artifact resource.
 type Resource struct {
+	// Name identifies this resource uniquely within its owning artifact revision.
 	Name string
-	Role string
+	// Role declares the resource's purpose; program resources require descriptor bindings.
+	Role ResourceRole
+	// Descriptor binds the resource's byte metadata and offline bundle location.
 	Descriptor
+	// Bytes contains the exact resource bytes supplied by the caller.
 	Bytes []byte
 }
 
 // Dependency identifies an exact selected artifact revision.
 type Dependency struct {
-	Kind     Kind
-	Type     string
+	// Kind selects the dependency's artifact category.
+	Kind Kind
+	// Type selects the dependency's case-sensitive logical type within Kind.
+	Type string
+	// Revision pins the dependency to one immutable revision.
 	Revision string
 }
 
 // Artifact is a typed immutable artifact revision.
 type Artifact struct {
-	Kind         Kind
-	Type         string
-	Revision     string
+	// Kind determines the artifact's format and applicable conditional fields.
+	Kind Kind
+	// Type identifies the logical artifact within Kind.
+	Type string
+	// Revision identifies the immutable revision without implying an order.
+	Revision string
+	// CreatedUnder records the schema release that first selects this revision.
 	CreatedUnder string
-	SchemaClass  SchemaClass
+	// SchemaClass classifies schema artifacts and remains empty for other kinds.
+	SchemaClass SchemaClass
+	// TargetSchema identifies the canonical release targeted by a source mapping; other kinds leave it empty.
 	TargetSchema string
+	// CanonicalURI identifies the primary payload under the configured Registry origin.
 	CanonicalURI string
-	Payload      Descriptor
+	// Payload binds the primary payload's byte metadata and bundle location.
+	Payload Descriptor
+	// PayloadBytes contains the exact primary payload bytes supplied by the caller.
 	PayloadBytes []byte
-	Resources    []Resource
+	// Resources contains this revision's additional named byte representations.
+	Resources []Resource
+	// Dependencies pins external artifact references to exact selected revisions.
 	Dependencies []Dependency
-	Extensions   map[string]any
+	// Extensions preserves publisher metadata bound to this immutable revision.
+	Extensions map[string]any
 }
 
 // Validate validates lexical fields and exact bytes independent of a release.
+// It does not resolve dependencies or validate payload-specific formats.
 func (a Artifact) Validate(registryOrigin string) error {
 	if !validKind(a.Kind) || !ValidLogicalType(a.Type) || !ValidRevision(a.Revision) || !ValidVersion(a.CreatedUnder) {
 		return errors.New("invalid artifact identity")
@@ -112,7 +155,7 @@ func (a Artifact) Validate(registryOrigin string) error {
 			return fmt.Errorf("duplicate resource name %q", resource.Name)
 		}
 		seenResources[resource.Name] = struct{}{}
-		if !ValidResourceName(resource.Name) || !ValidLogicalType(resource.Role) {
+		if !ValidResourceName(resource.Name) || !ValidLogicalType(string(resource.Role)) {
 			return fmt.Errorf("invalid resource %q", resource.Name)
 		}
 		if err := ValidateDescriptor(resource.Descriptor, resource.Bytes); err != nil {
@@ -139,6 +182,7 @@ func (a Artifact) ValidatePayloadFormat() error {
 
 // ValidatePayloadFormatWithCatalog validates a payload while allowing references
 // only to exact caller-supplied release-catalog documents.
+// It does not fetch documents or validate source-mapping program bindings.
 func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error {
 	value, err := strictjson.Parse(a.PayloadBytes)
 	if err != nil {
@@ -175,7 +219,7 @@ func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error
 
 // ValidateDescriptor verifies descriptor metadata and exact byte integrity.
 func ValidateDescriptor(descriptor Descriptor, data []byte) error {
-	if descriptor.MediaType == "" || len(descriptor.MediaType) > config.MaxIdentifierBytes || descriptor.BundlePath == "" {
+	if descriptor.MediaType == "" || len(descriptor.MediaType) > schemaartifacts.MaxIdentifierBytes || descriptor.BundlePath == "" {
 		return errors.New("descriptor requires a bounded media type and bundle path")
 	}
 	if _, _, err := mime.ParseMediaType(descriptor.MediaType); err != nil {
@@ -184,7 +228,7 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 	if !ValidBundlePath(descriptor.BundlePath) || !ValidDigest(descriptor.Digest) || descriptor.Size < 0 || descriptor.Size > strictjson.MaxBytes {
 		return errors.New("invalid byte descriptor")
 	}
-	if len(data) > config.MaxArtifactBytes || int64(len(data)) != descriptor.Size {
+	if len(data) > schemaartifacts.MaxArtifactBytes || int64(len(data)) != descriptor.Size {
 		return errors.New("descriptor size does not match bytes")
 	}
 	digest := sha256.Sum256(data)
@@ -196,18 +240,18 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 
 // ValidLogicalType validates format logical type and role identifiers.
 func ValidLogicalType(value string) bool {
-	return value != "" && len(value) <= config.MaxIdentifierBytes && logicalTypePattern.MatchString(value)
+	return value != "" && len(value) <= schemaartifacts.MaxIdentifierBytes && logicalTypePattern.MatchString(value)
 }
 
 // ValidRevision validates opaque URI-safe artifact revisions.
 func ValidRevision(value string) bool {
-	return value != "" && value != "." && value != ".." && len(value) <= config.MaxIdentifierBytes && revisionPattern.MatchString(value)
+	return value != "" && value != "." && value != ".." && len(value) <= schemaartifacts.MaxIdentifierBytes && revisionPattern.MatchString(value)
 }
 
 // ValidResourceName validates an RFC 3986 unreserved resource name.
 func ValidResourceName(value string) bool { return ValidRevision(value) }
 
-// ValidVersion validates published semantic versions.
+// ValidVersion checks the three-component lexical form of published schema versions.
 func ValidVersion(value string) bool { return versionPattern.MatchString(value) }
 
 // ValidDigest validates the Registry SHA-256 digest spelling.
@@ -228,7 +272,7 @@ func ValidBundlePath(value string) bool {
 
 // ValidateCanonicalURI ensures a Registry-owned immutable resource URI.
 func ValidateCanonicalURI(value, origin string, kind Kind, artifactType, revision string) error {
-	if len(value) == 0 || len(value) > config.MaxURIBytes {
+	if len(value) == 0 || len(value) > schemaartifacts.MaxURIBytes {
 		return errors.New("invalid canonical URI length")
 	}
 	parsed, err := url.Parse(value)
@@ -246,14 +290,17 @@ func ValidateCanonicalURI(value, origin string, kind Kind, artifactType, revisio
 	return nil
 }
 
+// validKind reports whether kind belongs to the closed version 1 artifact registry.
 func validKind(kind Kind) bool {
 	return kind == KindSchema || kind == KindContext || kind == KindSourceMapping
 }
 
+// validSchemaClass reports whether class is a registered canonical or source-record classification.
 func validSchemaClass(class SchemaClass) bool {
 	return class == SchemaClassEntity || class == SchemaClassIdentifier || class == SchemaClassEdge || class == SchemaClassSource
 }
 
+// validateKindFields enforces schema-class and target-version requirements for each artifact kind.
 func validateKindFields(a Artifact) error {
 	switch a.Kind {
 	case KindSchema:

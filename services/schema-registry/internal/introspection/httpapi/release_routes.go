@@ -17,9 +17,9 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
 func (s *Server) registerReleaseRoutes() {
@@ -126,7 +126,7 @@ func (s *Server) listReleases(c *gin.Context) {
 
 func (s *Server) releaseDescriptor(c *gin.Context) {
 	version := c.Param("schemaVersion")
-	if !artifact.ValidVersion(version) {
+	if !artifactmodel.ValidVersion(version) {
 		s.writeReleaseValidationError(c, InvalidRequest)
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Server) releaseDescriptor(c *gin.Context) {
 
 func (s *Server) releaseManifest(c *gin.Context) {
 	version := c.Param("schemaVersion")
-	if !artifact.ValidVersion(version) {
+	if !artifactmodel.ValidVersion(version) {
 		s.writeReleaseValidationError(c, InvalidRequest)
 		return
 	}
@@ -149,22 +149,22 @@ func (s *Server) releaseManifest(c *gin.Context) {
 		s.writeReleaseError(c, err)
 		return
 	}
-	if _, err = manifest.Parse(value.Release.ManifestBytes); err != nil {
+	if _, err = manifestmodel.Parse(value.Release.ManifestBytes); err != nil {
 		s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: value.Current.SchemaVersion, SelectedSchemaVersion: version})
 		return
 	}
-	if _, ok := NegotiateMediaType(c.GetHeader("Accept"), manifest.MediaType); !ok {
+	if _, ok := NegotiateMediaType(c.GetHeader("Accept"), manifestmodel.MediaType); !ok {
 		s.writeReleaseErrorResponse(c, NotAcceptable, 0, ErrorMetadata{SchemaVersion: value.Current.SchemaVersion, SelectedSchemaVersion: version})
 		return
 	}
-	if err := WriteRepresentation(c.Writer, Representation{Status: http.StatusOK, MediaType: manifest.MediaType, Body: value.Release.ManifestBytes, Schema: value.Current.SchemaVersion, Selected: version, Digest: value.Release.ManifestDigest, DigestHeader: "Manifest-Digest", Method: c.Request.Method, AcceptCoding: c.GetHeader("Accept-Encoding"), Context: c.Request.Context(), IfNoneMatch: c.GetHeader("If-None-Match")}); err != nil && !c.Writer.Written() {
+	if err := WriteRepresentation(c.Writer, Representation{Status: http.StatusOK, MediaType: manifestmodel.MediaType, Body: value.Release.ManifestBytes, Schema: value.Current.SchemaVersion, Selected: version, Digest: value.Release.ManifestDigest, DigestHeader: "Manifest-Digest", Method: c.Request.Method, AcceptCoding: c.GetHeader("Accept-Encoding"), Context: c.Request.Context(), IfNoneMatch: c.GetHeader("If-None-Match")}); err != nil && !c.Writer.Written() {
 		s.writeReleaseRepresentationError(c, ErrorMetadata{SchemaVersion: value.Current.SchemaVersion, SelectedSchemaVersion: version})
 	}
 }
 
 func (s *Server) changes(c *gin.Context) {
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "from", "to")
-	if err != nil || values.Get("from") == "" || values.Get("to") == "" || !artifact.ValidVersion(values.Get("from")) || !artifact.ValidVersion(values.Get("to")) {
+	if err != nil || values.Get("from") == "" || values.Get("to") == "" || !artifactmodel.ValidVersion(values.Get("from")) || !artifactmodel.ValidVersion(values.Get("to")) {
 		s.writeReleaseValidationError(c, InvalidQueryParameter)
 		return
 	}
@@ -208,7 +208,7 @@ func releaseItem(item model.Release, includeChanges bool) v1.Release {
 	return result
 }
 
-func buildChanges(from, to string, value manifest.Changes) v1.Changes {
+func buildChanges(from, to string, value manifestmodel.Changes) v1.Changes {
 	result := v1.Changes{
 		FromSchemaVersion:     from,
 		ToSchemaVersion:       to,
@@ -223,7 +223,7 @@ func buildChanges(from, to string, value manifest.Changes) v1.Changes {
 	for _, change := range value.Artifacts {
 		artifactChange := v1.ArtifactChange{
 			Operation:      change.Operation,
-			Kind:           string(change.Kind),
+			Kind:           change.Kind,
 			ArtifactType:   change.ArtifactType,
 			BeforeRevision: change.BeforeRevision,
 			AfterRevision:  change.AfterRevision,
@@ -256,7 +256,7 @@ func buildChanges(from, to string, value manifest.Changes) v1.Changes {
 	for _, change := range value.StorageCatalog {
 		storageChange := v1.StorageChange{
 			Operation:    change.Operation,
-			Kind:         string(change.Kind),
+			Kind:         change.Kind,
 			ArtifactType: change.ArtifactType,
 			Store:        change.Store,
 			Impact:       change.Impact,

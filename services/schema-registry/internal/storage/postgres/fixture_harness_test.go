@@ -20,9 +20,9 @@ import (
 
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/manifest"
-	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 const fixtureOrigin = "https://registry.example.test"
@@ -178,7 +178,7 @@ func fixtureSchema(artifactType, revision, created string, payload []byte, resou
 }
 
 func fixtureResource(name, role, mediaType string, bytes []byte) artifact.Resource {
-	return artifact.Resource{Name: name, Role: role, Descriptor: fixtureDescriptor(bytes, mediaType, "resources/"+name), Bytes: bytes}
+	return artifact.Resource{Name: name, Role: artifact.ResourceRole(role), Descriptor: fixtureDescriptor(bytes, mediaType, "resources/"+name), Bytes: bytes}
 }
 
 func fixtureDescriptor(bytes []byte, mediaType, bundlePath string) artifact.Descriptor {

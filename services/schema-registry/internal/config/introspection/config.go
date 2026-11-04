@@ -18,6 +18,8 @@ import (
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
 const (
@@ -27,9 +29,9 @@ const (
 
 // Serviceability limits are fixed by the version 1 contract.
 const (
-	MaxIdentifierBytes          = 255
-	MaxURIBytes                 = 8192
-	MaxArtifactBytes            = 16 * 1024 * 1024
+	MaxIdentifierBytes          = schemaartifacts.MaxIdentifierBytes
+	MaxURIBytes                 = schemaartifacts.MaxURIBytes
+	MaxArtifactBytes            = schemaartifacts.MaxArtifactBytes
 	MaxGeneratedJSONBytes int64 = 64 * 1024 * 1024
 	MaxJSONDepth                = 64
 	MaxObjectMembers            = 256

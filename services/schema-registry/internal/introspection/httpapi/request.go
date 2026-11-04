@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
 const (

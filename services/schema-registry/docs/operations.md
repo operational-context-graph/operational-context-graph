@@ -13,7 +13,7 @@ with `services/data-ingestion`. The Schema Introspection API command is
 `cmd/schema-introspection-api`.
 
 The module keeps format validation, shared models, PostgreSQL reads, and HTTP
-transport in separate packages. `internal/schema-artifacts` validates immutable
+transport in separate packages. `pkg/schema-artifacts` validates immutable
 artifact, source-mapping, and manifest formats. `internal/storage/postgres`
 owns read-only database access. `internal/introspection` owns API services and
 transport. The API process never imports Data Ingestion packages.
@@ -49,7 +49,7 @@ MUST NOT read network, file, environment, or authoring-repository resources.
 ## Conformance corpus
 
 Manifest conformance fixtures live in
-`internal/schema-artifacts/manifest/testdata/`. `corpus.json` identifies each
+`pkg/schema-artifacts/manifest/testdata/`. `corpus.json` identifies each
 fixture and its expected result. The format-package tests load this corpus and
 also exercise strict parsing, artifact validation, source-mapping validation,
 offline resolver canaries, and canonical serialization. Run the format and
@@ -133,7 +133,7 @@ Run commands from `services/schema-registry`.
 | Lint | `make lint` | Runs golangci-lint or `go vet`. |
 | Dependency integrity | `go mod verify` | Verifies downloaded module content. |
 | Vulnerability analysis | `make vuln` | Runs `govulncheck`. |
-| Format and route conformance | `go test ./internal/schema-artifacts/... ./internal/introspection/httpapi -race` | Exercises strict formats, offline resolvers, HTTP routing, errors, and draining. |
+| Format and route conformance | `make test TEST_PACKAGES='./pkg/schema-artifacts/... ./internal/introspection/httpapi'` | Exercises strict formats, offline resolvers, HTTP routing, errors, and draining. |
 | Migration integration | `go test ./internal/storage/postgres -race` | Uses the PostgreSQL integration harness when Docker is available. |
 | Run locally | `make run-schema-introspection-api` | Uses runtime configuration and read-only credentials. |
 

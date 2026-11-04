@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Package sourcemapping validates opaque program bindings and schema references.
 package sourcemapping
 
 import (
@@ -10,102 +11,158 @@ import (
 	"net/url"
 	"reflect"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/strictjson"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
+// Version identifies a supported source-mapping descriptor format version.
+type Version string
+
+// FormatVersion is the supported descriptor format version.
+const FormatVersion Version = "1.0.0"
+
+// DescriptorMediaType identifies the version 1 opaque-program mapping descriptor representation.
 const DescriptorMediaType = "application/vnd.apeiro.ocg.source-mapping.v1+json"
 
+// errInvalid classifies descriptor, program-binding, and release-context validation failures.
 var errInvalid = errors.New("invalid source-mapping descriptor")
 
 // Descriptor is the parsed source-mapping descriptor format 1.0.0.
 type Descriptor struct {
-	Schema        string
-	FormatVersion string
-	ID            string
-	SourceSchema  SchemaReference
-	Engine        Engine
-	Programs      Programs
+	// Schema identifies the descriptor's format schema through an absolute URI.
+	Schema string
+	// FormatVersion selects the descriptor format independently of schema release versions.
+	FormatVersion Version
+	// ID identifies the mapping's logical artifact type, independently of its source schema's type.
+	ID string
+	// SourceSchema selects the input schema by logical type and exactly one revision or release selector.
+	SourceSchema SchemaReference
+	// Engine preserves opaque publisher-declared metadata shared by all referenced programs.
+	Engine Engine
+	// Programs binds the optional condition and ordered output transformations to owned resources.
+	Programs Programs
 }
 
 // ProgramReference binds an opaque resource owned by this mapping revision.
 type ProgramReference struct {
-	ProgramRef    string
+	// ProgramRef names a program resource owned by this mapping revision.
+	ProgramRef string
+	// ProgramDigest binds that resource's exact bytes using the Registry's sha-256: spelling.
 	ProgramDigest string
 }
 
+// Cardinality identifies the number of records produced by one transformation.
+type Cardinality string
+
+const (
+	// CardinalityOne declares one output record per applicable input for this transformation.
+	CardinalityOne Cardinality = "one"
+	// CardinalityMany declares a collection of output records per applicable input for this transformation.
+	CardinalityMany Cardinality = "many"
+)
+
 // Transformation describes one ordered output program and its canonical schema.
 type Transformation struct {
+	// ProgramReference pins the opaque program resource that produces this output.
 	ProgramReference
+	// TargetSchema selects the canonical schema governing this transformation's output.
 	TargetSchema SchemaReference
-	Cardinality  string
+	// Cardinality declares this transformation's output multiplicity without implying program execution.
+	Cardinality Cardinality
 }
 
 // Programs preserves an optional condition and a non-empty transformation list.
 type Programs struct {
-	Condition       *ProgramReference
+	// Condition optionally binds the applicability program; nil means no condition is declared.
+	Condition *ProgramReference
+	// Transformations preserves the publisher's non-empty ordered list of output program bindings.
 	Transformations []Transformation
 }
 
 // SchemaReference identifies a schema by its immutable revision or release version.
 type SchemaReference struct {
-	ID       string
+	// ID identifies the referenced schema's logical artifact type.
+	ID string
+	// Revision pins an exact selected schema revision and excludes Version when present.
 	Revision string
-	Version  string
+	// Version selects the schema through a release in the supplied lineage and excludes Revision when present.
+	Version string
 }
 
 // Engine is publisher-declared metadata. It does not imply execution support.
 type Engine struct {
-	Language         string
-	LanguageVersion  string
+	// Language names the publisher-declared program language; the Registry does not register or execute it.
+	Language string
+	// LanguageVersion records the publisher-declared semantic version of that language.
+	LanguageVersion string
+	// ExecutionProfile names the publisher-declared execution contract without certifying support or behavior.
 	ExecutionProfile string
 }
 
 // Schema is a selected schema revision in one release.
 type Schema struct {
-	Type     string
+	// Type identifies the selected schema's logical artifact type.
+	Type string
+	// Revision identifies the selected immutable schema revision.
 	Revision string
-	Class    artifact.SchemaClass
+	// Class distinguishes canonical entity, identifier, and edge schemas from source-record schemas.
+	Class artifact.SchemaClass
 }
 
 // Release supplies the selected schemas of one release in a caller-provided lineage.
 type Release struct {
+	// Version identifies this schema release within the caller's validated lineage.
 	Version string
+	// Schemas contains the exact schema selections available in this release.
 	Schemas []Schema
 }
 
 // Mapping preserves a validated representation of a mapping revision for reuse checks.
 type Mapping struct {
-	Artifact   artifact.Artifact
+	// Artifact contains revision-bound metadata, exact descriptor bytes, resources, and dependencies.
+	Artifact artifact.Artifact
+	// Descriptor contains the parsed mapping metadata checked against Artifact.
 	Descriptor Descriptor
 }
 
 // ValidationContext supplies the containing release first, followed by its ancestors.
 // The caller owns the context and MUST provide a consistent immutable release lineage.
 type ValidationContext struct {
-	Version        string
-	Lineage        []Release
+	// Version identifies the release containing the mapping being validated.
+	Version string
+	// Lineage lists the containing release first, followed by its ancestors toward the root.
+	Lineage []Release
+	// ReusedMappings supplies prior validated revisions whose immutable metadata and descriptors must remain unchanged.
 	ReusedMappings []Mapping
 }
 
 // Result contains resolved references without interpreting any program bytes.
 type Result struct {
-	Descriptor      Descriptor
-	Source          Schema
-	Condition       *artifact.Resource
+	// Descriptor preserves the structurally validated mapping descriptor.
+	Descriptor Descriptor
+	// Source resolves the descriptor's input schema to an exact selection in the containing release.
+	Source Schema
+	// Condition resolves the optional condition to an owned resource; nil preserves an absent condition.
+	Condition *artifact.Resource
+	// Transformations preserves descriptor order and resolves each target and owned program resource.
 	Transformations []ResolvedTransformation
 }
 
 // ResolvedTransformation derives output classification from its canonical target.
 type ResolvedTransformation struct {
-	Target      Schema
+	// Target identifies the canonical schema selected for this transformation's output.
+	Target Schema
+	// OutputClass derives output classification from Target rather than publisher-declared program metadata.
 	OutputClass artifact.SchemaClass
-	Program     artifact.Resource
-	Cardinality string
+	// Program contains the exact owned program resource after byte-integrity and binding checks.
+	Program artifact.Resource
+	// Cardinality preserves the descriptor's per-transformation output multiplicity.
+	Cardinality Cardinality
 }
 
 // Parse decodes and structurally validates a source-mapping descriptor.
+// It does not resolve schema selectors, inspect program bytes, or verify resource ownership and digests.
 func Parse(data []byte) (Descriptor, error) {
 	object, err := strictjson.Object(data)
 	if err != nil {
@@ -118,9 +175,11 @@ func Parse(data []byte) (Descriptor, error) {
 	if descriptor.Schema, err = requiredString(object, "$schema"); err != nil {
 		return Descriptor{}, err
 	}
-	if descriptor.FormatVersion, err = requiredString(object, "formatVersion"); err != nil {
+	version, err := requiredString(object, "formatVersion")
+	if err != nil {
 		return Descriptor{}, err
 	}
+	descriptor.FormatVersion = Version(version)
 	if descriptor.ID, err = requiredString(object, "id"); err != nil {
 		return Descriptor{}, err
 	}
@@ -149,6 +208,7 @@ func Validate(mapping artifact.Artifact, context ValidationContext) (Result, err
 }
 
 // ValidateParsed validates a previously parsed descriptor and its immutable resources.
+// Callers MUST supply a descriptor parsed from the artifact's exact payload bytes and a consistent release lineage.
 func ValidateParsed(mapping Mapping, context ValidationContext) (Result, error) {
 	if err := validateMappingArtifact(mapping.Artifact); err != nil {
 		return Result{}, err
@@ -213,6 +273,7 @@ func ValidateRelease(mappings []artifact.Artifact, context ValidationContext) ([
 	return results, nil
 }
 
+// parsePrograms decodes an optional condition and a bounded, non-empty ordered transformation list with exact binding shapes.
 func parsePrograms(raw any) (Programs, error) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -261,11 +322,12 @@ func parsePrograms(raw any) (Programs, error) {
 		if err != nil {
 			return Programs{}, err
 		}
-		result.Transformations = append(result.Transformations, Transformation{ProgramReference: reference, TargetSchema: target, Cardinality: cardinality})
+		result.Transformations = append(result.Transformations, Transformation{ProgramReference: reference, TargetSchema: target, Cardinality: Cardinality(cardinality)})
 	}
 	return result, nil
 }
 
+// parseProgramReference retrieves required resource-name and digest strings; descriptor validation checks their lexical forms.
 func parseProgramReference(object map[string]any) (ProgramReference, error) {
 	name, err := requiredString(object, "programRef")
 	if err != nil {
@@ -278,6 +340,7 @@ func parseProgramReference(object map[string]any) (ProgramReference, error) {
 	return ProgramReference{ProgramRef: name, ProgramDigest: digest}, nil
 }
 
+// requiredString retrieves a present, non-empty JSON string and identifies the field in validation errors.
 func requiredString(object map[string]any, name string) (string, error) {
 	value, ok := object[name].(string)
 	if !ok || value == "" {
@@ -286,6 +349,7 @@ func requiredString(object map[string]any, name string) (string, error) {
 	return value, nil
 }
 
+// parseSchemaReference requires a logical schema identifier and exactly one non-empty revision or release-version selector.
 func parseSchemaReference(object map[string]any, name string) (SchemaReference, error) {
 	value, ok := object[name].(map[string]any)
 	if !ok {
@@ -315,6 +379,7 @@ func parseSchemaReference(object map[string]any, name string) (SchemaReference, 
 	return reference, nil
 }
 
+// parseEngine retrieves required publisher metadata without interpreting or registering the declared execution environment.
 func parseEngine(object map[string]any) (Engine, error) {
 	value, ok := object["engine"].(map[string]any)
 	if !ok {
@@ -337,18 +402,19 @@ func parseEngine(object map[string]any) (Engine, error) {
 	return engine, nil
 }
 
+// validateDescriptor checks format declarations, lexical selectors, engine metadata, program references, and per-transformation cardinalities.
 func validateDescriptor(descriptor Descriptor) error {
 	parsed, err := url.Parse(descriptor.Schema)
 	if err != nil || !parsed.IsAbs() || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("%w: $schema must be an immutable absolute URI", errInvalid)
 	}
-	if descriptor.FormatVersion != "1.0.0" || !artifact.ValidVersion(descriptor.FormatVersion) {
+	if descriptor.FormatVersion != FormatVersion {
 		return fmt.Errorf("%w: unsupported format version", errInvalid)
 	}
 	if !artifact.ValidLogicalType(descriptor.ID) || !validReference(descriptor.SourceSchema) {
 		return fmt.Errorf("%w: invalid schema reference", errInvalid)
 	}
-	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > config.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > config.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
+	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > schemaartifacts.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > schemaartifacts.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
 		return fmt.Errorf("%w: invalid engine metadata", errInvalid)
 	}
 	if len(descriptor.Programs.Transformations) == 0 || len(descriptor.Programs.Transformations) > strictjson.MaxArrayEntries {
@@ -361,17 +427,19 @@ func validateDescriptor(descriptor Descriptor) error {
 		if !validProgramReference(transformation.ProgramReference) || !validReference(transformation.TargetSchema) {
 			return fmt.Errorf("%w: invalid transformation reference", errInvalid)
 		}
-		if transformation.Cardinality != "one" && transformation.Cardinality != "many" {
+		if transformation.Cardinality != CardinalityOne && transformation.Cardinality != CardinalityMany {
 			return fmt.Errorf("%w: invalid transformation cardinality", errInvalid)
 		}
 	}
 	return nil
 }
 
+// validProgramReference checks resource-name safety and the exact Registry digest spelling without loading the resource.
 func validProgramReference(reference ProgramReference) bool {
 	return artifact.ValidResourceName(reference.ProgramRef) && artifact.ValidDigest(reference.ProgramDigest)
 }
 
+// validReference checks the logical schema type and a mutually exclusive, lexically valid revision or version selector.
 func validReference(reference SchemaReference) bool {
 	if !artifact.ValidLogicalType(reference.ID) {
 		return false
@@ -382,6 +450,7 @@ func validReference(reference SchemaReference) bool {
 	return artifact.ValidVersion(reference.Version)
 }
 
+// validateMappingArtifact checks mapping identity, target version, descriptor media type, and exact primary-payload byte integrity.
 func validateMappingArtifact(mapping artifact.Artifact) error {
 	if mapping.Kind != artifact.KindSourceMapping || !artifact.ValidLogicalType(mapping.Type) || !artifact.ValidRevision(mapping.Revision) || !artifact.ValidVersion(mapping.TargetSchema) {
 		return fmt.Errorf("%w: invalid source-mapping artifact", errInvalid)
@@ -395,6 +464,7 @@ func validateMappingArtifact(mapping artifact.Artifact) error {
 	return nil
 }
 
+// validateContext requires the containing release first and rejects invalid or repeated lineage versions.
 func validateContext(context ValidationContext) error {
 	if !artifact.ValidVersion(context.Version) || len(context.Lineage) == 0 || context.Lineage[0].Version != context.Version {
 		return fmt.Errorf("%w: invalid containing release context", errInvalid)
@@ -412,10 +482,12 @@ func validateContext(context ValidationContext) error {
 	return nil
 }
 
+// validatePrograms verifies every resource's bytes and each declared program's ownership, role, digest, and reference coverage.
+// Ancillary resources remain valid without program bindings.
 func validatePrograms(mapping artifact.Artifact, descriptor Descriptor) (map[string]artifact.Resource, error) {
 	resources := make(map[string]artifact.Resource, len(mapping.Resources))
 	for _, resource := range mapping.Resources {
-		if _, exists := resources[resource.Name]; exists || !artifact.ValidResourceName(resource.Name) || !artifact.ValidLogicalType(resource.Role) {
+		if _, exists := resources[resource.Name]; exists || !artifact.ValidResourceName(resource.Name) || !artifact.ValidLogicalType(string(resource.Role)) {
 			return nil, fmt.Errorf("%w: invalid or duplicate resource", errInvalid)
 		}
 		if err := artifact.ValidateDescriptor(resource.Descriptor, resource.Bytes); err != nil {
@@ -433,19 +505,21 @@ func validatePrograms(mapping artifact.Artifact, descriptor Descriptor) (map[str
 	}
 	for _, reference := range references {
 		resource, ok := resources[reference.ProgramRef]
-		if !ok || resource.Role != "program" || resource.Digest != reference.ProgramDigest {
+		if !ok || resource.Role != artifact.ResourceRoleProgram || resource.Digest != reference.ProgramDigest {
 			return nil, fmt.Errorf("%w: program binding does not match resource", errInvalid)
 		}
 		referenced[reference.ProgramRef] = true
 	}
 	for _, resource := range resources {
-		if resource.Role == "program" && !referenced[resource.Name] {
+		if resource.Role == artifact.ResourceRoleProgram && !referenced[resource.Name] {
 			return nil, fmt.Errorf("%w: unreferenced program resource", errInvalid)
 		}
 	}
 	return resources, nil
 }
 
+// resolveReference resolves a source selector through the supplied lineage and requires the same revision in the containing release.
+// The role argument identifies the reference in validation errors.
 func resolveReference(reference SchemaReference, context ValidationContext, role string) (Schema, error) {
 	current := context.Lineage[0]
 	if reference.Revision != "" {
@@ -469,6 +543,7 @@ func resolveReference(reference SchemaReference, context ValidationContext, role
 	return schema, nil
 }
 
+// resolveTarget requires a canonical schema selected unchanged by both the declared target release and the containing release.
 func resolveTarget(targetVersion string, targetReference SchemaReference, context ValidationContext) (Schema, error) {
 	if targetReference.Version != "" && targetReference.Version != targetVersion {
 		return Schema{}, fmt.Errorf("%w: target selector version differs from target schema version", errInvalid)
@@ -490,10 +565,12 @@ func resolveTarget(targetVersion string, targetReference SchemaReference, contex
 	return target, nil
 }
 
+// canonicalOutputClass accepts entity, identifier, and edge classes while excluding source-record schemas from canonical outputs.
 func canonicalOutputClass(class artifact.SchemaClass) bool {
 	return class == artifact.SchemaClassEntity || class == artifact.SchemaClassIdentifier || class == artifact.SchemaClassEdge
 }
 
+// validateDependencies requires the resolved source and targets, unique dependency identities, and selected revisions for schema dependencies.
 func validateDependencies(dependencies []artifact.Dependency, source Schema, targets []Schema, context ValidationContext) error {
 	wanted := map[artifact.Dependency]bool{{Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}: true}
 	for _, target := range targets {
@@ -520,6 +597,7 @@ func validateDependencies(dependencies []artifact.Dependency, source Schema, tar
 	return nil
 }
 
+// validateReuse rejects changed artifact metadata or descriptors when a caller supplies a previously validated matching revision.
 func validateReuse(mapping Mapping, reused []Mapping) error {
 	for _, previous := range reused {
 		if previous.Artifact.Revision != mapping.Artifact.Revision {
@@ -532,6 +610,7 @@ func validateReuse(mapping Mapping, reused []Mapping) error {
 	return nil
 }
 
+// sameBoundArtifact compares revision-bound metadata and bytes while ignoring release-specific payload and resource bundle paths.
 func sameBoundArtifact(left, right artifact.Artifact) bool {
 	left.Payload.BundlePath = ""
 	right.Payload.BundlePath = ""
@@ -546,6 +625,7 @@ func sameBoundArtifact(left, right artifact.Artifact) bool {
 	return reflect.DeepEqual(left, right)
 }
 
+// lineageRelease looks up an exact schema version without traversing or retrieving external release history.
 func lineageRelease(lineage []Release, version string) (Release, bool) {
 	for _, release := range lineage {
 		if release.Version == version {
@@ -555,6 +635,7 @@ func lineageRelease(lineage []Release, version string) (Release, bool) {
 	return Release{}, false
 }
 
+// selectedSchema looks up an exact logical schema type and immutable revision within one supplied release.
 func selectedSchema(release Release, artifactType, revision string) (Schema, bool) {
 	for _, schema := range release.Schemas {
 		if schema.Type == artifactType && schema.Revision == revision {
@@ -564,6 +645,7 @@ func selectedSchema(release Release, artifactType, revision string) (Schema, boo
 	return Schema{}, false
 }
 
+// selectedSchemaByType resolves a logical schema type to the revision selected by one supplied release.
 func selectedSchemaByType(release Release, artifactType string) (Schema, bool) {
 	for _, schema := range release.Schemas {
 		if schema.Type == artifactType {

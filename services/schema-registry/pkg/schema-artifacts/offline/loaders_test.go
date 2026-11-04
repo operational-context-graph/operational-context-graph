@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestLoadersRejectExternalReferences checks that deny-all loaders reject network and filesystem document identifiers.
 func TestLoadersRejectExternalReferences(t *testing.T) {
 	_, err := (JSONSchemaLoader{}).Load("https://example.test/schema.json")
 	require.ErrorIs(t, err, errExternalReference)
@@ -22,11 +23,13 @@ func TestLoadersRejectExternalReferences(t *testing.T) {
 	require.ErrorIs(t, err, errExternalReference)
 }
 
+// TestValidateInputSize verifies acceptance at the byte limit and rejection immediately above it.
 func TestValidateInputSize(t *testing.T) {
 	require.NoError(t, ValidateInputSize(make([]byte, 16*1024*1024)))
 	require.Error(t, ValidateInputSize(make([]byte, 16*1024*1024+1)))
 }
 
+// TestCatalogLoadersResolveOnlyCatalogEntries verifies exact in-memory lookups and rejection of uncataloged schema identifiers.
 func TestCatalogLoadersResolveOnlyCatalogEntries(t *testing.T) {
 	value := map[string]any{"type": "object"}
 	schemaLoader := CatalogJSONSchemaLoader{"https://example.test/schema": value}

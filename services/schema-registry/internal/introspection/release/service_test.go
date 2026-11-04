@@ -19,8 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
 type testReader struct {
@@ -187,11 +188,11 @@ func TestCompareAdaptsVerifiedEndpointArtifacts(t *testing.T) {
 	assert.Empty(t, snapshot.calls)
 	assert.Empty(t, snapshot.limits)
 	require.Len(t, changes.Artifacts, 1)
-	assert.Equal(t, "update", changes.Artifacts[0].Operation)
+	assert.Equal(t, manifest.OperationUpdate, changes.Artifacts[0].Operation)
 	assert.Equal(t, "rev-device-v1", changes.Artifacts[0].BeforeRevision)
 	assert.Equal(t, "rev-device-v2", changes.Artifacts[0].AfterRevision)
-	assert.Equal(t, "breaking", changes.Artifacts[0].Impact)
-	assert.Equal(t, "breaking", changes.Compatibility)
+	assert.Equal(t, manifest.ImpactBreaking, changes.Artifacts[0].Impact)
+	assert.Equal(t, manifest.CompatibilityBreaking, changes.Compatibility)
 }
 
 func TestCompareUsesIndexedEndpointOrderForDistantReleases(t *testing.T) {
@@ -229,7 +230,7 @@ func TestGetPreservesCurrentVersionForUnknownRelease(t *testing.T) {
 
 func comparisonManifest(t *testing.T, version, revision string, previous []byte) []byte {
 	t.Helper()
-	value, err := os.ReadFile(filepath.Join("..", "..", "schema-artifacts", "manifest", "testdata", "valid-initial.json"))
+	value, err := os.ReadFile(filepath.Join("..", "..", "..", "pkg", "schema-artifacts", "manifest", "testdata", "valid-initial.json"))
 	require.NoError(t, err)
 	var document map[string]any
 	require.NoError(t, json.Unmarshal(value, &document))

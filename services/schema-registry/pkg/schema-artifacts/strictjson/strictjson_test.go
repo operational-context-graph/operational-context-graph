@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParseRejectsInvalidInput verifies error classification for malformed encoding, duplicate members, unsafe numbers, and oversized objects.
 func TestParseRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -37,6 +38,7 @@ func TestParseRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+// tooManyMembers constructs valid JSON with one more object member than the profile permits.
 func tooManyMembers() []byte {
 	fields := make([]string, MaxObjectMembers+1)
 	for index := range fields {
@@ -45,6 +47,7 @@ func tooManyMembers() []byte {
 	return []byte("{" + strings.Join(fields, ",") + "}")
 }
 
+// TestParseAcceptsBoundaries checks exact-range integers, fractional values, empty arrays, and the total document byte limit.
 func TestParseAcceptsBoundaries(t *testing.T) {
 	value, err := Parse([]byte(`{"integer":9007199254740991,"fraction":1.5,"array":[]}`))
 	require.NoError(t, err)
@@ -53,6 +56,7 @@ func TestParseAcceptsBoundaries(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTooLarge)
 }
 
+// TestParseStructuralLimits checks independent depth, array-entry, and decoded-string limits.
 func TestParseStructuralLimits(t *testing.T) {
 	tooDeep := strings.Repeat("[", MaxDepth+1) + "0" + strings.Repeat("]", MaxDepth+1)
 	_, err := Parse([]byte(tooDeep))
@@ -67,11 +71,13 @@ func TestParseStructuralLimits(t *testing.T) {
 	assert.ErrorIs(t, err, ErrStringTooLarge)
 }
 
+// TestRejectUnknownFields verifies that object-shape validation accepts only explicitly allowed member names.
 func TestRejectUnknownFields(t *testing.T) {
 	require.NoError(t, RejectUnknownFields(map[string]any{"id": "value"}, "id"))
 	assert.Error(t, RejectUnknownFields(map[string]any{"other": "value"}, "id"))
 }
 
+// FuzzParse exercises parser robustness across valid seeds and arbitrary malformed byte input.
 func FuzzParse(f *testing.F) {
 	for _, input := range [][]byte{[]byte(`{}`), []byte(`[]`), []byte(`{"id":"value"}`), []byte{0xff}} {
 		f.Add(input)
@@ -81,6 +87,7 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// BenchmarkParse measures allocations and throughput for a representative nested document.
 func BenchmarkParse(b *testing.B) {
 	input := []byte(`{"metadata":{"name":"device"},"values":[1,2,3],"active":true}`)
 	b.ReportAllocs()

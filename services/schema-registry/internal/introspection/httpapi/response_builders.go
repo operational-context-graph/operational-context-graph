@@ -11,12 +11,15 @@ import (
 
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 // BuildDescriptor projects validated artifact metadata into the shared wire contract.
 func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescriptor {
 	item := value.Artifact
-	result := v1.ArtifactDescriptor{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: v1.Links{v1.LinkTypeContent: "/v1/artifacts/" + item.Revision, v1.LinkTypeHistory: "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
+	result := v1.ArtifactDescriptor{Kind: artifact.Kind(item.Kind), ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: (*artifact.SchemaClass)(item.SchemaClass), TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: v1.Links{v1.LinkTypeContent: "/v1/artifacts/" + item.Revision, v1.LinkTypeHistory: "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
 	if selected == "" {
 		result.Links[v1.LinkTypeSelf] = "/v1/artifacts/" + item.Revision + "/metadata"
 	} else {
@@ -34,7 +37,7 @@ func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescrip
 		if selected != "" {
 			href = "/v1/releases/" + selected + "/artifacts/" + dependency.Kind + "/" + dependency.ArtifactType
 		}
-		result.Dependencies = append(result.Dependencies, v1.Dependency{Kind: dependency.Kind, ArtifactType: dependency.ArtifactType, ArtifactRevision: dependency.Revision, Href: href})
+		result.Dependencies = append(result.Dependencies, v1.Dependency{Kind: artifact.Kind(dependency.Kind), ArtifactType: dependency.ArtifactType, ArtifactRevision: dependency.Revision, Href: href})
 	}
 	if selected != "" && item.Kind == "schema" {
 		base := "/v1/releases/" + selected + "/schemas/" + item.Type
@@ -48,7 +51,7 @@ func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescrip
 }
 
 func resourceMetadata(revision string, resource model.Resource) v1.Resource {
-	return v1.Resource{Name: resource.Name, Role: resource.Role, MediaType: resource.MediaType, Digest: resource.Digest, Size: resource.Size, Href: "/v1/artifacts/" + revision + "/resources/" + resource.Name}
+	return v1.Resource{Name: resource.Name, Role: artifact.ResourceRole(resource.Role), MediaType: resource.MediaType, Digest: resource.Digest, Size: resource.Size, Href: "/v1/artifacts/" + revision + "/resources/" + resource.Name}
 }
 
 // BuildMapping projects an already-validated mapping without interpreting its programs.
@@ -63,7 +66,7 @@ func BuildMapping(value model.SourceMapping, version string) v1.SourceMapping {
 		result.Programs.Condition = &resource
 	}
 	for _, transformation := range value.Detail.Transformations {
-		result.Programs.Transformations = append(result.Programs.Transformations, v1.SourceMappingTransformation{Resource: resources[transformation.ProgramName], Cardinality: transformation.Cardinality, TargetSchema: schemaReference(version, transformation.TargetArtifactType, transformation.TargetRevision)})
+		result.Programs.Transformations = append(result.Programs.Transformations, v1.SourceMappingTransformation{Resource: resources[transformation.ProgramName], Cardinality: sourcemapping.Cardinality(transformation.Cardinality), TargetSchema: schemaReference(version, transformation.TargetArtifactType, transformation.TargetRevision)})
 	}
 	return result
 }
@@ -79,15 +82,15 @@ func mappingPackageMetadata(value model.SourceMappingPackage, version string) (v
 		return v1.SourceMappingPackage{}, fmt.Errorf("%w: mapping package content is missing", ErrInvalid)
 	}
 	base := "/v1/releases/" + version + "/source-mappings/" + value.Mapping.Artifact.Type
-	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.SchemaDocument, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingProgramContent, 0, len(value.Programs)), TargetStores: make([]string, 0, len(value.Stores)), Links: v1.Links{v1.LinkTypeSelf: base + "/package", v1.LinkTypeMapping: base, v1.LinkTypeDescriptor: "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
+	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.SchemaDocument, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingProgramContent, 0, len(value.Programs)), TargetStores: make([]manifest.Store, 0, len(value.Stores)), Links: v1.Links{v1.LinkTypeSelf: base + "/package", v1.LinkTypeMapping: base, v1.LinkTypeDescriptor: "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
 	for _, schema := range value.Schemas {
 		body.Schemas = append(body.Schemas, v1.SchemaDocument{Metadata: BuildDescriptor(schema, version)})
 	}
 	for _, program := range value.Programs {
-		body.Programs = append(body.Programs, v1.SourceMappingProgramContent{Name: program.Name, Role: program.Role, MediaType: program.MediaType, Digest: program.Digest, Size: program.Size})
+		body.Programs = append(body.Programs, v1.SourceMappingProgramContent{Name: program.Name, Role: artifact.ResourceRole(program.Role), MediaType: program.MediaType, Digest: program.Digest, Size: program.Size})
 	}
 	for _, store := range value.Stores {
-		body.TargetStores = append(body.TargetStores, store.Store)
+		body.TargetStores = append(body.TargetStores, manifest.Store(store.Store))
 	}
 	return body, nil
 }
