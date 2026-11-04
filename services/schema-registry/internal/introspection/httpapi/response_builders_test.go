@@ -123,7 +123,7 @@ func TestBuildDescriptor(t *testing.T) {
 						{Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-target", Href: "/v1/artifacts/rev-target/metadata"},
 					},
 					Extensions: json.RawMessage(`{"publisher":"mapping <&> 世界","number":9007199254740993}`),
-					Links: map[string]string{
+					Links: v1.Links{
 						"self": "/v1/artifacts/rev-mapping/metadata", "content": "/v1/artifacts/rev-mapping",
 						"history": "/v1/artifact-kinds/" + kind + "/device-mapping/history",
 					},
@@ -184,7 +184,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.Equal(t, testVersion, body.SchemaVersion)
 	require.Equal(t, mapping, body.Mapping)
 	require.Equal(t, []string{"data-center-inventory", "insights-repository"}, body.TargetStores)
-	require.Equal(t, map[string]string{
+	require.Equal(t, v1.Links{
 		"self":    "/v1/releases/1.2.3/source-mappings/device-mapping/package",
 		"mapping": "/v1/releases/1.2.3/source-mappings/device-mapping", "descriptor": "/v1/artifacts/rev-mapping",
 	}, body.Links)

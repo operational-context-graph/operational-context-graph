@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
@@ -26,13 +27,12 @@ import (
 
 // Server owns the Gin engine, HTTP lifecycle, admission, and readiness state.
 type Server struct {
-	cfg       introspection.Config
-	checker   postgres.ReadinessChecker
-	releases  *release.Service
-	artifacts *artifact.Service
-	cursors   *pagination.Codec
-	// discoveryLinks is server-owned. Tests may replace it before requests.
-	discoveryLinks func(string) map[string]string
+	cfg            introspection.Config
+	checker        postgres.ReadinessChecker
+	releases       *release.Service
+	artifacts      *artifact.Service
+	cursors        *pagination.Codec
+	discoveryLinks func(string) v1.Links // discoveryLinks is server-owned. Tests may replace it before requests.
 	engine         *gin.Engine
 	api            *gin.RouterGroup
 	http           *http.Server

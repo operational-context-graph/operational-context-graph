@@ -55,8 +55,16 @@ func (s *Server) registry(c *gin.Context) {
 	})
 }
 
-func defaultDiscoveryLinks(version string) map[string]string {
-	return map[string]string{"self": "/v1/registry", "release": "/v1/releases/" + version, "manifest": "/v1/releases/" + version + "/manifest", "artifacts": "/v1/releases/" + version + "/artifacts", "schemas": "/v1/releases/" + version + "/schemas", "sourceMappings": "/v1/releases/" + version + "/source-mappings", "releases": "/v1/releases"}
+func defaultDiscoveryLinks(version string) v1.Links {
+	return v1.Links{
+		v1.LinkTypeSelf:           "/v1/registry",
+		v1.LinkTypeRelease:        "/v1/releases/" + version,
+		v1.LinkTypeManifest:       "/v1/releases/" + version + "/manifest",
+		v1.LinkTypeArtifacts:      "/v1/releases/" + version + "/artifacts",
+		v1.LinkTypeSchemas:        "/v1/releases/" + version + "/schemas",
+		v1.LinkTypeSourceMappings: "/v1/releases/" + version + "/source-mappings",
+		v1.LinkTypeReleases:       "/v1/releases",
+	}
 }
 
 func (s *Server) listReleases(c *gin.Context) {
@@ -112,7 +120,7 @@ func (s *Server) listReleases(c *gin.Context) {
 		SchemaVersion: page.Current.SchemaVersion,
 		Items:         items,
 		NextCursor:    next,
-		Links:         map[string]string{"self": "/v1/releases"},
+		Links:         v1.Links{v1.LinkTypeSelf: "/v1/releases"},
 	})
 }
 
@@ -174,7 +182,20 @@ func releaseItem(item model.Release, includeChanges bool) v1.Release {
 	if item.PreviousSchemaVersion != nil && item.PreviousManifestDigest != nil {
 		previous = &v1.ReleaseReference{SchemaVersion: *item.PreviousSchemaVersion, ManifestDigest: *item.PreviousManifestDigest}
 	}
-	result := v1.Release{SchemaVersion: item.SchemaVersion, ManifestDigest: item.ManifestDigest, PreviousRelease: previous, Source: v1.ReleaseSource{Repository: item.SourceRepository, Commit: item.SourceCommit}, Links: map[string]string{"self": "/v1/releases/" + item.SchemaVersion, "manifest": "/v1/releases/" + item.SchemaVersion + "/manifest", "artifacts": "/v1/releases/" + item.SchemaVersion + "/artifacts", "schemas": "/v1/releases/" + item.SchemaVersion + "/schemas", "sourceMappings": "/v1/releases/" + item.SchemaVersion + "/source-mappings"}}
+	result := v1.Release{
+		SchemaVersion:   item.SchemaVersion,
+		ManifestDigest:  item.ManifestDigest,
+		PreviousRelease: previous,
+		Source:          v1.ReleaseSource{Repository: item.SourceRepository, Commit: item.SourceCommit},
+		Links: v1.Links{
+			v1.LinkTypeSelf:           "/v1/releases/" + item.SchemaVersion,
+			v1.LinkTypeManifest:       "/v1/releases/" + item.SchemaVersion + "/manifest",
+			v1.LinkTypeArtifacts:      "/v1/releases/" + item.SchemaVersion + "/artifacts",
+			v1.LinkTypeSchemas:        "/v1/releases/" + item.SchemaVersion + "/schemas",
+			v1.LinkTypeSourceMappings: "/v1/releases/" + item.SchemaVersion + "/source-mappings",
+		},
+	}
+
 	if len(item.Changes) > 0 {
 		var changes v1.Changes
 		if json.Unmarshal(item.Changes, &changes) == nil {
@@ -196,7 +217,7 @@ func buildChanges(from, to string, value manifest.Changes) v1.Changes {
 		SchemaContextBindings: make([]v1.SchemaContextBindingChange, 0, len(value.SchemaContextBindings)),
 		URICatalog:            make([]v1.URIChange, 0, len(value.URICatalog)),
 		StorageCatalog:        make([]v1.StorageChange, 0, len(value.StorageCatalog)),
-		Links:                 map[string]string{"from": "/v1/releases/" + from, "to": "/v1/releases/" + to},
+		Links:                 v1.Links{v1.LinkTypeFrom: "/v1/releases/" + from, v1.LinkTypeTo: "/v1/releases/" + to},
 	}
 
 	for _, change := range value.Artifacts {

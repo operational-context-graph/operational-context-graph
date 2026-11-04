@@ -16,12 +16,12 @@ import (
 // BuildDescriptor projects validated artifact metadata into the shared wire contract.
 func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescriptor {
 	item := value.Artifact
-	result := v1.ArtifactDescriptor{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: map[string]string{"content": "/v1/artifacts/" + item.Revision, "history": "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
+	result := v1.ArtifactDescriptor{Kind: item.Kind, ArtifactType: item.Type, ArtifactRevision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnderSchemaVersion, SchemaClass: item.SchemaClass, TargetSchemaVersion: item.TargetSchemaVersion, CanonicalURI: item.CanonicalURI, Payload: v1.Payload{MediaType: item.Payload.MediaType, Digest: item.Payload.Digest, Size: item.Payload.Size, Href: "/v1/artifacts/" + item.Revision}, Resources: make([]v1.Resource, 0, len(value.Resources)), Dependencies: make([]v1.Dependency, 0, len(value.Dependencies)), Links: v1.Links{v1.LinkTypeContent: "/v1/artifacts/" + item.Revision, v1.LinkTypeHistory: "/v1/artifact-kinds/" + item.Kind + "/" + item.Type + "/history"}}
 	if selected == "" {
-		result.Links["self"] = "/v1/artifacts/" + item.Revision + "/metadata"
+		result.Links[v1.LinkTypeSelf] = "/v1/artifacts/" + item.Revision + "/metadata"
 	} else {
 		result.SchemaVersion = selected
-		result.Links["self"] = "/v1/releases/" + selected + "/artifacts/" + item.Kind + "/" + item.Type
+		result.Links[v1.LinkTypeSelf] = "/v1/releases/" + selected + "/artifacts/" + item.Kind + "/" + item.Type
 	}
 	if len(item.Extensions) > 0 {
 		result.Extensions = append(json.RawMessage(nil), item.Extensions...)
@@ -38,11 +38,11 @@ func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescrip
 	}
 	if selected != "" && item.Kind == "schema" {
 		base := "/v1/releases/" + selected + "/schemas/" + item.Type
-		result.Links["contexts"], result.Links["package"], result.Links["sourceMappings"], result.Links["stores"] = base+"/contexts", base+"/package", "/v1/releases/"+selected+"/source-mappings?sourceArtifactType="+item.Type, base+"/stores"
+		result.Links[v1.LinkTypeContexts], result.Links[v1.LinkTypePackage], result.Links[v1.LinkTypeSourceMappings], result.Links[v1.LinkTypeStores] = base+"/contexts", base+"/package", "/v1/releases/"+selected+"/source-mappings?sourceArtifactType="+item.Type, base+"/stores"
 	}
 	if selected != "" && item.Kind == "source-mapping" {
-		result.Links["self"] = "/v1/releases/" + selected + "/source-mappings/" + item.Type
-		result.Links["package"] = result.Links["self"] + "/package"
+		result.Links[v1.LinkTypeSelf] = "/v1/releases/" + selected + "/source-mappings/" + item.Type
+		result.Links[v1.LinkTypePackage] = result.Links[v1.LinkTypeSelf] + "/package"
 	}
 	return result
 }
@@ -79,7 +79,7 @@ func mappingPackageMetadata(value model.SourceMappingPackage, version string) (v
 		return v1.SourceMappingPackage{}, fmt.Errorf("%w: mapping package content is missing", ErrInvalid)
 	}
 	base := "/v1/releases/" + version + "/source-mappings/" + value.Mapping.Artifact.Type
-	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.SchemaDocument, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingProgramContent, 0, len(value.Programs)), TargetStores: make([]string, 0, len(value.Stores)), Links: map[string]string{"self": base + "/package", "mapping": base, "descriptor": "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
+	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.SchemaDocument, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingProgramContent, 0, len(value.Programs)), TargetStores: make([]string, 0, len(value.Stores)), Links: v1.Links{v1.LinkTypeSelf: base + "/package", v1.LinkTypeMapping: base, v1.LinkTypeDescriptor: "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
 	for _, schema := range value.Schemas {
 		body.Schemas = append(body.Schemas, v1.SchemaDocument{Metadata: BuildDescriptor(schema, version)})
 	}

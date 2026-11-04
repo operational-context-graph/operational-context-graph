@@ -156,7 +156,7 @@ func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 	assert.Equal(t, "1.0.0", body.SchemaVersion)
 	assert.Equal(t, release.ManifestDigest, body.ManifestDigest)
-	assert.Equal(t, map[string]string{
+	assert.Equal(t, v1.Links{
 		"self":           "/v1/registry",
 		"release":        "/v1/releases/1.0.0",
 		"manifest":       "/v1/releases/1.0.0/manifest",
@@ -172,7 +172,7 @@ func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	server.Handler().ServeHTTP(response, request)
 	assert.Equal(t, http.StatusNotModified, response.Code)
 	assert.Empty(t, response.Body.String())
-	server.discoveryLinks = func(version string) map[string]string {
+	server.discoveryLinks = func(version string) v1.Links {
 		value := defaultDiscoveryLinks(version)
 		value["releases"] = "/v1/release-history"
 		return value
@@ -272,7 +272,7 @@ func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 	var firstPage v1.Page[v1.Release]
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &firstPage))
 	require.Len(t, firstPage.Items, 1)
-	assert.Equal(t, map[string]string{
+	assert.Equal(t, v1.Links{
 		"self":           "/v1/releases/2.0.0",
 		"manifest":       "/v1/releases/2.0.0/manifest",
 		"artifacts":      "/v1/releases/2.0.0/artifacts",
@@ -487,7 +487,7 @@ func TestReleaseDescriptorSupportsHeadAndOptionalFields(t *testing.T) {
 	assert.Equal(t, v1.ReleaseSource{Repository: current.SourceRepository, Commit: current.SourceCommit}, descriptor.Source)
 	assert.Empty(t, descriptor.Compatibility)
 	assert.Empty(t, descriptor.Changes)
-	assert.Equal(t, map[string]string{
+	assert.Equal(t, v1.Links{
 		"self":           "/v1/releases/1.0.1",
 		"manifest":       "/v1/releases/1.0.1/manifest",
 		"artifacts":      "/v1/releases/1.0.1/artifacts",

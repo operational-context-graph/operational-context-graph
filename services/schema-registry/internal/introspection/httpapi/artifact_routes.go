@@ -119,7 +119,7 @@ func (s *Server) releaseArtifacts(c *gin.Context) {
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
-		Links:         map[string]string{"self": "/v1/releases/" + version + "/artifacts"},
+		Links:         v1.Links{v1.LinkTypeSelf: "/v1/releases/" + version + "/artifacts"},
 	})
 }
 
@@ -195,9 +195,9 @@ func (s *Server) artifactHistory(c *gin.Context) {
 			SchemaVersion:             item.SchemaVersion,
 			ArtifactRevision:          item.ArtifactRevision,
 			CreatedUnderSchemaVersion: descriptorResult.Value.CreatedUnderSchemaVersion,
-			Links: map[string]string{
-				"artifact": "/v1/releases/" + item.SchemaVersion + "/artifacts/" + kind + "/" + artifactType,
-				"metadata": "/v1/artifacts/" + item.ArtifactRevision + "/metadata",
+			Links: v1.Links{
+				v1.LinkTypeArtifact: "/v1/releases/" + item.SchemaVersion + "/artifacts/" + kind + "/" + artifactType,
+				v1.LinkTypeMetadata: "/v1/artifacts/" + item.ArtifactRevision + "/metadata",
 			},
 		})
 	}
@@ -205,7 +205,7 @@ func (s *Server) artifactHistory(c *gin.Context) {
 		SchemaVersion: result.Current.SchemaVersion,
 		Items:         responseItems,
 		NextCursor:    next,
-		Links:         map[string]string{"self": "/v1/artifact-kinds/" + kind + "/" + artifactType + "/history"},
+		Links:         v1.Links{v1.LinkTypeSelf: "/v1/artifact-kinds/" + kind + "/" + artifactType + "/history"},
 	})
 }
 

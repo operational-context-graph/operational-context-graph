@@ -7,19 +7,47 @@ package v1
 
 import "encoding/json"
 
+// LinkType identifies a navigation relation in an API representation.
+type LinkType string
+
+const (
+	LinkTypeArtifact       LinkType = "artifact"
+	LinkTypeArtifacts      LinkType = "artifacts"
+	LinkTypeContent        LinkType = "content"
+	LinkTypeContexts       LinkType = "contexts"
+	LinkTypeDescriptor     LinkType = "descriptor"
+	LinkTypeFrom           LinkType = "from"
+	LinkTypeHistory        LinkType = "history"
+	LinkTypeManifest       LinkType = "manifest"
+	LinkTypeMapping        LinkType = "mapping"
+	LinkTypeMetadata       LinkType = "metadata"
+	LinkTypePackage        LinkType = "package"
+	LinkTypeRelease        LinkType = "release"
+	LinkTypeReleases       LinkType = "releases"
+	LinkTypeSchema         LinkType = "schema"
+	LinkTypeSchemas        LinkType = "schemas"
+	LinkTypeSelf           LinkType = "self"
+	LinkTypeSourceMappings LinkType = "sourceMappings"
+	LinkTypeStores         LinkType = "stores"
+	LinkTypeTo             LinkType = "to"
+)
+
+// Links contains navigation links indexed by their relation type.
+type Links = map[LinkType]string
+
 // Page contains a collection of API resources and its pagination metadata.
 type Page[T any] struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Items         []T               `json:"items"`
-	NextCursor    *string           `json:"nextCursor"`
-	Links         map[string]string `json:"links"`
+	SchemaVersion string  `json:"schemaVersion"`
+	Items         []T     `json:"items"`
+	NextCursor    *string `json:"nextCursor"`
+	Links         Links   `json:"links"`
 }
 
 // Registry identifies the active release and its discovery links.
 type Registry struct {
-	SchemaVersion  string            `json:"schemaVersion"`
-	ManifestDigest string            `json:"manifestDigest"`
-	Links          map[string]string `json:"links"`
+	SchemaVersion  string `json:"schemaVersion"`
+	ManifestDigest string `json:"manifestDigest"`
+	Links          Links  `json:"links"`
 }
 
 // Release describes an activated schema release.
@@ -30,7 +58,7 @@ type Release struct {
 	Source          ReleaseSource     `json:"source"`
 	Compatibility   string            `json:"compatibility,omitempty"`
 	Changes         json.RawMessage   `json:"changes,omitempty"`
-	Links           map[string]string `json:"links"`
+	Links           Links             `json:"links"`
 }
 
 // ReleaseReference identifies a release and its immutable manifest.
@@ -54,7 +82,7 @@ type Changes struct {
 	SchemaContextBindings []SchemaContextBindingChange `json:"schemaContextBindings"`
 	URICatalog            []URIChange                  `json:"uriCatalog"`
 	StorageCatalog        []StorageChange              `json:"storageCatalog"`
-	Links                 map[string]string            `json:"links"`
+	Links                 Links                        `json:"links"`
 }
 
 // ArtifactChange describes one artifact change between releases.
@@ -97,27 +125,27 @@ type StorageChange struct {
 
 // ArtifactDescriptor describes an artifact without embedding its stored bytes.
 type ArtifactDescriptor struct {
-	SchemaVersion             string            `json:"schemaVersion,omitempty"`
-	Kind                      string            `json:"kind"`
-	ArtifactType              string            `json:"artifactType"`
-	ArtifactRevision          string            `json:"artifactRevision"`
-	CreatedUnderSchemaVersion string            `json:"createdUnderSchemaVersion"`
-	SchemaClass               *string           `json:"schemaClass,omitempty"`
-	TargetSchemaVersion       *string           `json:"targetSchemaVersion,omitempty"`
-	CanonicalURI              string            `json:"canonicalUri"`
-	Payload                   Payload           `json:"payload"`
-	Resources                 []Resource        `json:"resources"`
-	Dependencies              []Dependency      `json:"dependencies"`
-	Extensions                json.RawMessage   `json:"extensions,omitempty"`
-	Links                     map[string]string `json:"links"`
+	SchemaVersion             string          `json:"schemaVersion,omitempty"`
+	Kind                      string          `json:"kind"`
+	ArtifactType              string          `json:"artifactType"`
+	ArtifactRevision          string          `json:"artifactRevision"`
+	CreatedUnderSchemaVersion string          `json:"createdUnderSchemaVersion"`
+	SchemaClass               *string         `json:"schemaClass,omitempty"`
+	TargetSchemaVersion       *string         `json:"targetSchemaVersion,omitempty"`
+	CanonicalURI              string          `json:"canonicalUri"`
+	Payload                   Payload         `json:"payload"`
+	Resources                 []Resource      `json:"resources"`
+	Dependencies              []Dependency    `json:"dependencies"`
+	Extensions                json.RawMessage `json:"extensions,omitempty"`
+	Links                     Links           `json:"links"`
 }
 
 // ArtifactHistoryItem identifies an artifact revision selected by a release.
 type ArtifactHistoryItem struct {
-	SchemaVersion             string            `json:"schemaVersion"`
-	ArtifactRevision          string            `json:"artifactRevision"`
-	CreatedUnderSchemaVersion string            `json:"createdUnderSchemaVersion"`
-	Links                     map[string]string `json:"links"`
+	SchemaVersion             string `json:"schemaVersion"`
+	ArtifactRevision          string `json:"artifactRevision"`
+	CreatedUnderSchemaVersion string `json:"createdUnderSchemaVersion"`
+	Links                     Links  `json:"links"`
 }
 
 // ArtifactBytes contains an artifact representation and its response metadata.
@@ -203,7 +231,7 @@ type SourceMappingPackage struct {
 	Programs      []SourceMappingProgramContent `json:"programs"`
 	Schemas       []SchemaDocument              `json:"schemas"`
 	TargetStores  []string                      `json:"targetStores"`
-	Links         map[string]string             `json:"links"`
+	Links         Links                         `json:"links"`
 }
 
 // SourceMappingProgramContent embeds canonical Base64 content for one referenced program.
@@ -227,15 +255,15 @@ type SchemaContexts struct {
 	SchemaVersion string               `json:"schemaVersion"`
 	Schema        SchemaReference      `json:"schema"`
 	Items         []ArtifactDescriptor `json:"items"`
-	Links         map[string]string    `json:"links"`
+	Links         Links                `json:"links"`
 }
 
 // SchemaPackage contains a schema document and its context documents.
 type SchemaPackage struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Schema        SchemaDocument    `json:"schema"`
-	Contexts      []SchemaDocument  `json:"contexts"`
-	Links         map[string]string `json:"links"`
+	SchemaVersion string           `json:"schemaVersion"`
+	Schema        SchemaDocument   `json:"schema"`
+	Contexts      []SchemaDocument `json:"contexts"`
+	Links         Links            `json:"links"`
 }
 
 // SchemaStores identifies the stores associated with a schema.
@@ -243,7 +271,7 @@ type SchemaStores struct {
 	SchemaVersion string            `json:"schemaVersion"`
 	Schema        SchemaStoreSchema `json:"schema"`
 	Stores        []string          `json:"stores"`
-	Links         map[string]string `json:"links"`
+	Links         Links             `json:"links"`
 }
 
 // SchemaStoreSchema identifies a schema in a stores response.
