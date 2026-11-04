@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//nolint:gosec // G101: no real hardcoded credentials, just synthetic example values in the test fixtures
 const validConfig = `
 server:
   port: 8081
@@ -53,6 +54,7 @@ func TestLoadAllowsSingleAPISlotWithReservedReadinessCapacity(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidBoundaries(t *testing.T) {
+	//nolint:gosec // G101: no real hardcoded credentials, just synthetic example values in the test fixtures
 	tests := map[string]string{
 		"empty target":               "database:\n  url: ''\n",
 		"missing runtime login":      "database:\n  url: postgresql://db.example.test/registry?sslmode=verify-full\n",

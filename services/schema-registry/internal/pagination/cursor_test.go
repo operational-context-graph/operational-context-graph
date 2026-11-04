@@ -45,8 +45,8 @@ func TestCodecBindsParametersButDoesNotAuthenticateValidState(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, changed := range []Payload{{Resource: "artifacts", Filters: expected.Filters, Limit: expected.Limit, Sort: expected.Sort}, {Resource: expected.Resource, Filters: expected.Filters, Limit: 1, Sort: expected.Sort}, {Resource: expected.Resource, Filters: expected.Filters, Limit: expected.Limit, Sort: "name"}, {Resource: expected.Resource, Filters: map[string]string{"kind": "context"}, Limit: expected.Limit, Sort: expected.Sort}} {
-		_, err := codec.Decode(token, changed)
-		assert.ErrorIs(t, err, ErrInvalid)
+		_, decodeErr := codec.Decode(token, changed)
+		assert.ErrorIs(t, decodeErr, ErrInvalid)
 	}
 
 	callerConstructed := expected

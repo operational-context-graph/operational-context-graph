@@ -111,8 +111,8 @@ func Parse(data []byte) (Descriptor, error) {
 	if err != nil {
 		return Descriptor{}, fmt.Errorf("parse descriptor: %w", err)
 	}
-	if err := strictjson.RejectUnknownFields(object, "$schema", "formatVersion", "id", "sourceSchema", "engine", "programs"); err != nil {
-		return Descriptor{}, fmt.Errorf("descriptor fields: %w", err)
+	if validationErr := strictjson.RejectUnknownFields(object, "$schema", "formatVersion", "id", "sourceSchema", "engine", "programs"); validationErr != nil {
+		return Descriptor{}, fmt.Errorf("descriptor fields: %w", validationErr)
 	}
 	descriptor := Descriptor{}
 	if descriptor.Schema, err = requiredString(object, "$schema"); err != nil {
@@ -223,8 +223,8 @@ func parsePrograms(raw any) (Programs, error) {
 	}
 	var result Programs
 	if rawCondition, exists := object["condition"]; exists {
-		condition, ok := rawCondition.(map[string]any)
-		if !ok {
+		condition, isObject := rawCondition.(map[string]any)
+		if !isObject {
 			return Programs{}, fmt.Errorf("%w: condition must be an object", errInvalid)
 		}
 		if err := strictjson.RejectUnknownFields(condition, "programRef", "programDigest"); err != nil {

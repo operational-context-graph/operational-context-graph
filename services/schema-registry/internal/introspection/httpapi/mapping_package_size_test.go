@@ -66,15 +66,15 @@ func TestMappingPackageSmallSizeLimits(t *testing.T) {
 	require.NoError(t, err)
 	for _, limit := range []int64{exact, exact + 1, math.MaxInt64} {
 		t.Run(fmt.Sprintf("accept-%d", limit), func(t *testing.T) {
-			size, err := mappingPackageSize(value, metadata, limit)
-			require.NoError(t, err)
+			size, sizeErr := mappingPackageSize(value, metadata, limit)
+			require.NoError(t, sizeErr)
 			require.Equal(t, exact, size)
 		})
 	}
 	for _, limit := range []int64{0, 2, 3, 4, 7, 13, exact - 1} {
 		t.Run(fmt.Sprintf("reject-%d", limit), func(t *testing.T) {
-			size, err := mappingPackageSize(value, metadata, limit)
-			require.ErrorIs(t, err, ErrTooLarge)
+			size, sizeErr := mappingPackageSize(value, metadata, limit)
+			require.ErrorIs(t, sizeErr, ErrTooLarge)
 			require.Zero(t, size)
 		})
 	}

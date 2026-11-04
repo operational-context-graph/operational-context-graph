@@ -109,7 +109,7 @@ func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error)
 	if selection.Extensions != nil {
 		extensions, err := json.Marshal(selection.Extensions)
 		if err != nil {
-			return model.Descriptor{}, fmt.Errorf("%w: artifact extensions: %v", httpapi.ErrInvalid, err)
+			return model.Descriptor{}, fmt.Errorf("%w: artifact extensions: %w", httpapi.ErrInvalid, err)
 		}
 		value.Artifact.Extensions = extensions
 	}
@@ -157,7 +157,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Sou
 	}
 	parsed, err := sourcemapping.Parse(mapping.Artifact.Payload.Bytes)
 	if err != nil {
-		return model.SourceMappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %v", httpapi.ErrInvalid, err)
+		return model.SourceMappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %w", httpapi.ErrInvalid, err)
 	}
 	source, err := c.schema(parsed.SourceSchema)
 	if err != nil {

@@ -43,10 +43,51 @@ type errorDefinition struct {
 	retryable bool
 }
 
-var errorCatalog = map[ErrorCode]errorDefinition{
-	InvalidRequest: {400, "The request is malformed.", false}, InvalidQueryParameter: {400, "A query parameter is invalid.", false}, InvalidFilterCombination: {400, "The supplied filters cannot be combined.", false}, UnsupportedArtifactKind: {400, "The requested artifact kind is not supported.", false}, UnsupportedSchemaClass: {400, "The requested schema class is not supported.", false}, InvalidCursor: {400, "The cursor is invalid.", true}, VersionsNotComparable: {400, "The selected versions cannot be compared.", false},
-	ReleaseNotFound: {404, "The selected release was not found.", true}, ArtifactNotInRelease: {404, "The selected release does not contain the requested artifact.", false}, ArtifactNotFound: {404, "The requested artifact was not found.", true}, ResourceNotFound: {404, "The requested resource was not found.", false}, SchemaNotInRelease: {404, "The selected release does not contain the requested schema.", false}, URINotInRelease: {404, "The selected release does not contain the requested URI.", false}, LogicalArtifactNotFound: {404, "The requested logical artifact was not found.", true},
-	NotAcceptable: {406, "No acceptable representation is available.", true}, ReadLimitExceeded: {429, "The read limit has been exceeded.", true}, InconsistentRegistryState: {500, "The registry state is inconsistent.", true}, InternalError: {500, "An internal error occurred.", true}, NoActiveRelease: {503, "No active release is available.", true}, RegistryUnavailable: {503, "The registry is unavailable.", true},
+func errorDefinitionFor(code ErrorCode) (errorDefinition, bool) {
+	switch code {
+	case InvalidRequest:
+		return errorDefinition{http.StatusBadRequest, "The request is malformed.", false}, true
+	case InvalidQueryParameter:
+		return errorDefinition{http.StatusBadRequest, "A query parameter is invalid.", false}, true
+	case InvalidFilterCombination:
+		return errorDefinition{http.StatusBadRequest, "The supplied filters cannot be combined.", false}, true
+	case UnsupportedArtifactKind:
+		return errorDefinition{http.StatusBadRequest, "The requested artifact kind is not supported.", false}, true
+	case UnsupportedSchemaClass:
+		return errorDefinition{http.StatusBadRequest, "The requested schema class is not supported.", false}, true
+	case InvalidCursor:
+		return errorDefinition{http.StatusBadRequest, "The cursor is invalid.", true}, true
+	case VersionsNotComparable:
+		return errorDefinition{http.StatusBadRequest, "The selected versions cannot be compared.", false}, true
+	case ReleaseNotFound:
+		return errorDefinition{http.StatusNotFound, "The selected release was not found.", true}, true
+	case ArtifactNotInRelease:
+		return errorDefinition{http.StatusNotFound, "The selected release does not contain the requested artifact.", false}, true
+	case ArtifactNotFound:
+		return errorDefinition{http.StatusNotFound, "The requested artifact was not found.", true}, true
+	case ResourceNotFound:
+		return errorDefinition{http.StatusNotFound, "The requested resource was not found.", false}, true
+	case SchemaNotInRelease:
+		return errorDefinition{http.StatusNotFound, "The selected release does not contain the requested schema.", false}, true
+	case URINotInRelease:
+		return errorDefinition{http.StatusNotFound, "The selected release does not contain the requested URI.", false}, true
+	case LogicalArtifactNotFound:
+		return errorDefinition{http.StatusNotFound, "The requested logical artifact was not found.", true}, true
+	case NotAcceptable:
+		return errorDefinition{http.StatusNotAcceptable, "No acceptable representation is available.", true}, true
+	case ReadLimitExceeded:
+		return errorDefinition{http.StatusTooManyRequests, "The read limit has been exceeded.", true}, true
+	case InconsistentRegistryState:
+		return errorDefinition{http.StatusInternalServerError, "The registry state is inconsistent.", true}, true
+	case InternalError:
+		return errorDefinition{http.StatusInternalServerError, "An internal error occurred.", true}, true
+	case NoActiveRelease:
+		return errorDefinition{http.StatusServiceUnavailable, "No active release is available.", true}, true
+	case RegistryUnavailable:
+		return errorDefinition{http.StatusServiceUnavailable, "The registry is unavailable.", true}, true
+	default:
+		return errorDefinition{}, false
+	}
 }
 
 // ErrorDetail supplies an optional stable validation detail.
@@ -88,9 +129,10 @@ func writeHeadError(writer http.ResponseWriter, code ErrorCode, target string, d
 }
 
 func writeError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata, includeBody bool) {
-	definition, ok := errorCatalog[code]
+	definition, ok := errorDefinitionFor(code)
 	if !ok {
-		code, definition = InternalError, errorCatalog[InternalError]
+		code = InternalError
+		definition, _ = errorDefinitionFor(InternalError)
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("Cache-Control", "no-cache")

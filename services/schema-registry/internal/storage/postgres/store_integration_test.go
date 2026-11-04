@@ -91,8 +91,8 @@ func (suite *readStoreSuite) TestOrderedMappingProjectionDrift() {
 	_, err := suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.source_mapping_transformations SET cardinality = 'many' WHERE mapping_revision = 'candidate-mapping-0-r1' AND ordinal = 0`)
 	suite.Require().NoError(err)
 	err = store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
-		_, err := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
-		return err
+		_, mappingErr := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
+		return mappingErr
 	})
 	suite.ErrorIs(err, ErrInconsistentState)
 }
@@ -184,8 +184,8 @@ func (suite *readStoreSuite) requireMappingProjectionFailure(statement string) {
 	_, err := suite.Database.ExecContext(suite.Context, statement)
 	suite.Require().NoError(err)
 	err = store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
-		_, err := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
-		return err
+		_, mappingErr := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
+		return mappingErr
 	})
 	suite.ErrorIs(err, ErrInconsistentState)
 }

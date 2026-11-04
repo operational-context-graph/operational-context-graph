@@ -70,7 +70,7 @@ func TestEncodeRepresentationAllows64MiBBoundary(t *testing.T) {
 
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	require.NoError(t, err)
-	written, err := io.Copy(io.Discard, reader)
+	written, err := io.Copy(io.Discard, io.LimitReader(reader, config.MaxGeneratedJSONBytes+1))
 	require.NoError(t, err)
 	require.NoError(t, reader.Close())
 	assert.Equal(t, config.MaxGeneratedJSONBytes, written)

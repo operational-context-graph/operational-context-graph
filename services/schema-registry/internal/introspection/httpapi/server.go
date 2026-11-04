@@ -114,6 +114,7 @@ func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
 	defer s.close()
 	var cancelRequests context.CancelFunc
 	s.startOnce.Do(func() {
+		// #nosec G118 -- cancelRequests is deferred after startOnce completes.
 		baseCtx, cancel := context.WithCancel(context.Background())
 		cancelRequests = cancel
 		s.http.BaseContext = func(net.Listener) context.Context { return baseCtx }
@@ -121,6 +122,7 @@ func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
 	if cancelRequests == nil {
 		return errors.New("server cannot be started more than once")
 	}
+	defer cancelRequests()
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.http.Serve(listener) }()
 	select {

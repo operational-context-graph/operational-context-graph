@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 
@@ -241,7 +240,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		response := requestConformance(t, client, http.MethodGet, baseURL+"/v1/releases/1.0.0/schemas/device/package", nil)
 		closeConformanceBody(t, response)
 		require.Equal(t, http.StatusOK, response.StatusCode)
-		assert.True(t, reflect.DeepEqual(before, fixture))
+		assert.Equal(t, before, fixture)
 	})
 }
 

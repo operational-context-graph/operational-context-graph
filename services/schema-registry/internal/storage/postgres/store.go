@@ -106,8 +106,8 @@ func (s *Store) Read(ctx context.Context, fn func(context.Context, *Snapshot) er
 		queryTimeout = min(queryTimeout, remaining)
 	}
 	queryCtx := operationCtx
-	if err := setLocalTimeouts(queryCtx, tx, s.timeouts.capped(queryTimeout)); err != nil {
-		return err
+	if timeoutErr := setLocalTimeouts(queryCtx, tx, s.timeouts.capped(queryTimeout)); timeoutErr != nil {
+		return timeoutErr
 	}
 	current, err := readCurrentState(queryCtx, tx)
 	if err != nil {
@@ -1119,7 +1119,7 @@ func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family
 				decoder := json.NewDecoder(bytes.NewReader(raw))
 				decoder.UseNumber()
 				var extensions any
-				if err := decoder.Decode(&extensions); err != nil {
+				if decodeErr := decoder.Decode(&extensions); decodeErr != nil {
 					return nil, ErrInconsistentState
 				}
 				canonical, err := json.Marshal(extensions)

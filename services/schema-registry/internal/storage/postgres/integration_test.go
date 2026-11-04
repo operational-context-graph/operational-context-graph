@@ -36,14 +36,14 @@ func (suite *migrationsSuite) TestMigrationsAndBoundaries() {
 	require.NoError(t, err)
 
 	t.Run("valid boundary row", func(t *testing.T) {
-		_, err := conn.ExecContext(ctx, `
+		_, insertErr := conn.ExecContext(ctx, `
 INSERT INTO schema_registry.releases (
     schema_version, manifest_digest, manifest_bytes, source_repository,
     source_commit, projection_commitment
 ) VALUES ($1, $2, $3, $4, $5, $6)`,
 			"1.0.0", digest('a'), []byte("{}"), "https://example.test/repository",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commitment())
-		require.NoError(t, err)
+		require.NoError(t, insertErr)
 	})
 
 	for _, test := range []struct {
@@ -83,34 +83,34 @@ INSERT INTO schema_registry.releases (
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := conn.ExecContext(ctx, test.query, test.args...)
-			require.Error(t, err)
+			_, insertErr := conn.ExecContext(ctx, test.query, test.args...)
+			require.Error(t, insertErr)
 		})
 	}
 
 	t.Run("duplicate release selection is rejected", func(t *testing.T) {
 		insertArtifact(t, ctx, conn, "selection-revision", "selection", "https://registry.test/v1/resources/schema/selection/selection-revision")
-		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('1.0.0', 'schema', 'selection', 'selection-revision')`)
-		require.NoError(t, err)
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('1.0.0', 'schema', 'selection', 'selection-revision')`)
+		require.NoError(t, insertErr)
 		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('1.0.0', 'schema', 'selection', 'selection-revision')`)
 		require.Error(t, err)
 	})
 
 	t.Run("canonical URI and stored sequence are unique", func(t *testing.T) {
 		insertArtifact(t, ctx, conn, "canonical-one", "canonical-one", "https://registry.test/v1/resources/schema/canonical-one/canonical")
-		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('canonical-two', 'schema', 'canonical-two', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/canonical-one/canonical', 'application/schema+json', $1, 0, '')`, digest('e'))
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.releases SET activated_sequence = 1 WHERE schema_version = '1.0.0'`)
-		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, activated_sequence, projection_commitment) VALUES ('1.0.1', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, $2)`, "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commitment())
-		require.Error(t, err)
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('canonical-two', 'schema', 'canonical-two', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/canonical-one/canonical', 'application/schema+json', $1, 0, '')`, digest('e'))
+		require.Error(t, insertErr)
+		_, insertErr = conn.ExecContext(ctx, `UPDATE schema_registry.releases SET activated_sequence = 1 WHERE schema_version = '1.0.0'`)
+		require.NoError(t, insertErr)
+		_, insertErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, activated_sequence, projection_commitment) VALUES ('1.0.1', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, $2)`, "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commitment())
+		require.Error(t, insertErr)
 	})
 
 	t.Run("pre-populated current state accepts a stored release", func(t *testing.T) {
-		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, projection_commitment) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $2)`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", commitment())
-		require.NoError(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '9.0.0' WHERE singleton = true`)
-		require.NoError(t, err)
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, projection_commitment) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $2)`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", commitment())
+		require.NoError(t, insertErr)
+		_, insertErr = conn.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '9.0.0' WHERE singleton = true`)
+		require.NoError(t, insertErr)
 	})
 
 	t.Run("migration has no state-transition routines or triggers", func(t *testing.T) {
@@ -134,13 +134,13 @@ WHERE namespace.nspname = 'schema_registry'
 	})
 
 	t.Run("zero length payload is valid", func(t *testing.T) {
-		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('empty-payload', 'schema', 'empty-payload', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/empty-payload/empty-payload', 'application/schema+json', $1, 0, '')`, digest('a'))
-		require.NoError(t, err)
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('empty-payload', 'schema', 'empty-payload', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/empty-payload/empty-payload', 'application/schema+json', $1, 0, '')`, digest('a'))
+		require.NoError(t, insertErr)
 	})
 
 	t.Run("missing references fail and shared mapping sources are accepted", func(t *testing.T) {
-		_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('9.0.0', 'schema', 'missing', 'unknown-revision')`)
-		require.Error(t, err)
+		_, queryErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('9.0.0', 'schema', 'missing', 'unknown-revision')`)
+		require.Error(t, queryErr)
 		insertArtifact(t, ctx, conn, "mapping-one", "mapping-one", "https://registry.test/v1/resources/schema/mapping-one/mapping-one")
 		insertArtifact(t, ctx, conn, "mapping-two", "mapping-two", "https://registry.test/v1/resources/schema/mapping-two/mapping-two")
 		insertArtifact(t, ctx, conn, "mapping-source", "mapping-source", "https://registry.test/v1/resources/schema/mapping-source/mapping-source")
@@ -148,21 +148,21 @@ WHERE namespace.nspname = 'schema_registry'
 		insertResource(t, ctx, conn, "mapping-one", "program-one")
 		insertResource(t, ctx, conn, "mapping-two", "program-two")
 		for _, revision := range []string{"mapping-one", "mapping-two", "mapping-source", "mapping-target"} {
-			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version,kind,artifact_type,artifact_revision) VALUES ('9.0.0','schema',$1,$1)`, revision)
-			require.NoError(t, err)
+			_, queryErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version,kind,artifact_type,artifact_revision) VALUES ('9.0.0','schema',$1,$1)`, revision)
+			require.NoError(t, queryErr)
 		}
 		for _, revision := range []string{"mapping-one", "mapping-two"} {
-			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0',$1,'mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`, revision)
-			require.NoError(t, err)
+			_, queryErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0',$1,'mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`, revision)
+			require.NoError(t, queryErr)
 		}
 		for ordinal := range 2 {
-			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target','mapping-target','one','program-one',$2)`, ordinal, digest('a'))
-			require.NoError(t, err)
+			_, queryErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target','mapping-target','one','program-one',$2)`, ordinal, digest('a'))
+			require.NoError(t, queryErr)
 		}
-		_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0','mapping-one','mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`)
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, `UPDATE schema_registry.source_mapping_details SET condition_program_name = 'missing', condition_program_digest = $1 WHERE schema_version = '9.0.0' AND mapping_revision = 'mapping-two'`, digest('a'))
-		require.Error(t, err)
+		_, queryErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_details (schema_version,mapping_revision,source_artifact_type,source_revision,target_schema_version,engine_language,engine_language_version,execution_profile) VALUES ('9.0.0','mapping-one','mapping-source','mapping-source','9.0.0','language','1.0.0','profile')`)
+		require.Error(t, queryErr)
+		_, queryErr = conn.ExecContext(ctx, `UPDATE schema_registry.source_mapping_details SET condition_program_name = 'missing', condition_program_digest = $1 WHERE schema_version = '9.0.0' AND mapping_revision = 'mapping-two'`, digest('a'))
+		require.Error(t, queryErr)
 		for _, invalid := range []struct {
 			ordinal                      int
 			target, cardinality, program string
@@ -174,25 +174,27 @@ WHERE namespace.nspname = 'schema_registry'
 			{-1, "mapping-target", "one", "program-one"},
 			{10000, "mapping-target", "one", "program-one"},
 		} {
-			_, err = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target',$2,$3,$4,$5)`, invalid.ordinal, invalid.target, invalid.cardinality, invalid.program, digest('a'))
-			require.Error(t, err)
+			_, queryErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ('9.0.0','mapping-one',$1,'mapping-target',$2,$3,$4,$5)`, invalid.ordinal, invalid.target, invalid.cardinality, invalid.program, digest('a'))
+			require.Error(t, queryErr)
 		}
 	})
 
 	t.Run("runtime role is read only", func(t *testing.T) {
-		_, err := conn.ExecContext(ctx, "SET ROLE schema_registry_api")
-		require.NoError(t, err)
+		_, roleErr := conn.ExecContext(ctx, "SET ROLE schema_registry_api")
+		require.NoError(t, roleErr)
 		for _, table := range []string{"source_mapping_details", "source_mapping_transformations"} {
 			// These identifiers are a fixed test-owned allowlist, not external input.
-			_, err = conn.ExecContext(ctx, "SELECT * FROM schema_registry."+table+" LIMIT 0")
-			require.NoError(t, err)
-			_, err = conn.ExecContext(ctx, "DELETE FROM schema_registry."+table+" WHERE false")
-			require.Error(t, err)
+			// #nosec G202 -- table values come from the fixed test-owned allowlist.
+			_, roleErr = conn.ExecContext(ctx, "SELECT * FROM schema_registry."+table+" LIMIT 0")
+			require.NoError(t, roleErr)
+			// #nosec G202 -- table values come from the fixed test-owned allowlist.
+			_, roleErr = conn.ExecContext(ctx, "DELETE FROM schema_registry."+table+" WHERE false")
+			require.Error(t, roleErr)
 		}
-		_, err = conn.ExecContext(ctx, "INSERT INTO schema_registry.registry_state (singleton) VALUES (false)")
-		require.Error(t, err)
-		_, err = conn.ExecContext(ctx, "RESET ROLE")
-		require.NoError(t, err)
+		_, roleErr = conn.ExecContext(ctx, "INSERT INTO schema_registry.registry_state (singleton) VALUES (false)")
+		require.Error(t, roleErr)
+		_, roleErr = conn.ExecContext(ctx, "RESET ROLE")
+		require.NoError(t, roleErr)
 	})
 
 	t.Run("runtime login assumes only read role", func(t *testing.T) {
@@ -200,8 +202,8 @@ WHERE namespace.nspname = 'schema_registry'
 		runtimeConn, openErr := sql.Open("pgx", runtimeURL)
 		require.NoError(t, openErr)
 		t.Cleanup(func() { require.NoError(t, runtimeConn.Close()) })
-		_, err := runtimeConn.ExecContext(ctx, "SET ROLE schema_registry_api")
-		require.NoError(t, err)
+		_, roleErr := runtimeConn.ExecContext(ctx, "SET ROLE schema_registry_api")
+		require.NoError(t, roleErr)
 		for _, operation := range []string{
 			"CREATE TEMPORARY TABLE denied_temp (id integer)",
 			"CREATE TABLE schema_registry.denied_ddl (id integer)",

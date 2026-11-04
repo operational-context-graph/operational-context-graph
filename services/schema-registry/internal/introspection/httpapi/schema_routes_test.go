@@ -348,7 +348,7 @@ func TestSchemaCollectionPaginatesAndFiltersExactValues(t *testing.T) {
 	fixture := schemaFixture()
 	class := "entity-type"
 	items := make([]model.Artifact, 0, 1001)
-	for index := 0; index < 1001; index++ {
+	for index := range 1001 {
 		typeName := fmt.Sprintf("schema-%04d", index)
 		items = append(items, fixtureArtifact(fmt.Sprintf("revision-%04d", index), "schema", typeName, &class, nil, []byte(`true`)))
 		items[index].Payload.MediaType = "application/schema+json"
@@ -538,7 +538,7 @@ func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
 	t.Run("1001 mappings paginate through an unsigned cursor", func(t *testing.T) {
 		fixture := mappingFixture()
 		items := make([]model.Artifact, 0, 1001)
-		for index := 0; index < 1001; index++ {
+		for index := range 1001 {
 			typeName := fmt.Sprintf("mapping-%04d", index)
 			revision := fmt.Sprintf("mapping-revision-%04d", index)
 			item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))
@@ -587,7 +587,7 @@ func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
 func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 	fixture := mappingFixture()
 	items := make([]model.Artifact, 0, 1002)
-	for index := 0; index < 1002; index++ {
+	for index := range 1002 {
 		typeName := fmt.Sprintf("mapping-filter-%04d", index)
 		revision := fmt.Sprintf("mapping-filter-revision-%04d", index)
 		item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))

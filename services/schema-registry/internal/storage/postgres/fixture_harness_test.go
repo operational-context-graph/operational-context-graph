@@ -118,7 +118,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 		artifacts: []artifact.Artifact{fixtureSchema("exact-size", "rev-exact-size-v1", "5.0.0", append([]byte("true"), []byte(strings.Repeat(" ", config.MaxArtifactBytes-4))...), nil)},
 	}
 	many := registryFixture{name: "1001-items", version: "6.0.0", artifacts: make([]artifact.Artifact, 0, 1001)}
-	for number := 0; number < 1001; number++ {
+	for number := range 1001 {
 		artifactType := fmt.Sprintf("item-%04d", number)
 		many.artifacts = append(many.artifacts, fixtureSchema(artifactType, "rev-"+artifactType, "6.0.0", []byte("true"), nil))
 	}
@@ -296,9 +296,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		var schemaClass, targetVersion any
 		var extensions any
 		if item.Extensions != nil {
-			raw, err := json.Marshal(item.Extensions)
-			if err != nil {
-				return manifest.Manifest{}, err
+			raw, marshalErr := json.Marshal(item.Extensions)
+			if marshalErr != nil {
+				return manifest.Manifest{}, marshalErr
 			}
 			extensions = string(raw)
 		}

@@ -23,7 +23,8 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("schema introspection API exited", "error", err)
+		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		log.Error("schema introspection API exited", "error", err)
 		os.Exit(1)
 	}
 }

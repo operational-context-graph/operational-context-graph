@@ -58,7 +58,7 @@ func Parse(input []byte) (any, error) {
 		if err == nil {
 			return nil, fmt.Errorf("%w: trailing value", ErrMalformed)
 		}
-		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	return value, nil
 }
@@ -96,7 +96,7 @@ func parseValue(decoder *json.Decoder, depth int) (any, error) {
 	}
 	token, err := decoder.Token()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	switch value := token.(type) {
 	case json.Delim:
@@ -133,7 +133,7 @@ func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 		}
 		key, err := decoder.Token()
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+			return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 		}
 		name, ok := key.(string)
 		if !ok {

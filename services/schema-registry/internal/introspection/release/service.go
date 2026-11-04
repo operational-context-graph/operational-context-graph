@@ -192,9 +192,9 @@ func (s *Service) Compare(ctx context.Context, from, to string) (manifest.Change
 		}
 		artifacts := make(map[manifest.Key]artifact.Artifact)
 		for _, entry := range append(append([]manifest.Artifact{}, beforeManifest.Artifacts...), afterManifest.Artifacts...) {
-			stored, err := snapshot.Artifact(readCtx, entry.Revision)
-			if err != nil {
-				return withRequestMetadata(current, "", err)
+			stored, artifactErr := snapshot.Artifact(readCtx, entry.Revision)
+			if artifactErr != nil {
+				return withRequestMetadata(current, "", artifactErr)
 			}
 			artifacts[manifest.Key{Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision}] = artifact.Artifact{
 				Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision, Payload: artifact.Descriptor{MediaType: stored.Payload.MediaType, Digest: stored.Payload.Digest, Size: stored.Payload.Size}, PayloadBytes: stored.Payload.Bytes,

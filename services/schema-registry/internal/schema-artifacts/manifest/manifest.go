@@ -164,8 +164,8 @@ func Parse(data []byte) (Manifest, error) {
 	if err != nil || !bytes.Equal(canonical, data) {
 		return Manifest{}, fmt.Errorf("%w: manifest is not JCS canonical", errInvalid)
 	}
-	if err := strictjson.RejectUnknownFields(value, "$schema", "formatVersion", "schemaVersion", "previousRelease", "source", "artifacts", "schemaContextBindings", "uriCatalog", "storageCatalog", "changes", "extensions"); err != nil {
-		return Manifest{}, fmt.Errorf("%w: manifest fields: %v", errInvalid, err)
+	if validationErr := strictjson.RejectUnknownFields(value, "$schema", "formatVersion", "schemaVersion", "previousRelease", "source", "artifacts", "schemaContextBindings", "uriCatalog", "storageCatalog", "changes", "extensions"); validationErr != nil {
+		return Manifest{}, fmt.Errorf("%w: manifest fields: %w", errInvalid, validationErr)
 	}
 	m := Manifest{Raw: append([]byte(nil), data...)}
 	if m.Schema, err = requiredString(value, "$schema"); err != nil {
@@ -247,8 +247,8 @@ func (m Manifest) Validate(context Context) error {
 		if !matchesSelection(selectedArtifact, bound) {
 			return fmt.Errorf("%w: artifact %s/%s/%s differs from immutable bytes", errInvalid, key.Kind, key.Type, key.Revision)
 		}
-		if err := bound.Validate(context.RegistryOrigin); err != nil {
-			return fmt.Errorf("%w: artifact %s: %v", errInvalid, key.Type, err)
+		if validationErr := bound.Validate(context.RegistryOrigin); validationErr != nil {
+			return fmt.Errorf("%w: artifact %s: %w", errInvalid, key.Type, validationErr)
 		}
 		if err := immutableReuse(selectedArtifact, context.History); err != nil {
 			return err
@@ -273,16 +273,16 @@ func (m Manifest) Validate(context Context) error {
 			continue
 		}
 		if entry.Resource == "" {
-			value, err := strictjson.Parse(bound.PayloadBytes)
-			if err != nil {
-				return fmt.Errorf("%w: catalog payload JSON: %v", errInvalid, err)
+			value, parseErr := strictjson.Parse(bound.PayloadBytes)
+			if parseErr != nil {
+				return fmt.Errorf("%w: catalog payload JSON: %w", errInvalid, parseErr)
 			}
 			formatCatalog[entry.URI] = value
 		}
 	}
 	for _, bound := range selected {
 		if err := bound.ValidatePayloadFormatWithCatalog(formatCatalog); err != nil {
-			return fmt.Errorf("%w: validate artifact format: %v", errInvalid, err)
+			return fmt.Errorf("%w: validate artifact format: %w", errInvalid, err)
 		}
 	}
 	if err := m.validateReferences(selected, byRevision); err != nil {
@@ -487,7 +487,7 @@ func (m Manifest) validateSourceMappings(selected map[Key]artifact.Artifact, con
 	}
 	_, err := sourcemapping.ValidateRelease(mappings, sourcemapping.ValidationContext{Version: m.SchemaVersion, Lineage: lineage})
 	if err != nil {
-		return fmt.Errorf("%w: source mapping agreement: %v", errInvalid, err)
+		return fmt.Errorf("%w: source mapping agreement: %w", errInvalid, err)
 	}
 	return nil
 }
@@ -640,8 +640,8 @@ func parseArtifacts(raw any) ([]Artifact, error) {
 		if !ok {
 			return nil, invalid("artifact must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "kind", "artifactType", "artifactRevision", "createdUnderSchemaVersion", "schemaClass", "targetSchemaVersion", "canonicalUri", "payload", "resources", "dependencies", "extensions"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "kind", "artifactType", "artifactRevision", "createdUnderSchemaVersion", "schemaClass", "targetSchemaVersion", "canonicalUri", "payload", "resources", "dependencies", "extensions"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := Artifact{}
 		if item.Kind, err = kind(object, "kind"); err != nil {
@@ -759,8 +759,8 @@ func parseDependencies(raw any) ([]artifact.Dependency, error) {
 		if !ok {
 			return nil, invalid("dependency must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "kind", "artifactType", "artifactRevision"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "kind", "artifactType", "artifactRevision"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := artifact.Dependency{}
 		if item.Kind, err = kind(object, "kind"); err != nil {
@@ -846,8 +846,8 @@ func parseStorage(raw any) ([]StorageEntry, error) {
 		if !ok {
 			return nil, invalid("storage entry must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "kind", "artifactType", "stores"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "kind", "artifactType", "stores"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := StorageEntry{}
 		if item.Kind, err = kind(object, "kind"); err != nil {
@@ -909,8 +909,8 @@ func parseArtifactChanges(raw any) ([]ArtifactChange, error) {
 		if !ok {
 			return nil, invalid("artifact change must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "operation", "kind", "artifactType", "beforeRevision", "afterRevision", "impact"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "operation", "kind", "artifactType", "beforeRevision", "afterRevision", "impact"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := ArtifactChange{}
 		if item.Operation, err = requiredString(object, "operation"); err != nil {
@@ -950,8 +950,8 @@ func parseBindingChanges(raw any) ([]BindingChange, error) {
 		if !ok {
 			return nil, invalid("binding change must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "operation", "schemaRevision", "contextRevision", "impact"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "operation", "schemaRevision", "contextRevision", "impact"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := BindingChange{}
 		if item.Operation, err = requiredString(object, "operation"); err != nil {
@@ -985,8 +985,8 @@ func parseURIChanges(raw any) ([]URIChange, error) {
 		if !ok {
 			return nil, invalid("URI change must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "operation", "uri", "beforeRevision", "beforeResource", "afterRevision", "afterResource", "impact"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "operation", "uri", "beforeRevision", "beforeResource", "afterRevision", "afterResource", "impact"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := URIChange{}
 		if item.Operation, err = requiredString(object, "operation"); err != nil {
@@ -1029,8 +1029,8 @@ func parseStorageChanges(raw any) ([]StorageChange, error) {
 		if !ok {
 			return nil, invalid("storage change must be object")
 		}
-		if err := strictjson.RejectUnknownFields(object, "operation", "kind", "artifactType", "store", "impact"); err != nil {
-			return nil, err
+		if validationErr := strictjson.RejectUnknownFields(object, "operation", "kind", "artifactType", "store", "impact"); validationErr != nil {
+			return nil, validationErr
 		}
 		item := StorageChange{}
 		if item.Operation, err = requiredString(object, "operation"); err != nil {
@@ -1397,7 +1397,7 @@ func compareMany(values ...string) int {
 		panic("compareMany requires left and right fields")
 	}
 	half := len(values) / 2
-	for index := 0; index < half; index++ {
+	for index := range half {
 		if comparison := compareUTF16(values[index], values[index+half]); comparison != 0 {
 			return comparison
 		}

@@ -385,12 +385,14 @@ func fixture(t *testing.T, name string) []byte {
 
 func fixtureRaw(t *testing.T, name string) []byte {
 	t.Helper()
+	// #nosec G304 -- name selects a repository-controlled fixture.
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	require.NoError(t, err)
 	return data
 }
 
 func fixtureForFuzz(name string) []byte {
+	// #nosec G304 -- name selects a repository-controlled fixture.
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		panic(err)

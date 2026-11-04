@@ -16,7 +16,9 @@ import (
 )
 
 func TestErrorCatalogProducesStableSafeEnvelopes(t *testing.T) {
-	for code, definition := range errorCatalog {
+	for _, code := range errorCodes() {
+		definition, ok := errorDefinitionFor(code)
+		require.True(t, ok)
 		t.Run(string(code), func(t *testing.T) {
 			response := httptest.NewRecorder()
 			WriteError(response, code, "/v1/releases/1.0.0", nil, time.Second)
@@ -33,6 +35,17 @@ func TestErrorCatalogProducesStableSafeEnvelopes(t *testing.T) {
 			assert.NotContains(t, response.Body.String(), "password")
 			assert.NotContains(t, response.Body.String(), "stack")
 		})
+	}
+}
+
+func errorCodes() []ErrorCode {
+	return []ErrorCode{
+		InvalidRequest, InvalidQueryParameter, InvalidFilterCombination,
+		UnsupportedArtifactKind, UnsupportedSchemaClass, InvalidCursor,
+		VersionsNotComparable, ReleaseNotFound, ArtifactNotInRelease,
+		ArtifactNotFound, ResourceNotFound, SchemaNotInRelease, URINotInRelease,
+		LogicalArtifactNotFound, NotAcceptable, ReadLimitExceeded,
+		InconsistentRegistryState, InternalError, NoActiveRelease, RegistryUnavailable,
 	}
 }
 
