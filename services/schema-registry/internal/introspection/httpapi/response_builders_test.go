@@ -12,11 +12,12 @@ import (
 	"fmt"
 	"testing"
 
-	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
 const testVersion = "1.2.3"
@@ -185,7 +186,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testVersion, body.SchemaVersion)
 	require.Equal(t, mapping, body.Mapping)
-	require.Equal(t, []manifest.Store{manifest.StoreDataCenterInventory, manifest.StoreInsightsRepository}, body.TargetStores)
+	require.Equal(t, []manifestmodel.Store{manifestmodel.StoreDataCenterInventory, manifestmodel.StoreInsightsRepository}, body.TargetStores)
 	require.Equal(t, v1.Links{
 		"self":    "/v1/releases/1.2.3/source-mappings/device-mapping/package",
 		"mapping": "/v1/releases/1.2.3/source-mappings/device-mapping", "descriptor": "/v1/artifacts/rev-mapping",

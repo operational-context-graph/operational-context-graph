@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 
-	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
 
 var (

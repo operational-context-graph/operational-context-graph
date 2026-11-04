@@ -14,10 +14,11 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
+	"github.com/stretchr/testify/require"
+
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	"github.com/stretchr/testify/require"
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
 
 func TestMappingPackageSizeMatchesEncodedJSON(t *testing.T) {
