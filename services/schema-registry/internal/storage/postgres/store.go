@@ -655,7 +655,7 @@ WHERE selection.artifact_revision = $1 AND release.activated_sequence IS NOT NUL
 }
 
 // ContextBindings returns deterministic selected bindings for a schema revision.
-func (s *Snapshot) ContextBindings(ctx context.Context, schemaVersion, schemaRevision string) ([]model.ContextBinding, error) {
+func (s *Snapshot) ContextBindings(ctx context.Context, schemaVersion, schemaRevision string) ([]model.SchemaContextBinding, error) {
 	if err := s.VerifyProjection(ctx, schemaVersion, model.ProjectionBinding); err != nil {
 		return nil, err
 	}
@@ -670,9 +670,9 @@ ORDER BY context_revision COLLATE "C"`
 		return nil, fmt.Errorf("list context bindings: %w", err)
 	}
 	defer rows.Close()
-	bindings := make([]model.ContextBinding, 0)
+	bindings := make([]model.SchemaContextBinding, 0)
 	for rows.Next() {
-		var binding model.ContextBinding
+		var binding model.SchemaContextBinding
 		if err := rows.Scan(&binding.SchemaVersion, &binding.SchemaRevision, &binding.ContextRevision); err != nil {
 			return nil, fmt.Errorf("scan context binding: %w", err)
 		}
@@ -779,10 +779,10 @@ WHERE detail.schema_version = $1 AND detail.mapping_revision = $2 AND release.ac
 		return model.SourceMappingDetail{}, fmt.Errorf("read mapping transformations: %w", err)
 	}
 	defer rows.Close()
-	detail.Transformations = make([]model.MappingTransformation, 0)
+	detail.Transformations = make([]model.SourceMappingTransformation, 0)
 	for rows.Next() {
 		var ordinal int
-		var transformation model.MappingTransformation
+		var transformation model.SourceMappingTransformation
 		if err := rows.Scan(&ordinal, &transformation.TargetArtifactType, &transformation.TargetRevision, &transformation.Cardinality, &transformation.ProgramName, &transformation.ProgramDigest); err != nil {
 			return model.SourceMappingDetail{}, fmt.Errorf("scan mapping transformation: %w", err)
 		}

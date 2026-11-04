@@ -150,18 +150,18 @@ func (c *selectedClosure) schema(reference sourcemapping.SchemaReference) (model
 	return c.descriptor(selectionKey(selection))
 }
 
-func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.MappingPackage, error) {
+func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.SourceMappingPackage, error) {
 	mapping, err := c.descriptor(selectionKey(selection))
 	if err != nil {
-		return model.MappingPackage{}, err
+		return model.SourceMappingPackage{}, err
 	}
 	parsed, err := sourcemapping.Parse(mapping.Artifact.Payload.Bytes)
 	if err != nil {
-		return model.MappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %v", httpapi.ErrInvalid, err)
+		return model.SourceMappingPackage{}, fmt.Errorf("%w: parse mapping descriptor: %v", httpapi.ErrInvalid, err)
 	}
 	source, err := c.schema(parsed.SourceSchema)
 	if err != nil {
-		return model.MappingPackage{}, err
+		return model.SourceMappingPackage{}, err
 	}
 	mapping.SourceArtifactType = source.Artifact.Type
 	detail := model.SourceMappingDetail{
@@ -170,7 +170,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 		TargetSchemaVersion: selection.TargetSchema,
 		EngineLanguage:      parsed.Engine.Language, EngineLanguageVersion: parsed.Engine.LanguageVersion,
 		ExecutionProfile: parsed.Engine.ExecutionProfile,
-		Transformations:  make([]model.MappingTransformation, 0, len(parsed.Programs.Transformations)),
+		Transformations:  make([]model.SourceMappingTransformation, 0, len(parsed.Programs.Transformations)),
 	}
 	resources := make(map[string]model.Resource, len(mapping.Resources))
 	for _, resource := range mapping.Resources {
@@ -188,23 +188,23 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 	if parsed.Programs.Condition != nil {
 		condition, err := bind(*parsed.Programs.Condition)
 		if err != nil {
-			return model.MappingPackage{}, err
+			return model.SourceMappingPackage{}, err
 		}
 		detail.Condition = &condition
 	}
-	result := model.MappingPackage{Mapping: mapping, Schemas: []model.Descriptor{source}}
+	result := model.SourceMappingPackage{Mapping: mapping, Schemas: []model.Descriptor{source}}
 	seenSchemas := map[string]bool{source.Artifact.Revision: true}
 	stores := make(map[string]model.StorageEntry)
 	for _, transformation := range parsed.Programs.Transformations {
 		target, err := c.schema(transformation.TargetSchema)
 		if err != nil {
-			return model.MappingPackage{}, err
+			return model.SourceMappingPackage{}, err
 		}
 		program, err := bind(transformation.ProgramReference)
 		if err != nil {
-			return model.MappingPackage{}, err
+			return model.SourceMappingPackage{}, err
 		}
-		detail.Transformations = append(detail.Transformations, model.MappingTransformation{
+		detail.Transformations = append(detail.Transformations, model.SourceMappingTransformation{
 			ProgramBinding: program, TargetArtifactType: target.Artifact.Type,
 			TargetRevision: target.Artifact.Revision, Cardinality: transformation.Cardinality,
 		})
@@ -214,7 +214,7 @@ func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.Map
 		}
 		placements := c.stores[target.Artifact.Type]
 		if len(placements) == 0 {
-			return model.MappingPackage{}, fmt.Errorf("%w: target schema %s stores are missing", httpapi.ErrInvalid, target.Artifact.Type)
+			return model.SourceMappingPackage{}, fmt.Errorf("%w: target schema %s stores are missing", httpapi.ErrInvalid, target.Artifact.Type)
 		}
 		for _, store := range placements {
 			if _, exists := stores[store.Store]; !exists {

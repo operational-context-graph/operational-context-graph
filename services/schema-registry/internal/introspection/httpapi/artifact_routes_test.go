@@ -47,7 +47,7 @@ type artifactTestSnapshot struct {
 	dependencies  map[string][]model.Dependency
 	mappings      map[string]model.SourceMappingDetail
 	uris          map[string]model.URIEntry
-	bindings      map[string][]model.ContextBinding
+	bindings      map[string][]model.SchemaContextBinding
 	stores        map[string][]model.StorageEntry
 	artifactErr   error
 	resourceErr   error
@@ -182,8 +182,8 @@ func (s *artifactTestSnapshot) Dependencies(_ context.Context, revision string) 
 	}
 	return append([]model.Dependency(nil), s.dependencies[revision]...), nil
 }
-func (s *artifactTestSnapshot) ContextBindings(_ context.Context, version, revision string) ([]model.ContextBinding, error) {
-	return append([]model.ContextBinding(nil), s.bindings[version+"\x00"+revision]...), nil
+func (s *artifactTestSnapshot) ContextBindings(_ context.Context, version, revision string) ([]model.SchemaContextBinding, error) {
+	return append([]model.SchemaContextBinding(nil), s.bindings[version+"\x00"+revision]...), nil
 }
 func (s *artifactTestSnapshot) StorageEntries(_ context.Context, version, artifactType string) ([]model.StorageEntry, error) {
 	return append([]model.StorageEntry(nil), s.stores[version+"\x00"+artifactType]...), nil
@@ -945,7 +945,7 @@ func artifactFixture() *artifactTestSnapshot {
 		dependencies: map[string][]model.Dependency{"rev-schema": {{ArtifactRevision: "rev-schema", Kind: "context", ArtifactType: "device", Revision: "rev-context"}}, "rev-context": {}, "rev-mapping": {}},
 		mappings:     map[string]model.SourceMappingDetail{"rev-mapping": {SchemaVersion: "1.0.0", MappingRevision: "rev-mapping", SourceArtifactType: "device"}},
 		uris:         map[string]model.URIEntry{},
-		bindings:     map[string][]model.ContextBinding{"1.0.0\x00rev-schema": {{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: "rev-context"}}},
+		bindings:     map[string][]model.SchemaContextBinding{"1.0.0\x00rev-schema": {{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: "rev-context"}}},
 		stores:       map[string][]model.StorageEntry{"1.0.0\x00device": {{SchemaVersion: "1.0.0", ArtifactType: "device", Store: "data-center-inventory"}}},
 	}
 }

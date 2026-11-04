@@ -31,7 +31,7 @@ type SchemasResponse struct {
 }
 
 // PackageSchemaResponse represents a schema document in a source-mapping or schema package response.
-type PackageSchemaResponse = v1.PackageSchemaResponse
+type PackageSchemaResponse = v1.PackageSchema
 
 // SchemaContextsResponse represents the context descriptors for a schema.
 type SchemaContextsResponse struct {
@@ -56,17 +56,17 @@ type SchemaPackageResponse struct {
 }
 
 // MappingResponse represents a source-mapping descriptor response.
-type MappingResponse = v1.MappingResponse
+type MappingResponse = v1.SourceMapping
 
-type MappingProgramsResponse = v1.MappingProgramsResponse
+type MappingProgramsResponse = v1.SourceMappingPrograms
 
-type MappingTransformationResponse = v1.MappingTransformationResponse
+type MappingTransformationResponse = v1.SourceMappingTransformation
 
 // MappingSourceSchemaResponse represents the source schema for a source mapping.
-type MappingSourceSchemaResponse = v1.MappingSourceSchemaResponse
+type MappingSourceSchemaResponse = v1.SourceMappingSourceSchema
 
 // MappingEngineResponse represents the engine configuration for a source mapping.
-type MappingEngineResponse = v1.MappingEngineResponse
+type MappingEngineResponse = v1.SourceMappingEngine
 
 // MappingsResponse represents a paginated source-mapping descriptor response.
 type MappingsResponse struct {
@@ -77,7 +77,7 @@ type MappingsResponse struct {
 }
 
 // MappingPackageResponse represents a source-mapping package response.
-type MappingPackageResponse = v1.MappingPackageResponse
+type MappingPackageResponse = v1.SourceMappingPackage
 
 type MappingPackagesResponse struct {
 	SchemaVersion string                   `json:"schemaVersion"`
@@ -87,7 +87,7 @@ type MappingPackagesResponse struct {
 }
 
 // MappingPackageProgramResponse represents program content in a source-mapping package response.
-type MappingPackageProgramResponse = v1.MappingPackageProgramResponse
+type MappingPackageProgramResponse = v1.SourceMappingPackageProgram
 
 // SchemaStoresResponse represents the stores associated with a schema.
 type SchemaStoresResponse struct {
@@ -310,7 +310,7 @@ func (s *Server) schemaPackage(c *gin.Context) {
 	})
 }
 
-func enrichedMapping(value artifact.Mapping, version string) MappingResponse {
+func enrichedMapping(value model.SourceMapping, version string) MappingResponse {
 	return BuildMapping(value, version)
 }
 
@@ -398,7 +398,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		return int64(encodedItems) <= config.MaxGeneratedJSONBytes
 	}
 	if packages {
-		result, lookupErr := s.artifacts.MappingPackages(c.Request.Context(), version, filter, afterType, limit+1)
+		result, lookupErr := s.artifacts.SourceMappingPackages(c.Request.Context(), version, filter, afterType, limit+1)
 		if lookupErr != nil {
 			s.writeArtifactError(c, lookupErr, SchemaNotInRelease)
 			return
@@ -421,7 +421,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 			packageItems = append(packageItems, body)
 		}
 	} else {
-		result, err := s.artifacts.Mappings(c.Request.Context(), version, filter, afterType, limit+1)
+		result, err := s.artifacts.SourceMappings(c.Request.Context(), version, filter, afterType, limit+1)
 		if err != nil {
 			s.writeArtifactError(c, err, SchemaNotInRelease)
 			return
@@ -475,7 +475,7 @@ func (s *Server) mappingMetadata(c *gin.Context) {
 		s.writeArtifactValidationError(c, InvalidQueryParameter)
 		return
 	}
-	value, err := s.artifacts.MappingMetadata(c.Request.Context(), version, mappingType)
+	value, err := s.artifacts.SourceMappingMetadata(c.Request.Context(), version, mappingType)
 	if err != nil {
 		s.writeArtifactError(c, err, ArtifactNotInRelease)
 		return
@@ -493,7 +493,7 @@ func (s *Server) mappingPackage(c *gin.Context) {
 		s.writeArtifactValidationError(c, InvalidQueryParameter)
 		return
 	}
-	value, err := s.artifacts.MappingPackage(c.Request.Context(), version, mappingType)
+	value, err := s.artifacts.SourceMappingPackage(c.Request.Context(), version, mappingType)
 	if err != nil {
 		s.writeArtifactError(c, err, ArtifactNotInRelease)
 		return
@@ -506,7 +506,7 @@ func (s *Server) mappingPackage(c *gin.Context) {
 	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, body)
 }
 
-func mappingPackageBody(value artifact.MappingPackage, version string) (MappingPackageResponse, error) {
+func mappingPackageBody(value model.SourceMappingPackage, version string) (MappingPackageResponse, error) {
 	return BuildMappingPackage(value, version)
 }
 

@@ -56,12 +56,6 @@ type SchemaPackage struct {
 	Contexts []Descriptor
 }
 
-// MappingPackage contains one release-consistent mapping and its dependencies.
-type MappingPackage = model.MappingPackage
-
-// Mapping is an enriched, release-selected source mapping.
-type Mapping = model.Mapping
-
 // SchemaStores resolves logical store assignments for one selected schema.
 func (s *Service) SchemaStores(ctx context.Context, version, artifactType string) (Result[[]model.StorageEntry], error) {
 	var result Result[[]model.StorageEntry]
@@ -268,27 +262,27 @@ func (s *Service) SchemaPackage(ctx context.Context, version, artifactType strin
 	return result, err
 }
 
-// MappingPackage resolves one mapping by its own logical artifact type.
-func (s *Service) MappingPackage(ctx context.Context, version, mappingType string) (Result[MappingPackage], error) {
-	var result Result[MappingPackage]
+// SourceMappingPackage resolves one mapping by its own logical artifact type.
+func (s *Service) SourceMappingPackage(ctx context.Context, version, mappingType string) (Result[model.SourceMappingPackage], error) {
+	var result Result[model.SourceMappingPackage]
 	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
-		mapping, err := loadMapping(readCtx, snapshot, version, mappingType, make(schemaMetadataCache))
+		mapping, err := loadSourceMapping(readCtx, snapshot, version, mappingType, make(schemaMetadataCache))
 		if err != nil {
 			return err
 		}
-		result.Value, err = assembleMappingPackage(readCtx, snapshot, version, mapping)
+		result.Value, err = assembleSourceMappingPackage(readCtx, snapshot, version, mapping)
 		return err
 	})
 	result.Current, result.Selected = current, version
 	return result, err
 }
 
-// MappingMetadata returns the shared enriched model without executing programs.
-func (s *Service) MappingMetadata(ctx context.Context, version, mappingType string) (Result[Mapping], error) {
-	var result Result[Mapping]
+// SourceMappingMetadata returns the shared enriched model without executing programs.
+func (s *Service) SourceMappingMetadata(ctx context.Context, version, mappingType string) (Result[model.SourceMapping], error) {
+	var result Result[model.SourceMapping]
 	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
 		var err error
-		result.Value, err = loadMapping(readCtx, snapshot, version, mappingType, make(schemaMetadataCache))
+		result.Value, err = loadSourceMapping(readCtx, snapshot, version, mappingType, make(schemaMetadataCache))
 		return err
 	})
 	result.Current, result.Selected = current, version
@@ -298,27 +292,27 @@ func (s *Service) MappingMetadata(ctx context.Context, version, mappingType stri
 // schemaMetadataCache belongs to one read snapshot and one selected release only.
 type schemaMetadataCache map[string]model.Artifact
 
-func loadMapping(ctx context.Context, snapshot release.Snapshot, version, mappingType string, schemas schemaMetadataCache) (Mapping, error) {
+func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, mappingType string, schemas schemaMetadataCache) (model.SourceMapping, error) {
 	descriptor, err := loadDescriptor(ctx, snapshot, version, "source-mapping", mappingType)
 	if err != nil {
-		return Mapping{}, err
+		return model.SourceMapping{}, err
 	}
 	detail, err := snapshot.SourceMappingByRevision(ctx, version, descriptor.Artifact.Revision)
 	if err != nil {
-		return Mapping{}, mappingDependencyError(err)
+		return model.SourceMapping{}, sourceMappingDependencyError(err)
 	}
 	parsed, err := format.Parse(descriptor.Artifact.Payload.Bytes)
 	if err != nil || parsed.ID != descriptor.Artifact.Type || detail.MappingRevision != descriptor.Artifact.Revision || detail.SchemaVersion != version || parsed.SourceSchema.ID != detail.SourceArtifactType || descriptor.Artifact.TargetSchemaVersion == nil || *descriptor.Artifact.TargetSchemaVersion != detail.TargetSchemaVersion {
-		return Mapping{}, fmt.Errorf("mapping descriptor agreement: %w", postgres.ErrInconsistentState)
+		return model.SourceMapping{}, fmt.Errorf("mapping descriptor agreement: %w", postgres.ErrInconsistentState)
 	}
 	if parsed.Engine.Language != detail.EngineLanguage || parsed.Engine.LanguageVersion != detail.EngineLanguageVersion || parsed.Engine.ExecutionProfile != detail.ExecutionProfile || len(parsed.Programs.Transformations) != len(detail.Transformations) || (parsed.Programs.Condition == nil) != (detail.Condition == nil) {
-		return Mapping{}, postgres.ErrInconsistentState
+		return model.SourceMapping{}, postgres.ErrInconsistentState
 	}
 	resources := make(map[string]model.Resource, len(descriptor.Resources))
 	for _, resource := range descriptor.Resources {
 		_, _, mediaErr := mime.ParseMediaType(resource.MediaType)
 		if _, duplicate := resources[resource.Name]; duplicate || resource.ArtifactRevision != detail.MappingRevision || !artifactmodel.ValidLogicalType(resource.Role) || !artifactmodel.ValidResourceName(resource.Name) || mediaErr != nil || len(resource.MediaType) > config.MaxIdentifierBytes || resource.Size < 0 || resource.Size > config.MaxArtifactBytes || !artifactmodel.ValidDigest(resource.Digest) || resource.Bytes != nil && !validPayload(resource.ByteDescriptor) {
-			return Mapping{}, postgres.ErrInconsistentState
+			return model.SourceMapping{}, postgres.ErrInconsistentState
 		}
 		resources[resource.Name] = resource
 	}
@@ -337,7 +331,7 @@ func loadMapping(ctx context.Context, snapshot release.Snapshot, version, mappin
 			var err error
 			selected, err = selectedSchemaMetadata(ctx, snapshot, version, artifactType)
 			if err != nil {
-				return mappingDependencyError(err)
+				return sourceMappingDependencyError(err)
 			}
 			selected.Payload.Bytes = nil
 			schemas[artifactType] = selected
@@ -356,30 +350,30 @@ func loadMapping(ctx context.Context, snapshot release.Snapshot, version, mappin
 		return postgres.ErrInconsistentState
 	}
 	if err := resolve(parsed.SourceSchema, detail.SourceArtifactType, detail.SourceRevision, false); err != nil {
-		return Mapping{}, err
+		return model.SourceMapping{}, err
 	}
 	if parsed.Programs.Condition != nil && !bind(*parsed.Programs.Condition, *detail.Condition) {
-		return Mapping{}, postgres.ErrInconsistentState
+		return model.SourceMapping{}, postgres.ErrInconsistentState
 	}
 	for index, transformation := range parsed.Programs.Transformations {
 		projected := detail.Transformations[index]
 		if transformation.Cardinality != projected.Cardinality || !bind(transformation.ProgramReference, projected.ProgramBinding) {
-			return Mapping{}, postgres.ErrInconsistentState
+			return model.SourceMapping{}, postgres.ErrInconsistentState
 		}
 		if err := resolve(transformation.TargetSchema, projected.TargetArtifactType, projected.TargetRevision, true); err != nil {
-			return Mapping{}, err
+			return model.SourceMapping{}, err
 		}
 	}
 	for name, resource := range resources {
 		if resource.Role == "program" && !referenced[name] {
-			return Mapping{}, postgres.ErrInconsistentState
+			return model.SourceMapping{}, postgres.ErrInconsistentState
 		}
 	}
 	descriptor.Artifact.Payload.Bytes = nil
 	for index := range descriptor.Resources {
 		descriptor.Resources[index].Bytes = nil
 	}
-	return Mapping{Descriptor: descriptor, Detail: detail}, nil
+	return model.SourceMapping{Descriptor: descriptor, Detail: detail}, nil
 }
 
 func selectedSchemaMetadata(ctx context.Context, snapshot release.Snapshot, version, artifactType string) (model.Artifact, error) {
@@ -391,14 +385,14 @@ func selectedSchemaMetadata(ctx context.Context, snapshot release.Snapshot, vers
 	return snapshot.ReleaseArtifact(ctx, version, "schema", artifactType)
 }
 
-func mappingDependencyError(err error) error {
+func sourceMappingDependencyError(err error) error {
 	if errors.Is(err, postgres.ErrNotFound) {
 		return fmt.Errorf("mapping dependency: %w", postgres.ErrInconsistentState)
 	}
 	return err
 }
 
-func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, version string, mapping Mapping) (MappingPackage, error) {
+func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot, version string, mapping model.SourceMapping) (model.SourceMappingPackage, error) {
 	programNames := make(map[string]bool)
 	if condition := mapping.Detail.Condition; condition != nil {
 		programNames[condition.ProgramName] = true
@@ -406,46 +400,46 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 	for _, transformation := range mapping.Detail.Transformations {
 		programNames[transformation.ProgramName] = true
 	}
-	result := MappingPackage{Mapping: mapping.Descriptor, Detail: mapping.Detail, Programs: make([]model.Resource, 0, len(programNames))}
+	result := model.SourceMappingPackage{Mapping: mapping.Descriptor, Detail: mapping.Detail, Programs: make([]model.Resource, 0, len(programNames))}
 	for _, resource := range mapping.Descriptor.Resources {
 		if programNames[resource.Name] {
 			result.Programs = append(result.Programs, resource)
 		}
 	}
 	if len(result.Programs) != len(programNames) {
-		return MappingPackage{}, postgres.ErrInconsistentState
+		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	var budget int64
 	for _, resource := range result.Programs {
 		budget += (resource.Size + 2) / 3 * 4
 	}
 	if budget > config.MaxGeneratedJSONBytes {
-		return MappingPackage{}, postgres.ErrInconsistentState
+		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	for index, resource := range result.Programs {
 		loaded, err := snapshot.Resource(ctx, resource.ArtifactRevision, resource.Name)
 		if err != nil {
-			return MappingPackage{}, mappingDependencyError(err)
+			return model.SourceMappingPackage{}, sourceMappingDependencyError(err)
 		}
 		if loaded.Name != resource.Name || loaded.ArtifactRevision != resource.ArtifactRevision || loaded.Role != resource.Role || loaded.MediaType != resource.MediaType || loaded.Size != resource.Size || loaded.Digest != resource.Digest || !validPayload(loaded.ByteDescriptor) {
-			return MappingPackage{}, postgres.ErrInconsistentState
+			return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 		}
 		result.Programs[index] = loaded
 	}
 	source, err := loadDescriptor(ctx, snapshot, version, "schema", mapping.Detail.SourceArtifactType)
 	if err != nil {
-		return MappingPackage{}, mappingDependencyError(err)
+		return model.SourceMappingPackage{}, sourceMappingDependencyError(err)
 	}
 	if source.Artifact.Payload.MediaType != "application/schema+json" {
-		return MappingPackage{}, postgres.ErrInconsistentState
+		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	source, err = compactSchemaDocument(source)
 	if err != nil {
-		return MappingPackage{}, err
+		return model.SourceMappingPackage{}, err
 	}
 	budget += int64(len(source.Artifact.Payload.Bytes))
 	if budget > config.MaxGeneratedJSONBytes {
-		return MappingPackage{}, postgres.ErrInconsistentState
+		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	result.Schemas = []Descriptor{source}
 	seenSchemas := map[string]bool{source.Artifact.Revision: true}
@@ -456,33 +450,33 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 		}
 		target, err := loadDescriptor(ctx, snapshot, version, "schema", transformation.TargetArtifactType)
 		if err != nil {
-			return MappingPackage{}, mappingDependencyError(err)
+			return model.SourceMappingPackage{}, sourceMappingDependencyError(err)
 		}
 		if target.Artifact.Revision != transformation.TargetRevision || target.Artifact.Payload.MediaType != "application/schema+json" {
-			return MappingPackage{}, postgres.ErrInconsistentState
+			return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 		}
 		if !seenSchemas[target.Artifact.Revision] {
 			target, err = compactSchemaDocument(target)
 			if err != nil {
-				return MappingPackage{}, err
+				return model.SourceMappingPackage{}, err
 			}
 			budget += int64(len(target.Artifact.Payload.Bytes))
 			if budget > config.MaxGeneratedJSONBytes {
-				return MappingPackage{}, postgres.ErrInconsistentState
+				return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 			}
 			result.Schemas = append(result.Schemas, target)
 			seenSchemas[target.Artifact.Revision] = true
 		}
 		stores, err := snapshot.StorageEntries(ctx, version, target.Artifact.Type)
 		if err != nil {
-			return MappingPackage{}, err
+			return model.SourceMappingPackage{}, err
 		}
 		if len(stores) == 0 {
-			return MappingPackage{}, postgres.ErrInconsistentState
+			return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 		}
 		for _, store := range stores {
 			if store.SchemaVersion != version || store.ArtifactType != target.Artifact.Type {
-				return MappingPackage{}, postgres.ErrInconsistentState
+				return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 			}
 			if !seenStores[store.Store] {
 				result.Stores = append(result.Stores, store)
@@ -498,10 +492,10 @@ func assembleMappingPackage(ctx context.Context, snapshot release.Snapshot, vers
 		}
 		stores, err := snapshot.StorageEntries(ctx, version, source.Artifact.Type)
 		if err != nil {
-			return MappingPackage{}, err
+			return model.SourceMappingPackage{}, err
 		}
 		if len(stores) == 0 {
-			return MappingPackage{}, postgres.ErrInconsistentState
+			return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 		}
 		for _, store := range stores {
 			if !seenStores[store.Store] {
@@ -532,9 +526,9 @@ func compactSchemaDocument(value Descriptor) (Descriptor, error) {
 	return value, nil
 }
 
-// Mappings lists enriched mappings using resolved dependency metadata.
-func (s *Service) Mappings(ctx context.Context, version string, filter model.ArtifactFilter, afterType *string, limit int) (Result[[]Mapping], error) {
-	var result Result[[]Mapping]
+// SourceMappings lists enriched source mappings using resolved dependency metadata.
+func (s *Service) SourceMappings(ctx context.Context, version string, filter model.ArtifactFilter, afterType *string, limit int) (Result[[]model.SourceMapping], error) {
+	var result Result[[]model.SourceMapping]
 	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
 		for _, schemaType := range []string{filter.SourceArtifactType, filter.TargetArtifactType} {
 			if schemaType != "" {
@@ -552,7 +546,7 @@ func (s *Service) Mappings(ctx context.Context, version string, filter model.Art
 		if err != nil {
 			return err
 		}
-		mappings := make([]Mapping, 0, len(items))
+		mappings := make([]model.SourceMapping, 0, len(items))
 		schemas := make(schemaMetadataCache)
 		var minimumBytes int64
 		for index, item := range items {
@@ -560,14 +554,14 @@ func (s *Service) Mappings(ctx context.Context, version string, filter model.Art
 				continue
 			}
 			if index == limit-1 {
-				mappings = append(mappings, Mapping{Descriptor: Descriptor{Artifact: item}})
+				mappings = append(mappings, model.SourceMapping{Descriptor: Descriptor{Artifact: item}})
 				break
 			}
-			mapping, err := loadMapping(readCtx, snapshot, version, item.Type, schemas)
+			mapping, err := loadSourceMapping(readCtx, snapshot, version, item.Type, schemas)
 			if err != nil {
 				return err
 			}
-			minimumBytes += minimumMappingBytes(mapping, version)
+			minimumBytes += minimumSourceMappingBytes(mapping, version)
 			if minimumBytes > config.MaxGeneratedJSONBytes {
 				return postgres.ErrInconsistentState
 			}
@@ -580,9 +574,9 @@ func (s *Service) Mappings(ctx context.Context, version string, filter model.Art
 	return result, err
 }
 
-// MappingPackages assembles an entire candidate page in the same read snapshot.
-func (s *Service) MappingPackages(ctx context.Context, version string, filter model.ArtifactFilter, afterType *string, limit int) (Result[[]MappingPackage], error) {
-	var result Result[[]MappingPackage]
+// SourceMappingPackages assembles an entire candidate page in the same read snapshot.
+func (s *Service) SourceMappingPackages(ctx context.Context, version string, filter model.ArtifactFilter, afterType *string, limit int) (Result[[]model.SourceMappingPackage], error) {
+	var result Result[[]model.SourceMappingPackage]
 	current, err := s.read(ctx, version, func(readCtx context.Context, snapshot release.Snapshot) error {
 		if _, err := snapshot.ReleaseArtifact(readCtx, version, "schema", filter.SourceArtifactType); err != nil {
 			return err
@@ -596,23 +590,23 @@ func (s *Service) MappingPackages(ctx context.Context, version string, filter mo
 		if err != nil {
 			return err
 		}
-		result.Value = make([]MappingPackage, 0, len(items))
+		result.Value = make([]model.SourceMappingPackage, 0, len(items))
 		schemas := make(schemaMetadataCache)
 		var minimumBytes int64
 		for index, item := range items {
 			if index == limit-1 {
-				result.Value = append(result.Value, MappingPackage{Mapping: Descriptor{Artifact: item}})
+				result.Value = append(result.Value, model.SourceMappingPackage{Mapping: Descriptor{Artifact: item}})
 				break
 			}
-			mapping, err := loadMapping(readCtx, snapshot, version, item.Type, schemas)
+			mapping, err := loadSourceMapping(readCtx, snapshot, version, item.Type, schemas)
 			if err != nil {
 				return err
 			}
-			value, err := assembleMappingPackage(readCtx, snapshot, version, mapping)
+			value, err := assembleSourceMappingPackage(readCtx, snapshot, version, mapping)
 			if err != nil {
 				return err
 			}
-			minimumBytes += minimumMappingBytes(mapping, version)
+			minimumBytes += minimumSourceMappingBytes(mapping, version)
 			for _, program := range value.Programs {
 				minimumBytes += (program.Size + 2) / 3 * 4
 			}
@@ -644,7 +638,7 @@ func extensionBytes(raw []byte) int64 {
 
 // Every counted value occurs in the wire model. This lower bound limits retained
 // domain records; transport verifies each complete item and the final envelope.
-func minimumMappingBytes(mapping Mapping, version string) int64 {
+func minimumSourceMappingBytes(mapping model.SourceMapping, version string) int64 {
 	size := extensionBytes(mapping.Descriptor.Artifact.Extensions)
 	for _, transformation := range mapping.Detail.Transformations {
 		size += int64(len(version) + len(transformation.TargetArtifactType) + len(transformation.TargetRevision) + len(transformation.ProgramName) + len(transformation.ProgramDigest))
@@ -676,7 +670,7 @@ func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, ve
 	if value.Kind == "source-mapping" {
 		detail, err := snapshot.SourceMappingByRevision(ctx, version, value.Revision)
 		if err != nil {
-			return Descriptor{}, mappingDependencyError(err)
+			return Descriptor{}, sourceMappingDependencyError(err)
 		}
 		descriptor.SourceArtifactType = detail.SourceArtifactType
 	}

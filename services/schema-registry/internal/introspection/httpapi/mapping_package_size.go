@@ -24,7 +24,7 @@ var (
 
 // MappingPackageSize counts the exact identity JSON bytes without encoding program content.
 // Callers MUST first validate the release, bindings, and declared program sizes.
-func MappingPackageSize(value model.MappingPackage, version string) (int64, error) {
+func MappingPackageSize(value model.SourceMappingPackage, version string) (int64, error) {
 	body, err := mappingPackageMetadata(value, version)
 	if err != nil {
 		return 0, err
@@ -32,7 +32,7 @@ func MappingPackageSize(value model.MappingPackage, version string) (int64, erro
 	return mappingPackageSize(value, body, config.MaxGeneratedJSONBytes)
 }
 
-func mappingPackageSize(value model.MappingPackage, metadata v1.MappingPackageResponse, limit int64) (int64, error) {
+func mappingPackageSize(value model.SourceMappingPackage, metadata v1.SourceMappingPackage, limit int64) (int64, error) {
 	if limit < 0 {
 		return 0, fmt.Errorf("%w: negative size limit", ErrInvalid)
 	}

@@ -95,7 +95,7 @@ func (*testSnapshot) Resource(context.Context, string, string) (model.Resource, 
 func (*testSnapshot) Dependencies(context.Context, string) ([]model.Dependency, error) {
 	return nil, postgres.ErrNotFound
 }
-func (*testSnapshot) ContextBindings(context.Context, string, string) ([]model.ContextBinding, error) {
+func (*testSnapshot) ContextBindings(context.Context, string, string) ([]model.SchemaContextBinding, error) {
 	return nil, postgres.ErrNotFound
 }
 func (*testSnapshot) StorageEntries(context.Context, string, string) ([]model.StorageEntry, error) {

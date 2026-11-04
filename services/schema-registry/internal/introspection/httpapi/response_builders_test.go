@@ -28,7 +28,7 @@ func testBytes(content []byte, mediaType string) model.ByteDescriptor {
 	}
 }
 
-func testPackage(program []byte) model.MappingPackage {
+func testPackage(program []byte) model.SourceMappingPackage {
 	sourceClass, targetClass, targetVersion := "source-record", "entity-type", testVersion
 	source := model.Descriptor{Artifact: model.Artifact{
 		Revision: "rev-source", Kind: "schema", Type: "incoming", CreatedUnderSchemaVersion: "1.0.0",
@@ -62,13 +62,13 @@ func testPackage(program []byte) model.MappingPackage {
 		},
 		SourceArtifactType: "incoming",
 	}
-	return model.MappingPackage{
+	return model.SourceMappingPackage{
 		Mapping: mapping,
 		Detail: model.SourceMappingDetail{
 			SchemaVersion: testVersion, MappingRevision: "rev-mapping", SourceArtifactType: "incoming", SourceRevision: "rev-source",
 			TargetSchemaVersion: testVersion, ExecutionProfile: "opaque-profile", EngineLanguage: "opaque-language", EngineLanguageVersion: "2026",
 			Condition: &model.ProgramBinding{ProgramName: condition.Name, ProgramDigest: condition.Digest},
-			Transformations: []model.MappingTransformation{
+			Transformations: []model.SourceMappingTransformation{
 				{ProgramBinding: model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest}, TargetArtifactType: "device", TargetRevision: "rev-target", Cardinality: "one"},
 				{ProgramBinding: model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest}, TargetArtifactType: "incoming", TargetRevision: "rev-source", Cardinality: "many"},
 			},
@@ -108,17 +108,17 @@ func TestBuildDescriptor(t *testing.T) {
 				value.Artifact.Kind = kind
 				before := testJSON(t, value)
 				got := BuildDescriptor(value, version)
-				expected := v1.DescriptorResponse{
+				expected := v1.Descriptor{
 					SchemaVersion: version, Kind: kind, ArtifactType: "device-mapping", ArtifactRevision: "rev-mapping",
 					CreatedUnderSchemaVersion: "1.0.0", TargetSchemaVersion: value.Artifact.TargetSchemaVersion,
 					CanonicalURI: "https://example.test/device-mapping",
-					Payload:      v1.PayloadResponse{MediaType: "application/json", Digest: value.Artifact.Payload.Digest, Size: 19, Href: "/v1/artifacts/rev-mapping"},
-					Resources: []v1.ResourceResponse{
+					Payload:      v1.Payload{MediaType: "application/json", Digest: value.Artifact.Payload.Digest, Size: 19, Href: "/v1/artifacts/rev-mapping"},
+					Resources: []v1.Resource{
 						{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Resources[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"},
 						{Name: "transform.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Resources[1].Digest, Size: 0, Href: "/v1/artifacts/rev-mapping/resources/transform.bin"},
 						{Name: "ancillary.bin", Role: "attachment", MediaType: "application/octet-stream", Digest: "sha256:metadata-only", Size: 16 << 20, Href: "/v1/artifacts/rev-mapping/resources/ancillary.bin"},
 					},
-					Dependencies: []v1.DependencyResponse{
+					Dependencies: []v1.Dependency{
 						{Kind: "schema", ArtifactType: "incoming", ArtifactRevision: "rev-source", Href: "/v1/artifacts/rev-source/metadata"},
 						{Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-target", Href: "/v1/artifacts/rev-target/metadata"},
 					},
@@ -167,16 +167,16 @@ func TestBuildDescriptorEmptyCollectionsAndOptionalFields(t *testing.T) {
 func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	value := testPackage([]byte{0, 0xff, 0x80, 0x7f})
 	before := testJSON(t, value)
-	mapping := BuildMapping(model.Mapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
-	require.Equal(t, BuildDescriptor(value.Mapping, testVersion), mapping.DescriptorResponse)
-	require.Equal(t, v1.MappingSourceSchemaResponse{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, mapping.SourceSchema)
-	require.Equal(t, v1.MappingEngineResponse{ExecutionProfile: "opaque-profile", Language: "opaque-language", LanguageVersion: "2026"}, mapping.Engine)
-	condition := v1.ResourceResponse{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"}
-	program := v1.ResourceResponse{Name: "transform.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[1].Digest, Size: 4, Href: "/v1/artifacts/rev-mapping/resources/transform.bin"}
+	mapping := BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
+	require.Equal(t, BuildDescriptor(value.Mapping, testVersion), mapping.Descriptor)
+	require.Equal(t, v1.SourceMappingSourceSchema{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, mapping.SourceSchema)
+	require.Equal(t, v1.SourceMappingEngine{ExecutionProfile: "opaque-profile", Language: "opaque-language", LanguageVersion: "2026"}, mapping.Engine)
+	condition := v1.Resource{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"}
+	program := v1.Resource{Name: "transform.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[1].Digest, Size: 4, Href: "/v1/artifacts/rev-mapping/resources/transform.bin"}
 	require.Equal(t, &condition, mapping.Programs.Condition)
-	require.Equal(t, []v1.MappingTransformationResponse{
-		{ResourceResponse: program, TargetSchema: v1.MappingSourceSchemaResponse{ArtifactRevision: "rev-target", ArtifactType: "device", Content: "/v1/releases/1.2.3/schemas/device/content"}, Cardinality: "one"},
-		{ResourceResponse: program, TargetSchema: v1.MappingSourceSchemaResponse{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, Cardinality: "many"},
+	require.Equal(t, []v1.SourceMappingTransformation{
+		{Resource: program, TargetSchema: v1.SourceMappingSourceSchema{ArtifactRevision: "rev-target", ArtifactType: "device", Content: "/v1/releases/1.2.3/schemas/device/content"}, Cardinality: "one"},
+		{Resource: program, TargetSchema: v1.SourceMappingSourceSchema{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, Cardinality: "many"},
 	}, mapping.Programs.Transformations)
 
 	body, err := BuildMappingPackage(value, testVersion)
@@ -191,7 +191,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.Len(t, body.Programs, 2, "the already-deduplicated shared transformation appears once")
 	for index, expected := range value.Programs {
 		got := body.Programs[index]
-		require.Equal(t, v1.MappingPackageProgramResponse{Name: expected.Name, Role: expected.Role, MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
+		require.Equal(t, v1.SourceMappingPackageProgram{Name: expected.Name, Role: expected.Role, MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
 		decoded, err := base64.StdEncoding.DecodeString(got.Content)
 		require.NoError(t, err)
 		require.Equal(t, expected.Bytes, decoded)
@@ -235,7 +235,7 @@ func TestBuildMappingWithoutConditionOrStores(t *testing.T) {
 	require.Contains(t, string(testJSON(t, body)), `"targetStores":[]`)
 
 	value.Detail.Transformations = nil
-	mapping := BuildMapping(model.Mapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
+	mapping := BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
 	require.NotNil(t, mapping.Programs.Transformations)
 	require.Empty(t, mapping.Programs.Transformations)
 	require.JSONEq(t, `{"transformations":[]}`, string(testJSON(t, mapping.Programs)))
@@ -260,7 +260,7 @@ func TestBuildMappingPackageRejectsMismatchedProgramBytes(t *testing.T) {
 			require.Positive(t, size)
 			body, err := BuildMappingPackage(value, testVersion)
 			require.ErrorIs(t, err, ErrInvalid)
-			require.Equal(t, v1.MappingPackageResponse{}, body)
+			require.Equal(t, v1.SourceMappingPackage{}, body)
 		})
 	}
 }

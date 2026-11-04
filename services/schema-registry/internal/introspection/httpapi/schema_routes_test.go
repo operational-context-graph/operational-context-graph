@@ -121,7 +121,7 @@ func TestSchemaRoutesRejectInvalidAndInconsistentData(t *testing.T) {
 func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T) {
 	t.Run("no contexts returns complete empty wrapper", func(t *testing.T) {
 		fixture := schemaFixture()
-		fixture.bindings = map[string][]model.ContextBinding{}
+		fixture.bindings = map[string][]model.SchemaContextBinding{}
 		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/contexts")
 		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), `"schemaVersion":"1.0.0"`)
@@ -137,7 +137,7 @@ func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T)
 		second.Revision = "rev-context-two"
 		fixture.artifacts[second.Revision] = second
 		fixture.resources[second.Revision], fixture.dependencies[second.Revision] = nil, nil
-		fixture.bindings["1.0.0\x00rev-schema"] = append(fixture.bindings["1.0.0\x00rev-schema"], model.ContextBinding{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: second.Revision})
+		fixture.bindings["1.0.0\x00rev-schema"] = append(fixture.bindings["1.0.0\x00rev-schema"], model.SchemaContextBinding{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: second.Revision})
 		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/contexts")
 		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), `"rev-context-two"`)
@@ -145,7 +145,7 @@ func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T)
 
 	t.Run("missing or duplicate binding is inconsistent", func(t *testing.T) {
 		fixture := schemaFixture()
-		fixture.bindings["1.0.0\x00rev-schema"] = []model.ContextBinding{{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: "missing"}}
+		fixture.bindings["1.0.0\x00rev-schema"] = []model.SchemaContextBinding{{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: "missing"}}
 		response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/contexts")
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		fixture = schemaFixture()
@@ -261,7 +261,7 @@ func TestSchemaPackageNegotiationConditionalsAndInvalidContextFailAtomically(t *
 
 func TestSchemaPackageHandlesZeroAndSeveralContexts(t *testing.T) {
 	fixture := schemaFixture()
-	fixture.bindings = map[string][]model.ContextBinding{}
+	fixture.bindings = map[string][]model.SchemaContextBinding{}
 	response := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/package")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), `"contexts":[]`)
@@ -270,7 +270,7 @@ func TestSchemaPackageHandlesZeroAndSeveralContexts(t *testing.T) {
 	second := fixture.artifacts["rev-context"]
 	second.Revision = "rev-context-second"
 	fixture.artifacts[second.Revision] = second
-	fixture.bindings["1.0.0\x00rev-schema"] = append(fixture.bindings["1.0.0\x00rev-schema"], model.ContextBinding{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: second.Revision})
+	fixture.bindings["1.0.0\x00rev-schema"] = append(fixture.bindings["1.0.0\x00rev-schema"], model.SchemaContextBinding{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: second.Revision})
 	response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/package")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Equal(t, 2, strings.Count(response.Body.String(), `"document":{"@context":{}}`))
@@ -679,7 +679,7 @@ func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
 
 		fixture := mappingFixture()
 		detail := fixture.mappings["rev-mapping"]
-		detail.Transformations = append([]model.MappingTransformation(nil), detail.Transformations...)
+		detail.Transformations = append([]model.SourceMappingTransformation(nil), detail.Transformations...)
 		detail.Transformations[0].ProgramDigest = fixtureBytes([]byte("different"), "application/vnd.example.program").Digest
 		fixture.mappings["rev-mapping"] = detail
 		response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
@@ -838,7 +838,7 @@ func TestSourceMappingPackageOpaqueProgramBoundaries(t *testing.T) {
 			resource.ByteDescriptor = fixtureBytes(test.body, resource.MediaType)
 			fixture.resources[mapping.Revision][0] = resource
 			detail := fixture.mappings[mapping.Revision]
-			detail.Transformations = append([]model.MappingTransformation(nil), detail.Transformations...)
+			detail.Transformations = append([]model.SourceMappingTransformation(nil), detail.Transformations...)
 			detail.Transformations[0].ProgramDigest = resource.Digest
 			setMappingFixture(fixture, mapping, detail)
 
@@ -923,7 +923,7 @@ func mappingFixture() *artifactTestSnapshot {
 	mapping := fixture.selections["source-mapping/device-mapping"]
 	program := []byte("opaque\x00program")
 	fixture.resources[mapping.Revision] = []model.Resource{{ArtifactRevision: mapping.Revision, Name: "program.bin", Role: "program", ByteDescriptor: fixtureBytes(program, "application/vnd.example.program")}}
-	detail := model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: mapping.Revision, SourceArtifactType: "device", SourceRevision: "rev-schema", TargetSchemaVersion: "1.0.0", EngineLanguage: "arbitrary-engine", EngineLanguageVersion: "9.8.7", ExecutionProfile: "arbitrary-profile", Transformations: []model.MappingTransformation{{TargetArtifactType: "device", TargetRevision: "rev-schema", Cardinality: "one", ProgramBinding: model.ProgramBinding{ProgramName: "program.bin", ProgramDigest: fixture.resources[mapping.Revision][0].Digest}}}}
+	detail := model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: mapping.Revision, SourceArtifactType: "device", SourceRevision: "rev-schema", TargetSchemaVersion: "1.0.0", EngineLanguage: "arbitrary-engine", EngineLanguageVersion: "9.8.7", ExecutionProfile: "arbitrary-profile", Transformations: []model.SourceMappingTransformation{{TargetArtifactType: "device", TargetRevision: "rev-schema", Cardinality: "one", ProgramBinding: model.ProgramBinding{ProgramName: "program.bin", ProgramDigest: fixture.resources[mapping.Revision][0].Digest}}}}
 	setMappingFixture(fixture, mapping, detail)
 	return fixture
 }
@@ -978,13 +978,13 @@ func multiMappingFixture() *artifactTestSnapshot {
 	first := detail.Transformations[0]
 	edgeTransformation := first
 	edgeTransformation.TargetArtifactType, edgeTransformation.TargetRevision, edgeTransformation.Cardinality = "located-in", "rev-edge", "many"
-	detail.Transformations = []model.MappingTransformation{first, edgeTransformation, first}
+	detail.Transformations = []model.SourceMappingTransformation{first, edgeTransformation, first}
 	setMappingFixture(fixture, mapping, detail)
 	second := mapping
 	second.Type, second.Revision = "device-mapping-two", "rev-mapping-two"
 	secondDetail := detail
 	secondDetail.MappingRevision, secondDetail.Condition = second.Revision, nil
-	secondDetail.Transformations = []model.MappingTransformation{first}
+	secondDetail.Transformations = []model.SourceMappingTransformation{first}
 	fixture.resources[second.Revision] = append([]model.Resource(nil), fixture.resources[mapping.Revision][1:]...)
 	fixture.collections["1.0.0"] = append(fixture.collections["1.0.0"], second)
 	setMappingFixture(fixture, second, secondDetail)
@@ -1010,7 +1010,7 @@ func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := artifactTestServer(test.fixture())
-			value, err := server.artifacts.MappingPackage(context.Background(), "1.0.0", "device-mapping")
+			value, err := server.artifacts.SourceMappingPackage(context.Background(), "1.0.0", "device-mapping")
 			require.NoError(t, err)
 			size, err := MappingPackageSize(value.Value, "1.0.0")
 			require.NoError(t, err)
@@ -1141,7 +1141,7 @@ func TestPackagePageLimitIncludesEveryReturnedPackage(t *testing.T) {
 	data := bytes.Repeat([]byte{0xff}, 16<<20)
 	for _, revision := range []string{"rev-mapping", "rev-mapping-two"} {
 		detail := fixture.mappings[revision]
-		detail.Transformations = append([]model.MappingTransformation(nil), detail.Transformations...)
+		detail.Transformations = append([]model.SourceMappingTransformation(nil), detail.Transformations...)
 		for index := range fixture.resources[revision] {
 			resource := &fixture.resources[revision][index]
 			resource.ByteDescriptor = fixtureBytes(data, resource.MediaType)
@@ -1186,7 +1186,7 @@ func TestPackagePageFailsAtomicallyForLaterMapping(t *testing.T) {
 	for _, change := range []func(*artifactTestSnapshot){
 		func(f *artifactTestSnapshot) {
 			value := f.mappings["rev-mapping-two"]
-			value.Transformations = append([]model.MappingTransformation(nil), value.Transformations...)
+			value.Transformations = append([]model.SourceMappingTransformation(nil), value.Transformations...)
 			value.Transformations[0].ProgramDigest = fixtureBytes(nil, "application/octet-stream").Digest
 			f.mappings["rev-mapping-two"] = value
 		},
@@ -1290,7 +1290,7 @@ func repeatedTargetFixture() *artifactTestSnapshot {
 	mapping := fixture.artifacts["rev-mapping"]
 	detail := fixture.mappings[mapping.Revision]
 	original := detail.Transformations
-	detail.Transformations = make([]model.MappingTransformation, strictjson.MaxArrayEntries)
+	detail.Transformations = make([]model.SourceMappingTransformation, strictjson.MaxArrayEntries)
 	for index := range detail.Transformations {
 		detail.Transformations[index] = original[index%2]
 	}

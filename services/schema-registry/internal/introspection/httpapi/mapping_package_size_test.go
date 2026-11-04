@@ -131,25 +131,27 @@ func TestMappingPackageRejectsAggregateProgramSize(t *testing.T) {
 func TestMappingPackageRejectsInvalidContent(t *testing.T) {
 	tests := []struct {
 		name   string
-		change func(*model.MappingPackage)
+		change func(*model.SourceMappingPackage)
 		want   error
 	}{
-		{"zero-value", func(value *model.MappingPackage) { *value = model.MappingPackage{} }, ErrInvalid},
-		{"nil-schemas", func(value *model.MappingPackage) { value.Schemas = nil }, ErrInvalid},
-		{"empty-schemas", func(value *model.MappingPackage) { value.Schemas = []model.Descriptor{} }, ErrInvalid},
-		{"nil-programs", func(value *model.MappingPackage) { value.Programs = nil }, ErrInvalid},
-		{"empty-programs", func(value *model.MappingPackage) { value.Programs = []model.Resource{} }, ErrInvalid},
-		{"nil-schema-bytes", func(value *model.MappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = nil }, ErrInvalid},
-		{"empty-schema-bytes", func(value *model.MappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte{} }, ErrInvalid},
-		{"invalid-schema", func(value *model.MappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte(`{"type":`) }, ErrInvalid},
-		{"trailing-schema-value", func(value *model.MappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte(`true false`) }, ErrInvalid},
-		{"invalid-mapping-extensions", func(value *model.MappingPackage) { value.Mapping.Artifact.Extensions = []byte(`{`) }, ErrInvalid},
-		{"invalid-schema-extensions", func(value *model.MappingPackage) { value.Schemas[1].Artifact.Extensions = []byte(`undefined`) }, ErrInvalid},
-		{"negative-program-size", func(value *model.MappingPackage) { value.Programs[1].Size = -1 }, ErrInvalid},
-		{"minimum-program-size", func(value *model.MappingPackage) { value.Programs[1].Size = math.MinInt64 }, ErrInvalid},
-		{"maximum-program-size", func(value *model.MappingPackage) { value.Programs[1].Size = math.MaxInt64 }, ErrTooLarge},
-		{"single-oversize-program", func(value *model.MappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes + 1 }, ErrTooLarge},
-		{"base64-expansion-oversize", func(value *model.MappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes }, ErrTooLarge},
+		{"zero-value", func(value *model.SourceMappingPackage) { *value = model.SourceMappingPackage{} }, ErrInvalid},
+		{"nil-schemas", func(value *model.SourceMappingPackage) { value.Schemas = nil }, ErrInvalid},
+		{"empty-schemas", func(value *model.SourceMappingPackage) { value.Schemas = []model.Descriptor{} }, ErrInvalid},
+		{"nil-programs", func(value *model.SourceMappingPackage) { value.Programs = nil }, ErrInvalid},
+		{"empty-programs", func(value *model.SourceMappingPackage) { value.Programs = []model.Resource{} }, ErrInvalid},
+		{"nil-schema-bytes", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = nil }, ErrInvalid},
+		{"empty-schema-bytes", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte{} }, ErrInvalid},
+		{"invalid-schema", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte(`{"type":`) }, ErrInvalid},
+		{"trailing-schema-value", func(value *model.SourceMappingPackage) {
+			value.Schemas[0].Artifact.Payload.Bytes = []byte(`true false`)
+		}, ErrInvalid},
+		{"invalid-mapping-extensions", func(value *model.SourceMappingPackage) { value.Mapping.Artifact.Extensions = []byte(`{`) }, ErrInvalid},
+		{"invalid-schema-extensions", func(value *model.SourceMappingPackage) { value.Schemas[1].Artifact.Extensions = []byte(`undefined`) }, ErrInvalid},
+		{"negative-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = -1 }, ErrInvalid},
+		{"minimum-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MinInt64 }, ErrInvalid},
+		{"maximum-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MaxInt64 }, ErrTooLarge},
+		{"single-oversize-program", func(value *model.SourceMappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes + 1 }, ErrTooLarge},
+		{"base64-expansion-oversize", func(value *model.SourceMappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes }, ErrTooLarge},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -160,7 +162,7 @@ func TestMappingPackageRejectsInvalidContent(t *testing.T) {
 			require.Zero(t, size)
 			body, err := BuildMappingPackage(value, testVersion)
 			require.ErrorIs(t, err, test.want)
-			require.Equal(t, v1.MappingPackageResponse{}, body)
+			require.Equal(t, v1.SourceMappingPackage{}, body)
 		})
 	}
 }

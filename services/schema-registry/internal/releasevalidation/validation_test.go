@@ -103,7 +103,7 @@ func TestMappingPackagePreservesValidatedClosure(t *testing.T) {
 	require.Equal(t, "opaque", pack.Detail.EngineLanguage)
 	require.Equal(t, "1.0.0", pack.Detail.EngineLanguageVersion)
 	require.Equal(t, "opaque-profile", pack.Detail.ExecutionProfile)
-	require.Equal(t, []model.MappingTransformation{
+	require.Equal(t, []model.SourceMappingTransformation{
 		{ProgramBinding: model.ProgramBinding{ProgramName: "a.bin", ProgramDigest: pack.Programs[0].Digest}, TargetArtifactType: "entity", TargetRevision: "entity-r1", Cardinality: "one"},
 		{ProgramBinding: model.ProgramBinding{ProgramName: "a.bin", ProgramDigest: pack.Programs[0].Digest}, TargetArtifactType: "edge", TargetRevision: "edge-r1", Cardinality: "many"},
 		{ProgramBinding: model.ProgramBinding{ProgramName: "a.bin", ProgramDigest: pack.Programs[0].Digest}, TargetArtifactType: "entity", TargetRevision: "entity-r1", Cardinality: "one"},

@@ -214,7 +214,7 @@ type byteResponse struct {
 	Revision     string
 	ResourceName string
 }
-type descriptorResponse = v1.DescriptorResponse
+type descriptorResponse = v1.Descriptor
 
 func validKind(value string) bool {
 	return value == "schema" || value == "context" || value == "source-mapping"

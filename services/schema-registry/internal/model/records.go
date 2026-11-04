@@ -85,8 +85,8 @@ type ArtifactFilter struct {
 	ExecutionProfile   string
 }
 
-// ContextBinding binds a selected schema revision to a selected context revision.
-type ContextBinding struct {
+// SchemaContextBinding binds a selected schema revision to a selected JSON-LD schema context revision.
+type SchemaContextBinding struct {
 	SchemaVersion   string
 	SchemaRevision  string
 	ContextRevision string
@@ -100,35 +100,21 @@ type URIEntry struct {
 	ResourceName     *string
 }
 
-// StorageEntry assigns one schema identity to a logical OCG store.
+// StorageEntry assigns one schema identity to a logical Operational Context Graph store.
 type StorageEntry struct {
 	SchemaVersion string
 	ArtifactType  string
 	Store         string
 }
 
-// SourceMappingDetail holds descriptor fields resolved to exact dependencies.
-type SourceMappingDetail struct {
-	SchemaVersion         string
-	MappingRevision       string
-	SourceArtifactType    string
-	SourceRevision        string
-	TargetSchemaVersion   string
-	EngineLanguage        string
-	EngineLanguageVersion string
-	ExecutionProfile      string
-	Condition             *ProgramBinding
-	Transformations       []MappingTransformation
-}
-
-// ProgramBinding identifies one opaque resource owned by a mapping revision.
+// ProgramBinding identifies one opaque resource owned by a source mapping revision.
 type ProgramBinding struct {
 	ProgramName   string
 	ProgramDigest string
 }
 
-// MappingTransformation preserves descriptor order and its resolved target.
-type MappingTransformation struct {
+// SourceMappingTransformation preserves descriptor order and its resolved target.
+type SourceMappingTransformation struct {
 	ProgramBinding
 	TargetArtifactType string
 	TargetRevision     string
@@ -143,14 +129,28 @@ type Descriptor struct {
 	SourceArtifactType string
 }
 
-// Mapping is an enriched, release-selected source mapping.
-type Mapping struct {
+// SourceMapping is an enriched, release-selected source mapping.
+type SourceMapping struct {
 	Descriptor Descriptor
 	Detail     SourceMappingDetail
 }
 
-// MappingPackage contains one release-consistent mapping and its dependencies.
-type MappingPackage struct {
+// SourceMappingDetail holds descriptor fields resolved to exact dependencies.
+type SourceMappingDetail struct {
+	SchemaVersion         string
+	MappingRevision       string
+	SourceArtifactType    string
+	SourceRevision        string
+	TargetSchemaVersion   string
+	EngineLanguage        string
+	EngineLanguageVersion string
+	ExecutionProfile      string
+	Condition             *ProgramBinding
+	Transformations       []SourceMappingTransformation
+}
+
+// SourceMappingPackage contains one release-consistent mapping and its dependencies.
+type SourceMappingPackage struct {
 	Mapping  Descriptor
 	Detail   SourceMappingDetail
 	Programs []Resource
