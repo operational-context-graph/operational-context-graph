@@ -18,32 +18,41 @@ type Result struct {
 	Skipped   int
 }
 
-type Connector struct {
-	publisher publisher.Publisher
-	netbox    netbox.Client
-	cfg       *config.Config
+// watermarkReader reads the last committed backfill watermark for a partition.
+// It is satisfied by publisher.WatermarkReader and faked in tests.
+type watermarkReader interface {
+	GetWatermark(ctx context.Context, partition map[string]any) (map[string]any, error)
 }
 
-func New(pub publisher.Publisher, nb netbox.Client, cfg *config.Config) *Connector {
-	return &Connector{publisher: pub, netbox: nb, cfg: cfg}
+type Connector struct {
+	publisher  publisher.Publisher
+	netbox     netbox.Client
+	watermarks watermarkReader
+	cfg        *config.Config
+}
+
+func New(pub publisher.Publisher, nb netbox.Client, watermarks watermarkReader, cfg *config.Config) *Connector {
+	return &Connector{publisher: pub, netbox: nb, watermarks: watermarks, cfg: cfg}
 }
 
 func NewFromConfig(cfg *config.Config) (*Connector, error) {
-	nb := netbox.NewHTTPClient(cfg.NetBox.BaseURL, cfg.NetBox.Token, cfg.NetBox.PageSize)
-	pub, err := publisher.NewGRPCPublisher(cfg.GRPC.Endpoint, cfg.GRPC.CertFile, cfg.GRPC.KeyFile, cfg.GRPC.ConnectorID)
+	netboxClient := netbox.NewHTTPClient(cfg.NetBox.BaseURL, cfg.NetBox.Token, cfg.NetBox.PageSize)
+	grpcPublisher, err := publisher.NewGRPCPublisher(cfg.GRPC.Endpoint, cfg.GRPC.CertFile, cfg.GRPC.KeyFile, cfg.GRPC.ConnectorID)
 	if err != nil {
 		return nil, err
 	}
-	return New(pub, nb, cfg), nil
+	watermarks := publisher.NewWatermarkReader(grpcPublisher.Conn(), cfg.GRPC.ConnectorID)
+	return New(grpcPublisher, netboxClient, watermarks, cfg), nil
 }
 
-func (c *Connector) Run(ctx context.Context) (Result, error) {
+func (connector *Connector) Run(ctx context.Context) (Result, error) {
 	totals := Result{}
-	for _, endpoint := range c.endpoints() {
+	for _, endpoint := range connector.endpoints() {
 		if ctx.Err() != nil {
 			break
 		}
-		result, err := c.ProcessEndpoint(ctx, endpoint)
+		connector.logWatermark(ctx, endpoint)
+		result, err := connector.ProcessEndpoint(ctx, endpoint)
 		if err != nil {
 			return totals, fmt.Errorf("%s: %w", endpoint, err)
 		}
@@ -53,12 +62,28 @@ func (c *Connector) Run(ctx context.Context) (Result, error) {
 	return totals, nil
 }
 
-func (c *Connector) endpoints() []string {
-	return c.cfg.Endpoints
+// logWatermark reports the last committed backfill watermark for an endpoint.
+// It is observe-only: a failure is logged and the run continues, because this
+// does not affect what the connector ingests.
+func (connector *Connector) logWatermark(ctx context.Context, endpoint string) {
+	partition := map[string]any{"endpoint": endpoint}
+	watermark, err := connector.watermarks.GetWatermark(ctx, partition)
+	switch {
+	case err != nil:
+		slog.Warn("failed to read backfill watermark", "endpoint", endpoint, "err", err)
+	case watermark == nil:
+		slog.Info("no backfill watermark recorded", "endpoint", endpoint)
+	default:
+		slog.Info("backfill watermark", "endpoint", endpoint, "watermark", watermark)
+	}
 }
 
-func (c *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Result, error) {
-	records, err := c.netbox.Paginate(ctx, endpoint)
+func (connector *Connector) endpoints() []string {
+	return connector.cfg.Endpoints
+}
+
+func (connector *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Result, error) {
+	records, err := connector.netbox.Paginate(ctx, endpoint)
 	if errors.Is(err, netbox.ErrNotFound) {
 		slog.Debug("endpoint not found, skipping", "endpoint", endpoint)
 		return Result{Skipped: 1}, nil
@@ -71,16 +96,16 @@ func (c *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Resul
 		return Result{Skipped: 1}, nil
 	}
 
-	messages := c.buildEnvelopes(endpoint, records)
+	messages := connector.buildEnvelopes(endpoint, records)
 
-	if err = c.publisher.Publish(ctx, messages); err != nil {
+	if err = connector.publisher.Publish(ctx, messages); err != nil {
 		return Result{}, err
 	}
 	return Result{Published: len(messages)}, nil
 }
 
-func (c *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) []envelope.Message {
-	artifactType := c.cfg.ArtifactTypes[endpoint]
+func (connector *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) []envelope.Message {
+	artifactType := connector.cfg.ArtifactTypes[endpoint]
 	if artifactType == "" {
 		artifactType = netbox.DefaultArtifactTypes[endpoint]
 	}
@@ -89,7 +114,7 @@ func (c *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) [
 	}
 	messages := make([]envelope.Message, 0, len(records))
 	for _, raw := range records {
-		msg, err := envelope.Build(raw, endpoint, artifactType, c.cfg.SchemaVersion)
+		msg, err := envelope.Build(raw, endpoint, artifactType, connector.cfg.SchemaVersion)
 		if err == nil {
 			messages = append(messages, msg)
 		} else {

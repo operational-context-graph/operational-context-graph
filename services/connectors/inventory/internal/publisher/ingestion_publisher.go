@@ -30,6 +30,12 @@ func NewGRPCPublisher(endpoint, certFile, keyFile, connectorID string) (*GRPCPub
 	}, nil
 }
 
+// Conn exposes the underlying gRPC connection so other clients (e.g. the
+// BackfillService WatermarkReader) can share it instead of dialing a second.
+func (publisher *GRPCPublisher) Conn() *grpc.ClientConn {
+	return publisher.conn
+}
+
 func (p *GRPCPublisher) Publish(ctx context.Context, msgs []envelope.Message) error {
 	for _, batch := range chunk(msgs) {
 		envelopes, err := toProtos(batch)

@@ -23,12 +23,25 @@ func (f *fakeNetboxClient) Paginate(_ context.Context, _ string) ([]json.RawMess
 	return f.records, f.err
 }
 
+// fakeWatermarkReader records the partitions it was asked about and returns a
+// fixed watermark or error.
+type fakeWatermarkReader struct {
+	watermark  map[string]any
+	err        error
+	partitions []map[string]any
+}
+
+func (f *fakeWatermarkReader) GetWatermark(_ context.Context, partition map[string]any) (map[string]any, error) {
+	f.partitions = append(f.partitions, partition)
+	return f.watermark, f.err
+}
+
 func newConnector(nb *fakeNetboxClient, artifactTypes map[string]string) *Connector {
 	cfg := &config.Config{
 		SchemaVersion: "0.1.0",
 		ArtifactTypes: artifactTypes,
 	}
-	return New(&publisher.StubPublisher{}, nb, cfg)
+	return New(&publisher.StubPublisher{}, nb, &fakeWatermarkReader{}, cfg)
 }
 
 func TestProcessEndpoint_PublishesRecords(t *testing.T) {
@@ -59,7 +72,7 @@ func TestProcessEndpoint_DefaultsArtifactType(t *testing.T) {
 	nb := &fakeNetboxClient{records: []json.RawMessage{json.RawMessage(`{"id":1}`)}}
 	pub := &publisher.StubPublisher{}
 	cfg := &config.Config{SchemaVersion: "0.1.0"}
-	conn := New(pub, nb, cfg)
+	conn := New(pub, nb, &fakeWatermarkReader{}, cfg)
 
 	_, err := conn.ProcessEndpoint(context.Background(), "dcim/devices/")
 
@@ -98,4 +111,47 @@ func TestBuildEnvelopes_SkipsMalformed(t *testing.T) {
 	assert.Len(t, messages, 2)
 	assert.Equal(t, "netbox.Device", messages[0].LogicalArtifactId)
 	assert.Equal(t, "netbox.Device", messages[1].LogicalArtifactId)
+}
+
+func runWithWatermark(t *testing.T, reader *fakeWatermarkReader) (Result, error) {
+	t.Helper()
+	nb := &fakeNetboxClient{records: []json.RawMessage{json.RawMessage(`{"id":7}`)}}
+	cfg := &config.Config{
+		SchemaVersion: "0.1.0",
+		Endpoints:     []string{"dcim/devices/"},
+		ArtifactTypes: map[string]string{"dcim/devices/": "netbox.Device"},
+	}
+	conn := New(&publisher.StubPublisher{}, nb, reader, cfg)
+	return conn.Run(context.Background())
+}
+
+func TestRun_WatermarkPresent_QueriesPartitionAndPublishes(t *testing.T) {
+	reader := &fakeWatermarkReader{watermark: map[string]any{"last_id": float64(42)}}
+
+	result, err := runWithWatermark(t, reader)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Published)
+	require.Len(t, reader.partitions, 1)
+	assert.Equal(t, map[string]any{"endpoint": "dcim/devices/"}, reader.partitions[0])
+}
+
+func TestRun_WatermarkAbsent_StillPublishes(t *testing.T) {
+	reader := &fakeWatermarkReader{watermark: nil}
+
+	result, err := runWithWatermark(t, reader)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Published)
+	assert.Len(t, reader.partitions, 1)
+}
+
+func TestRun_WatermarkError_WarnsAndContinues(t *testing.T) {
+	reader := &fakeWatermarkReader{err: errors.New("ingestion unavailable")}
+
+	result, err := runWithWatermark(t, reader)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Published)
+	assert.Len(t, reader.partitions, 1)
 }
