@@ -7,6 +7,14 @@ package v1
 
 import "encoding/json"
 
+// Page contains a collection of API resources and its pagination metadata.
+type Page[T any] struct {
+	SchemaVersion string            `json:"schemaVersion"`
+	Items         []T               `json:"items"`
+	NextCursor    *string           `json:"nextCursor"`
+	Links         map[string]string `json:"links"`
+}
+
 // Descriptor describes an artifact without embedding its stored bytes.
 type Descriptor struct {
 	SchemaVersion             string            `json:"schemaVersion,omitempty"`
@@ -85,8 +93,8 @@ type SourceMappingEngine struct {
 	LanguageVersion  string `json:"languageVersion"`
 }
 
-// PackageSchema embeds a schema's complete metadata and parsed JSON value.
-type PackageSchema struct {
+// SchemaDocument embeds a JSON schema's complete metadata and parsed JSON value.
+type SchemaDocument struct {
 	Metadata Descriptor      `json:"metadata"`
 	Document json.RawMessage `json:"document"`
 }
@@ -95,18 +103,55 @@ type PackageSchema struct {
 type SourceMappingPackage struct {
 	SchemaVersion string                        `json:"schemaVersion"`
 	Mapping       SourceMapping                 `json:"mapping"`
-	Programs      []SourceMappingPackageProgram `json:"programs"`
-	Schemas       []PackageSchema               `json:"schemas"`
+	Programs      []SourceMappingProgramContent `json:"programs"`
+	Schemas       []SchemaDocument              `json:"schemas"`
 	TargetStores  []string                      `json:"targetStores"`
 	Links         map[string]string             `json:"links"`
 }
 
-// SourceMappingPackageProgram embeds canonical Base64 content for one referenced program.
-type SourceMappingPackageProgram struct {
+// SourceMappingProgramContent embeds canonical Base64 content for one referenced program.
+type SourceMappingProgramContent struct {
 	Name      string `json:"name"`
 	Role      string `json:"role"`
 	MediaType string `json:"mediaType"`
 	Digest    string `json:"digest"`
 	Size      int64  `json:"size"`
 	Content   string `json:"content"`
+}
+
+// SchemaReference identifies a schema artifact revision.
+type SchemaReference struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+}
+
+// SchemaContexts contains the JSON-LD context descriptors for a schema.
+type SchemaContexts struct {
+	SchemaVersion string            `json:"schemaVersion"`
+	Schema        SchemaReference   `json:"schema"`
+	Items         []Descriptor      `json:"items"`
+	Links         map[string]string `json:"links"`
+}
+
+// SchemaPackage contains a schema document and its context documents.
+type SchemaPackage struct {
+	SchemaVersion string            `json:"schemaVersion"`
+	Schema        SchemaDocument    `json:"schema"`
+	Contexts      []SchemaDocument  `json:"contexts"`
+	Links         map[string]string `json:"links"`
+}
+
+// SchemaStores identifies the stores associated with a schema.
+type SchemaStores struct {
+	SchemaVersion string            `json:"schemaVersion"`
+	Schema        SchemaStoreSchema `json:"schema"`
+	Stores        []string          `json:"stores"`
+	Links         map[string]string `json:"links"`
+}
+
+// SchemaStoreSchema identifies a schema in a stores response.
+type SchemaStoreSchema struct {
+	ArtifactRevision string `json:"artifactRevision"`
+	ArtifactType     string `json:"artifactType"`
+	SchemaClass      string `json:"schemaClass"`
 }

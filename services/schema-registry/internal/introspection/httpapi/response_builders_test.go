@@ -191,7 +191,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	require.Len(t, body.Programs, 2, "the already-deduplicated shared transformation appears once")
 	for index, expected := range value.Programs {
 		got := body.Programs[index]
-		require.Equal(t, v1.SourceMappingPackageProgram{Name: expected.Name, Role: expected.Role, MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
+		require.Equal(t, v1.SourceMappingProgramContent{Name: expected.Name, Role: expected.Role, MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
 		decoded, err := base64.StdEncoding.DecodeString(got.Content)
 		require.NoError(t, err)
 		require.Equal(t, expected.Bytes, decoded)

@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/api/v1"
 	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	usecase "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
@@ -1333,7 +1334,7 @@ func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 	response := serveArtifactRequest(server, http.MethodGet, mappingBase)
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Equal(t, map[string]int{"incoming": 1, "device": 1, "located-in": 1}, snapshot.lookups)
-	var body MappingResponse
+	var body v1.SourceMapping
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 	require.Len(t, body.Programs.Transformations, strictjson.MaxArrayEntries)
 	require.Equal(t, "many", body.Programs.Transformations[1].Cardinality)

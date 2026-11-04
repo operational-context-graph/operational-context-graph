@@ -79,12 +79,12 @@ func mappingPackageMetadata(value model.SourceMappingPackage, version string) (v
 		return v1.SourceMappingPackage{}, fmt.Errorf("%w: mapping package content is missing", ErrInvalid)
 	}
 	base := "/v1/releases/" + version + "/source-mappings/" + value.Mapping.Artifact.Type
-	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.PackageSchema, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingPackageProgram, 0, len(value.Programs)), TargetStores: make([]string, 0, len(value.Stores)), Links: map[string]string{"self": base + "/package", "mapping": base, "descriptor": "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
+	body := v1.SourceMappingPackage{SchemaVersion: version, Mapping: BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, version), Schemas: make([]v1.SchemaDocument, 0, len(value.Schemas)), Programs: make([]v1.SourceMappingProgramContent, 0, len(value.Programs)), TargetStores: make([]string, 0, len(value.Stores)), Links: map[string]string{"self": base + "/package", "mapping": base, "descriptor": "/v1/artifacts/" + value.Mapping.Artifact.Revision}}
 	for _, schema := range value.Schemas {
-		body.Schemas = append(body.Schemas, v1.PackageSchema{Metadata: BuildDescriptor(schema, version)})
+		body.Schemas = append(body.Schemas, v1.SchemaDocument{Metadata: BuildDescriptor(schema, version)})
 	}
 	for _, program := range value.Programs {
-		body.Programs = append(body.Programs, v1.SourceMappingPackageProgram{Name: program.Name, Role: program.Role, MediaType: program.MediaType, Digest: program.Digest, Size: program.Size})
+		body.Programs = append(body.Programs, v1.SourceMappingProgramContent{Name: program.Name, Role: program.Role, MediaType: program.MediaType, Digest: program.Digest, Size: program.Size})
 	}
 	for _, store := range value.Stores {
 		body.TargetStores = append(body.TargetStores, store.Store)
