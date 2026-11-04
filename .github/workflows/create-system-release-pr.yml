@@ -1,0 +1,184 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: Create System Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "System version (e.g. 1.0.0)"
+        required: true
+        type: string
+      data_ingestion:
+        description: "services/data-ingestion version to pin (e.g. 1.0.0, leave empty for latest tag)"
+        required: false
+        type: string
+      inventory_store:
+        description: "services/inventory-store version to pin (e.g. 1.0.0, leave empty for latest tag)"
+        required: false
+        type: string
+      telemetry_store:
+        description: "services/telemetry-store version to pin (e.g. 1.0.0, leave empty for latest tag)"
+        required: false
+        type: string
+      connectors_inventory:
+        description: "services/connectors/inventory version to pin (e.g. 1.0.0, leave empty for latest tag)"
+        required: false
+        type: string
+      gen_go:
+        description: "gen/go version to pin (e.g. 1.0.0, leave empty for latest tag)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      matrix_md: ${{ steps.resolve.outputs.matrix_md }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate version format
+        run: scripts/validate-version.sh "${{ inputs.version }}"
+
+      - name: Validate version overrides
+        run: |
+          for override in \
+            "${{ inputs.data_ingestion }}" \
+            "${{ inputs.inventory_store }}" \
+            "${{ inputs.telemetry_store }}" \
+            "${{ inputs.connectors_inventory }}" \
+            "${{ inputs.gen_go }}"; do
+            if [ -n "$override" ]; then
+              scripts/validate-version.sh "$override"
+            fi
+          done
+      - name: Check tag does not already exist
+        run: |
+          if git tag --list | grep -qxF "v${{ inputs.version }}"; then
+            echo "::error::Tag 'v${{ inputs.version }}' already exists"
+            exit 1
+          fi
+      - name: Resolve component versions
+        id: resolve
+        run: |
+          resolve_version() {
+            local module_path="$1"
+            local override="$2"
+            if [ -n "$override" ]; then
+              local tag="${module_path}/v${override}"
+              if ! git tag --list | grep -qxF "$tag"; then
+                echo "::error::Override tag '$tag' does not exist" >&2
+                exit 1
+              fi
+              echo "$tag"
+            else
+              local latest
+              latest=$(git tag --list "${module_path}/v*" --sort=-version:refname | head -1)
+              if [ -z "$latest" ]; then
+                echo "::error::No tag found for '${module_path}'" >&2
+                exit 1
+              fi
+              echo "$latest"
+            fi
+          }
+
+          di=$(resolve_version "services/data-ingestion"       "${{ inputs.data_ingestion }}")
+          is=$(resolve_version "services/inventory-store"      "${{ inputs.inventory_store }}")
+          ts=$(resolve_version "services/telemetry-store"      "${{ inputs.telemetry_store }}")
+          ci=$(resolve_version "services/connectors/inventory" "${{ inputs.connectors_inventory }}")
+          gg=$(resolve_version "gen/go"                        "${{ inputs.gen_go }}")
+
+          DATE=$(date -u +%Y-%m-%d)
+
+          # Full versioned section for CHANGELOG.md
+          matrix_md="## [${{ inputs.version }}] - ${DATE}"$'\n\n'
+          matrix_md+="| Component | Tag |"$'\n'
+          matrix_md+="| --- | --- |"$'\n'
+          matrix_md+="| \`services/data-ingestion\` | ${di} |"$'\n'
+          matrix_md+="| \`services/inventory-store\` | ${is} |"$'\n'
+          matrix_md+="| \`services/telemetry-store\` | ${ts} |"$'\n'
+          matrix_md+="| \`services/connectors/inventory\` | ${ci} |"$'\n'
+          matrix_md+="| \`gen/go\` | ${gg} |"
+
+          # Table only for the PR body
+          matrix="| Component | Tag |"$'\n'
+          matrix+="| --- | --- |"$'\n'
+          matrix+="| \`services/data-ingestion\` | ${di} |"$'\n'
+          matrix+="| \`services/inventory-store\` | ${is} |"$'\n'
+          matrix+="| \`services/telemetry-store\` | ${ts} |"$'\n'
+          matrix+="| \`services/connectors/inventory\` | ${ci} |"$'\n'
+          matrix+="| \`gen/go\` | ${gg} |"
+
+          echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$matrix" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "matrix_md<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$matrix_md" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create System Release PR
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Create release branch
+        run: git checkout -b "release/${{ inputs.version }}"
+
+      - name: Update changelog
+        run: |
+          scripts/prepend-changelog.sh \
+            "${{ inputs.version }}" \
+            "${{ needs.validate.outputs.matrix_md }}"
+          git add CHANGELOG.md
+          git commit -m "chore(release): update changelog for system v${{ inputs.version }}"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git push origin "release/${{ inputs.version }}"
+          gh pr create \
+            --base main \
+            --head "release/${{ inputs.version }}" \
+            --title "chore(release): system v${{ inputs.version }}" \
+            --body "${{ needs.validate.outputs.matrix }}"

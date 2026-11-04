@@ -1,0 +1,155 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: Create Component Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: "Component path (e.g. services/data-ingestion, gen/go)"
+        required: true
+        type: string
+      version:
+        description: "Version to release (e.g. 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.derive.outputs.tag }}
+      branch: ${{ steps.derive.outputs.branch }}
+      slug: ${{ steps.derive.outputs.slug }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: scripts/validate-version.sh "${{ inputs.version }}"
+
+      - name: Validate component path
+        run: |
+          if [ ! -d "${{ inputs.component }}" ]; then
+            echo "::error::Component path '${{ inputs.component }}' does not exist"
+            exit 1
+          fi
+          if [ ! -f "${{ inputs.component }}/go.mod" ] && \
+             [ ! -f "${{ inputs.component }}/package.json" ] && \
+             [ ! -f "${{ inputs.component }}/pyproject.toml" ]; then
+            echo "::error::Component path '${{ inputs.component }}' has no recognizable module manifest (go.mod, package.json, pyproject.toml)"
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        run: |
+          TAG="${{ inputs.component }}/v${{ inputs.version }}"
+          if git tag --list | grep -qxF "$TAG"; then
+            echo "::error::Tag '$TAG' already exists"
+            exit 1
+          fi
+
+      - name: Derive release metadata
+        id: derive
+        run: |
+          SLUG=$(basename "${{ inputs.component }}")
+          echo "tag=${{ inputs.component }}/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "branch=release/${SLUG}/${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      TAG: ${{ needs.validate.outputs.tag }}
+      BRANCH: ${{ needs.validate.outputs.branch }}
+      SLUG: ${{ needs.validate.outputs.slug }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Create release branch
+        run: git checkout -b "${{ env.BRANCH }}"
+
+      # TODO: Add version descriptor bump here for non-Go components.
+      # Python (pyproject.toml) and TypeScript (package.json) components need their
+      # version field updated to match the release version.
+
+      - name: Update changelog
+        id: cliff-prepend
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        with:
+          version: 2.14.2
+          config: cliff.toml
+          args: >-
+            --include-path "${{ inputs.component }}/**"
+            --tag "${{ env.TAG }}"
+            --prepend "${{ inputs.component }}/CHANGELOG.md"
+        env:
+          OUTPUT: ${{ inputs.component }}/CHANGELOG.md
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Generate PR body
+        id: cliff-body
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        with:
+          version: 2.14.2
+          config: cliff.toml
+          args: >-
+            --include-path "${{ inputs.component }}/**"
+            --tag "${{ env.TAG }}"
+            --unreleased
+            --strip all
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Commit changelog
+        run: |
+          git add "${{ inputs.component }}/CHANGELOG.md"
+          git diff --cached --quiet || git commit -m "chore(release): update ${{ env.SLUG }} changelog for v${{ inputs.version }}"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git push origin "${{ env.BRANCH }}"
+          gh pr create \
+            --base main \
+            --head "${{ env.BRANCH }}" \
+            --title "chore(release): ${{ env.SLUG }} v${{ inputs.version }}" \
+            --body "${{ steps.cliff-body.outputs.content }}"
