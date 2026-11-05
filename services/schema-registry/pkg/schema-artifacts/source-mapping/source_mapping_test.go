@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -72,6 +73,28 @@ func TestParseCardinalityAndFormatVersionEnums(t *testing.T) {
 				require.Error(t, err)
 			}
 		})
+	}
+}
+
+// TestParseDocumentURIBoundaries bounds the descriptor schema URI in UTF-8 bytes, not characters.
+func TestParseDocumentURIBoundaries(t *testing.T) {
+	for _, unit := range []string{"a", "é"} {
+		for _, size := range []int{schemaartifacts.MaxURIBytes - 1, schemaartifacts.MaxURIBytes, schemaartifacts.MaxURIBytes + 1} {
+			t.Run(fmt.Sprintf("%s/%d", unit, size), func(t *testing.T) {
+				const prefix = "https://example.test/"
+				remaining := size - len(prefix)
+				uri := prefix + strings.Repeat(unit, remaining/len(unit)) + strings.Repeat("a", remaining%len(unit))
+				require.Len(t, uri, size)
+				mapping, _ := validMapping(t, nil)
+				rewriteDescriptor(t, &mapping, func(value map[string]any) { value["$schema"] = uri })
+				_, err := Parse(mapping.PayloadBytes)
+				if size > schemaartifacts.MaxURIBytes {
+					require.ErrorIs(t, err, errInvalid)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
 	}
 }
 

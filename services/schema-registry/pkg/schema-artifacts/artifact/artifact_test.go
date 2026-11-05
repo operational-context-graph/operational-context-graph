@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -84,6 +85,36 @@ func TestValidateCanonicalURI(t *testing.T) {
 	require.NoError(t, ValidateCanonicalURI(origin+"/v1/resources/schema/device/rev-1", origin, KindSchema, "device", "rev-1"))
 	assert.Error(t, ValidateCanonicalURI("https://other.example.test/v1/resources/schema/device/rev-1", origin, KindSchema, "device", "rev-1"))
 	assert.Error(t, ValidateCanonicalURI(origin+"/v1/resources/schema/device/current", origin, KindSchema, "device", "rev-1"))
+}
+
+// TestValidDocumentURI preserves syntax rules and rejects malformed or empty identifiers without fetching them.
+func TestValidDocumentURI(t *testing.T) {
+	for _, value := range []string{
+		"https://example.test/schema", "urn:example:schema", "https://example.test/é",
+	} {
+		assert.True(t, ValidDocumentURI(value), "URI %q", value)
+	}
+	for _, value := range []string{
+		"", "/relative", "https://example.test/schema?query=value", "https://example.test/schema#fragment",
+		"https://example.test/%zz", "https://example.test/\n", "https://example.test/" + string([]byte{0xff}),
+	} {
+		assert.False(t, ValidDocumentURI(value), "URI %q", value)
+	}
+}
+
+// TestValidDocumentURIByteBoundaries checks exact and excessive UTF-8 byte lengths independently of character count.
+func TestValidDocumentURIByteBoundaries(t *testing.T) {
+	for _, unit := range []string{"a", "é"} {
+		for _, size := range []int{schemaartifacts.MaxURIBytes - 1, schemaartifacts.MaxURIBytes, schemaartifacts.MaxURIBytes + 1} {
+			t.Run(fmt.Sprintf("%s/%d", unit, size), func(t *testing.T) {
+				const prefix = "https://example.test/"
+				remaining := size - len(prefix)
+				value := prefix + strings.Repeat(unit, remaining/len(unit)) + strings.Repeat("a", remaining%len(unit))
+				require.Len(t, value, size)
+				assert.Equal(t, size <= schemaartifacts.MaxURIBytes, ValidDocumentURI(value))
+			})
+		}
+	}
 }
 
 // TestPayloadFormatFailsClosedForExternalReferences rejects schema references unavailable from the caller's catalog.

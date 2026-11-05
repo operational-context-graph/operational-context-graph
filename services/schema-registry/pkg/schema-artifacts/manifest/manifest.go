@@ -20,6 +20,7 @@ import (
 
 	"github.com/gowebpki/jcs"
 
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
@@ -33,10 +34,6 @@ const (
 	MediaType = "application/vnd.apeiro.ocg.schema-release-manifest.v1+json"
 	// FormatVersion is the supported manifest format version, independent of the selected schema release.
 	FormatVersion Version = "1.0.0"
-	// MaxManifestBytes bounds the exact submitted canonical manifest bytes.
-	MaxManifestBytes = strictjson.MaxBytes
-	// MaxCollectionEntries bounds each manifest-defined collection.
-	MaxCollectionEntries = strictjson.MaxArrayEntries
 )
 
 var (
@@ -310,7 +307,7 @@ type Context struct {
 // Parse strictly decodes a version 1 manifest and requires submitted bytes to be JCS.
 // It checks structure, lexical forms, and ordering, but does not resolve bytes or predecessor-dependent changes.
 func Parse(data []byte) (Manifest, error) {
-	if len(data) > MaxManifestBytes {
+	if len(data) > schemaartifacts.MaxArtifactBytes {
 		return Manifest{}, fmt.Errorf("%w: manifest exceeds byte limit", errInvalid)
 	}
 	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) || bytes.HasSuffix(data, []byte("\n")) {
@@ -459,11 +456,10 @@ func (m Manifest) Validate(context Context) error {
 
 // validateStructural checks format declarations, metadata shapes, collection limits, and canonical ordering.
 func (m Manifest) validateStructural() error {
-	parsed, err := url.Parse(m.Schema)
-	if err != nil || !parsed.IsAbs() || parsed.RawQuery != "" || parsed.Fragment != "" || m.FormatVersion != FormatVersion || !artifactmodel.ValidVersion(m.SchemaVersion) {
+	if !artifactmodel.ValidDocumentURI(m.Schema) || m.FormatVersion != FormatVersion || !artifactmodel.ValidVersion(m.SchemaVersion) {
 		return fmt.Errorf("%w: invalid format declaration", errInvalid)
 	}
-	if !commitPattern.MatchString(m.Source.Commit) || !absoluteURI(m.Source.Repository) {
+	if !commitPattern.MatchString(m.Source.Commit) || !artifactmodel.ValidDocumentURI(m.Source.Repository) {
 		return fmt.Errorf("%w: invalid source", errInvalid)
 	}
 	if len(m.Artifacts) == 0 {
@@ -483,8 +479,15 @@ func (m Manifest) validateStructural() error {
 		}
 	}
 	for _, entry := range m.URICatalog {
-		if !absoluteURI(entry.URI) || !artifactmodel.ValidRevision(entry.ArtifactRevision) || (entry.Resource != "" && !artifactmodel.ValidResourceName(entry.Resource)) {
+		if !artifactmodel.ValidDocumentURI(entry.URI) || !artifactmodel.ValidRevision(entry.ArtifactRevision) || (entry.Resource != "" && !artifactmodel.ValidResourceName(entry.Resource)) {
 			return fmt.Errorf("%w: invalid URI catalog entry", errInvalid)
+		}
+	}
+	if m.Changes != nil {
+		for _, change := range m.Changes.URICatalog {
+			if !artifactmodel.ValidDocumentURI(change.URI) {
+				return invalid("invalid URI change")
+			}
 		}
 	}
 	for _, entry := range m.StorageCatalog {
@@ -1201,7 +1204,7 @@ func parseURIChanges(raw any) ([]URIChange, error) {
 		if item.Impact, err = requiredEnum[Impact](object, "impact"); err != nil {
 			return nil, err
 		}
-		if !absoluteURI(item.URI) || !validChangeShape(item.Operation, item.BeforeRevision, item.AfterRevision) || !validImpact(item.Impact) || (item.BeforeResource != "" && !artifactmodel.ValidResourceName(item.BeforeResource)) || (item.AfterResource != "" && !artifactmodel.ValidResourceName(item.AfterResource)) {
+		if !artifactmodel.ValidDocumentURI(item.URI) || !validChangeShape(item.Operation, item.BeforeRevision, item.AfterRevision) || !validImpact(item.Impact) || (item.BeforeResource != "" && !artifactmodel.ValidResourceName(item.BeforeResource)) || (item.AfterResource != "" && !artifactmodel.ValidResourceName(item.AfterResource)) {
 			return nil, invalid("invalid URI change")
 		}
 		result = append(result, item)
@@ -1366,13 +1369,14 @@ func invalid(message string) error { return fmt.Errorf("%w: %s", errInvalid, mes
 
 // checkCount rejects collections larger than the version 1 manifest entry limit.
 func checkCount(count int) error {
-	if count > MaxCollectionEntries {
+	if count > schemaartifacts.MaxArrayEntries {
 		return invalid("collection exceeds entry limit")
 	}
 	return nil
 }
 
-// absoluteURI accepts absolute document identifiers without query strings or fragments.
+// absoluteURI recognizes document identifiers for catalog coverage, including invalid over-limit identifiers.
+// Recognition MUST NOT silently omit identifiers that bounded catalog validation rejects.
 func absoluteURI(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && parsed.IsAbs() && parsed.RawQuery == "" && parsed.Fragment == ""
@@ -1394,7 +1398,7 @@ func validImpact(value Impact) bool {
 
 // validateArtifact checks selection metadata and collection bounds without resolving or verifying the selected bytes.
 func validateArtifact(item Artifact) error {
-	if !artifactmodel.ValidLogicalType(item.Type) || !artifactmodel.ValidRevision(item.Revision) || !artifactmodel.ValidVersion(item.CreatedUnderSchemaVersion) || !absoluteURI(item.CanonicalURI) {
+	if !artifactmodel.ValidLogicalType(item.Type) || !artifactmodel.ValidRevision(item.Revision) || !artifactmodel.ValidVersion(item.CreatedUnderSchemaVersion) || !artifactmodel.ValidDocumentURI(item.CanonicalURI) {
 		return invalid("invalid artifact identity")
 	}
 	if !artifactmodel.ValidDigest(item.Payload.Digest) || item.Payload.Size < 0 || !artifactmodel.ValidBundlePath(item.Payload.BundlePath) {

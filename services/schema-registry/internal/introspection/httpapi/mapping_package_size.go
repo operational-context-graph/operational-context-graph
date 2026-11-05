@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
@@ -29,7 +29,7 @@ func MappingPackageSize(value model.SourceMappingPackage, version string) (int64
 	if err != nil {
 		return 0, err
 	}
-	return mappingPackageSize(value, body, config.MaxGeneratedJSONBytes)
+	return mappingPackageSize(value, body, limits.MaxGeneratedJSONBytes)
 }
 
 func mappingPackageSize(value model.SourceMappingPackage, metadata v1.SourceMappingPackage, limit int64) (int64, error) {
@@ -52,7 +52,7 @@ func mappingPackageSize(value model.SourceMappingPackage, metadata v1.SourceMapp
 			return 0, fmt.Errorf("%w: negative program size", ErrInvalid)
 		}
 		// Check before converting to int or calculating padded Base64 length.
-		if program.Size > config.MaxGeneratedJSONBytes || program.Size > limit {
+		if program.Size > limits.MaxGeneratedJSONBytes || program.Size > limit {
 			return 0, ErrTooLarge
 		}
 		if err := add(int64(base64.StdEncoding.EncodedLen(int(program.Size)))); err != nil {

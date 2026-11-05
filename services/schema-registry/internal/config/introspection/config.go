@@ -18,25 +18,11 @@ import (
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
-
-	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
 const (
 	envPrefix  = "OCG_SCHEMA_INTROSPECTION_"
 	envFileKey = envPrefix + "CONFIG_FILE"
-)
-
-// Serviceability limits are fixed by the version 1 contract.
-const (
-	MaxIdentifierBytes          = schemaartifacts.MaxIdentifierBytes
-	MaxURIBytes                 = schemaartifacts.MaxURIBytes
-	MaxArtifactBytes            = schemaartifacts.MaxArtifactBytes
-	MaxGeneratedJSONBytes int64 = 64 * 1024 * 1024
-	MaxJSONDepth                = 64
-	MaxObjectMembers            = 256
-	MaxArrayEntries             = 10000
-	MaxJSONStringBytes    int64 = 1024 * 1024
 )
 
 // Config is the validated runtime configuration.

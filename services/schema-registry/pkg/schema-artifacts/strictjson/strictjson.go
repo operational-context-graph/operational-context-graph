@@ -18,35 +18,23 @@ import (
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
-const (
-	// MaxBytes bounds one complete encoded JSON document.
-	MaxBytes = schemaartifacts.MaxArtifactBytes
-	// MaxDepth bounds recursive JSON value traversal, starting at zero for the root.
-	MaxDepth = 64
-	// MaxObjectMembers bounds the number of members in each JSON object.
-	MaxObjectMembers = 256
-	// MaxArrayEntries bounds the number of elements in each JSON array.
-	MaxArrayEntries = 10000
-	// MaxStringBytes bounds each decoded string or object member name in UTF-8 bytes.
-	MaxStringBytes = 1024 * 1024
-	// maxSafeInteger bounds the contiguous interoperable integer range of IEEE 754 binary64.
-	maxSafeInteger = 9007199254740991
-)
+// maxSafeInteger bounds the contiguous interoperable integer range of IEEE 754 binary64.
+const maxSafeInteger = 9007199254740991
 
 var (
-	// ErrTooLarge identifies a document that exceeds MaxBytes.
+	// ErrTooLarge identifies a document that exceeds schemaartifacts.MaxArtifactBytes.
 	ErrTooLarge = errors.New("JSON input exceeds the byte limit")
 	// ErrMalformed identifies invalid syntax, encoding, or an unexpected JSON value shape.
 	ErrMalformed = errors.New("malformed JSON")
 	// ErrDuplicate identifies repeated member names within one JSON object.
 	ErrDuplicate = errors.New("duplicate JSON object member")
-	// ErrDepth identifies a value traversal that exceeds MaxDepth.
+	// ErrDepth identifies a value traversal that exceeds schemaartifacts.MaxJSONDepth.
 	ErrDepth = errors.New("JSON nesting exceeds the limit")
-	// ErrObjectMembers identifies an object that exceeds MaxObjectMembers.
+	// ErrObjectMembers identifies an object that exceeds schemaartifacts.MaxObjectMembers.
 	ErrObjectMembers = errors.New("JSON object has too many members")
-	// ErrArrayEntries identifies an array that exceeds MaxArrayEntries.
+	// ErrArrayEntries identifies an array that exceeds schemaartifacts.MaxArrayEntries.
 	ErrArrayEntries = errors.New("JSON array has too many entries")
-	// ErrStringTooLarge identifies a string or member name that exceeds MaxStringBytes.
+	// ErrStringTooLarge identifies a string or member name that exceeds schemaartifacts.MaxJSONStringBytes.
 	ErrStringTooLarge = errors.New("JSON string exceeds the byte limit")
 	// ErrNumber identifies a number outside the supported finite, interoperable numeric range.
 	ErrNumber = errors.New("value is not an I-JSON number")
@@ -58,7 +46,7 @@ func Parse(input []byte) (any, error) {
 	if len(input) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformed)
 	}
-	if len(input) > MaxBytes {
+	if len(input) > schemaartifacts.MaxArtifactBytes {
 		return nil, ErrTooLarge
 	}
 	if !utf8.Valid(input) || bytes.HasPrefix(input, []byte{0xef, 0xbb, 0xbf}) {
@@ -108,7 +96,7 @@ func RejectUnknownFields(object map[string]any, allowed ...string) error {
 
 // parseValue reads one JSON value and enforces depth, string, and numeric limits.
 func parseValue(decoder *json.Decoder, depth int) (any, error) {
-	if depth > MaxDepth {
+	if depth > schemaartifacts.MaxJSONDepth {
 		return nil, ErrDepth
 	}
 	token, err := decoder.Token()
@@ -126,7 +114,7 @@ func parseValue(decoder *json.Decoder, depth int) (any, error) {
 			return nil, fmt.Errorf("%w: unexpected delimiter", ErrMalformed)
 		}
 	case string:
-		if len(value) > MaxStringBytes {
+		if len(value) > schemaartifacts.MaxJSONStringBytes {
 			return nil, ErrStringTooLarge
 		}
 		return value, nil
@@ -146,7 +134,7 @@ func parseValue(decoder *json.Decoder, depth int) (any, error) {
 func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 	object := make(map[string]any)
 	for decoder.More() {
-		if len(object) == MaxObjectMembers {
+		if len(object) == schemaartifacts.MaxObjectMembers {
 			return nil, ErrObjectMembers
 		}
 		key, err := decoder.Token()
@@ -157,7 +145,7 @@ func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: object member name", ErrMalformed)
 		}
-		if len(name) > MaxStringBytes {
+		if len(name) > schemaartifacts.MaxJSONStringBytes {
 			return nil, ErrStringTooLarge
 		}
 		if _, exists := object[name]; exists {
@@ -179,7 +167,7 @@ func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 func parseArray(decoder *json.Decoder, depth int) ([]any, error) {
 	array := make([]any, 0)
 	for decoder.More() {
-		if len(array) == MaxArrayEntries {
+		if len(array) == schemaartifacts.MaxArrayEntries {
 			return nil, ErrArrayEntries
 		}
 		value, err := parseValue(decoder, depth)

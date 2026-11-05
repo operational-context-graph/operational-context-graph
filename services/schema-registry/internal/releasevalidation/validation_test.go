@@ -15,9 +15,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/httpapi"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
@@ -40,7 +41,7 @@ func TestValidateExcludesLargeAncillaryContent(t *testing.T) {
 	value, context := mappingClosure(t)
 	key := mappingKey("mapping-a")
 	item := context.Artifacts[key]
-	data := bytes.Repeat([]byte{255}, config.MaxArtifactBytes)
+	data := bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes)
 	for _, name := range []string{"ancillary-a.bin", "ancillary-b.bin", "ancillary-c.bin"} {
 		item.Resources = append(item.Resources, testResource(name, "metadata", data))
 	}
@@ -64,7 +65,7 @@ func TestValidateExcludesLargeAncillaryContent(t *testing.T) {
 func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	value, context := mappingClosure(t)
 	item := context.Artifacts[mappingKey("mapping-a")]
-	program := testResource("shared.bin", "program", bytes.Repeat([]byte{255}, config.MaxArtifactBytes))
+	program := testResource("shared.bin", "program", bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes))
 	item.Resources = []artifact.Resource{program}
 	rewriteMapping(t, &item, func(document map[string]any) {
 		programs := document["programs"].(map[string]any)
@@ -84,8 +85,8 @@ func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	require.Nil(t, pack.Programs[0].Bytes)
 	size, err := httpapi.MappingPackageSize(pack, value.SchemaVersion)
 	require.NoError(t, err)
-	require.True(t, size > config.MaxArtifactBytes)
-	require.Less(t, size, config.MaxGeneratedJSONBytes)
+	require.True(t, size > schemaartifacts.MaxArtifactBytes)
+	require.Less(t, size, limits.MaxGeneratedJSONBytes)
 }
 
 func TestMappingPackagePreservesValidatedClosure(t *testing.T) {
@@ -412,7 +413,7 @@ func rewriteMapping(t testing.TB, item *artifact.Artifact, mutate func(map[strin
 func oversizeMapping(t testing.TB, value *manifest.Manifest, context manifest.Context, name string) {
 	t.Helper()
 	item := context.Artifacts[mappingKey(name)]
-	data := bytes.Repeat([]byte{255}, config.MaxArtifactBytes)
+	data := bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes)
 	item.Resources = []artifact.Resource{
 		testResource("a.bin", "program", data), testResource("b.bin", "program", data), testResource("c.bin", "program", data),
 	}

@@ -16,7 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
@@ -85,24 +85,24 @@ func TestMappingPackageSmallSizeLimits(t *testing.T) {
 }
 
 func TestMappingPackagePublicSizeBoundaryWithoutProgramAllocation(t *testing.T) {
-	require.EqualValues(t, 64<<20, config.MaxGeneratedJSONBytes)
+	require.EqualValues(t, 64<<20, limits.MaxGeneratedJSONBytes)
 	value := testPackage(nil)
 	value.Programs = value.Programs[1:]
 	value.Detail.Condition = nil
 	base, err := MappingPackageSize(value, testVersion)
 	require.NoError(t, err)
 	// Reserve a few metadata bytes for the larger decimal size field.
-	value.Programs[0].Size = ((config.MaxGeneratedJSONBytes - base - 64) / 4) * 3
+	value.Programs[0].Size = ((limits.MaxGeneratedJSONBytes - base - 64) / 4) * 3
 	size, err := MappingPackageSize(value, testVersion)
 	require.NoError(t, err)
-	padding := config.MaxGeneratedJSONBytes - size
+	padding := limits.MaxGeneratedJSONBytes - size
 	require.GreaterOrEqual(t, padding, int64(0))
 	require.Less(t, padding, int64(64))
 	value.Stores[0].Store += strings.Repeat("x", int(padding))
 	require.Nil(t, value.Programs[0].Bytes, "the boundary fixture allocates no program bytes")
 	size, err = MappingPackageSize(value, testVersion)
 	require.NoError(t, err)
-	require.EqualValues(t, config.MaxGeneratedJSONBytes, size)
+	require.EqualValues(t, limits.MaxGeneratedJSONBytes, size)
 	_, err = BuildMappingPackage(value, testVersion)
 	require.ErrorIs(t, err, ErrInvalid, "exactly fitting metadata passes preflight and reaches the byte-length check")
 
@@ -151,8 +151,8 @@ func TestMappingPackageRejectsInvalidContent(t *testing.T) {
 		{"negative-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = -1 }, ErrInvalid},
 		{"minimum-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MinInt64 }, ErrInvalid},
 		{"maximum-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MaxInt64 }, ErrTooLarge},
-		{"single-oversize-program", func(value *model.SourceMappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes + 1 }, ErrTooLarge},
-		{"base64-expansion-oversize", func(value *model.SourceMappingPackage) { value.Programs[1].Size = config.MaxGeneratedJSONBytes }, ErrTooLarge},
+		{"single-oversize-program", func(value *model.SourceMappingPackage) { value.Programs[1].Size = limits.MaxGeneratedJSONBytes + 1 }, ErrTooLarge},
+		{"base64-expansion-oversize", func(value *model.SourceMappingPackage) { value.Programs[1].Size = limits.MaxGeneratedJSONBytes }, ErrTooLarge},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -8,7 +8,6 @@ package sourcemapping
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"reflect"
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
@@ -298,7 +297,7 @@ func parsePrograms(raw any) (Programs, error) {
 		result.Condition = &reference
 	}
 	transformations, ok := object["transformations"].([]any)
-	if !ok || len(transformations) == 0 || len(transformations) > strictjson.MaxArrayEntries {
+	if !ok || len(transformations) == 0 || len(transformations) > schemaartifacts.MaxArrayEntries {
 		return Programs{}, fmt.Errorf("%w: transformations must be a non-empty bounded array", errInvalid)
 	}
 	result.Transformations = make([]Transformation, 0, len(transformations))
@@ -404,8 +403,7 @@ func parseEngine(object map[string]any) (Engine, error) {
 
 // validateDescriptor checks format declarations, lexical selectors, engine metadata, program references, and per-transformation cardinalities.
 func validateDescriptor(descriptor Descriptor) error {
-	parsed, err := url.Parse(descriptor.Schema)
-	if err != nil || !parsed.IsAbs() || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if !artifact.ValidDocumentURI(descriptor.Schema) {
 		return fmt.Errorf("%w: $schema must be an immutable absolute URI", errInvalid)
 	}
 	if descriptor.FormatVersion != FormatVersion {
@@ -417,7 +415,7 @@ func validateDescriptor(descriptor Descriptor) error {
 	if descriptor.Engine.Language == "" || descriptor.Engine.ExecutionProfile == "" || len(descriptor.Engine.Language) > schemaartifacts.MaxIdentifierBytes || len(descriptor.Engine.ExecutionProfile) > schemaartifacts.MaxIdentifierBytes || !artifact.ValidVersion(descriptor.Engine.LanguageVersion) {
 		return fmt.Errorf("%w: invalid engine metadata", errInvalid)
 	}
-	if len(descriptor.Programs.Transformations) == 0 || len(descriptor.Programs.Transformations) > strictjson.MaxArrayEntries {
+	if len(descriptor.Programs.Transformations) == 0 || len(descriptor.Programs.Transformations) > schemaartifacts.MaxArrayEntries {
 		return fmt.Errorf("%w: invalid transformation count", errInvalid)
 	}
 	if condition := descriptor.Programs.Condition; condition != nil && !validProgramReference(*condition) {

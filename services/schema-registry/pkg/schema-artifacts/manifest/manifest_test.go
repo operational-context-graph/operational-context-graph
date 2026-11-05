@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
@@ -59,6 +61,57 @@ func TestParseRejectsConformanceFailures(t *testing.T) {
 			_, err := Parse(fixtureRaw(t, test.file))
 			assert.Error(t, err)
 		})
+	}
+}
+
+// TestParseDocumentURIBoundaries checks every declared document URI using UTF-8 byte boundaries.
+func TestParseDocumentURIBoundaries(t *testing.T) {
+	fields := []struct {
+		name string
+		set  func(map[string]any, string)
+	}{
+		{"schema", func(value map[string]any, uri string) { value["$schema"] = uri }},
+		{"repository", func(value map[string]any, uri string) { value["source"].(map[string]any)["repository"] = uri }},
+		{"catalog", func(value map[string]any, uri string) {
+			value["uriCatalog"].([]any)[0].(map[string]any)["uri"] = uri
+		}},
+		{"canonical", func(value map[string]any, uri string) {
+			value["artifacts"].([]any)[0].(map[string]any)["canonicalUri"] = uri
+		}},
+		{"change", func(value map[string]any, uri string) {
+			value["changes"] = map[string]any{
+				"summary": "URI addition", "compatibility": "additive", "artifacts": []any{},
+				"schemaContextBindings": []any{}, "storageCatalog": []any{},
+				"uriCatalog": []any{map[string]any{
+					"operation": "add", "uri": uri, "afterRevision": "rev-1", "impact": "additive",
+				}},
+			}
+		}},
+	}
+	for _, field := range fields {
+		for _, unit := range []string{"a", "é"} {
+			for _, size := range []int{schemaartifacts.MaxURIBytes - 1, schemaartifacts.MaxURIBytes, schemaartifacts.MaxURIBytes + 1} {
+				t.Run(fmt.Sprintf("%s/%s/%d", field.name, unit, size), func(t *testing.T) {
+					const prefix = "https://example.test/"
+					remaining := size - len(prefix)
+					uri := prefix + strings.Repeat(unit, remaining/len(unit)) + strings.Repeat("a", remaining%len(unit))
+					require.Len(t, uri, size)
+					var value map[string]any
+					require.NoError(t, json.Unmarshal(fixture(t, "valid-initial.json"), &value))
+					field.set(value, uri)
+					encoded, err := json.Marshal(value)
+					require.NoError(t, err)
+					canonical, err := jcs.Transform(encoded)
+					require.NoError(t, err)
+					_, err = Parse(canonical)
+					if size > schemaartifacts.MaxURIBytes {
+						require.ErrorIs(t, err, ErrInvalid)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
 	}
 }
 
@@ -141,6 +194,51 @@ func TestValidateRejectsClosureAndImmutableReuseFailures(t *testing.T) {
 	wrongCatalogTarget := current
 	wrongCatalogTarget.URICatalog = []URIEntry{{URI: current.Artifacts[0].CanonicalURI, ArtifactRevision: "other-revision"}}
 	assert.Error(t, wrongCatalogTarget.Validate(contextFor(current)))
+}
+
+// TestRequiredURIsRetainsOversizedIdentifiers prevents length rejection from silently bypassing catalog coverage checks.
+func TestRequiredURIsRetainsOversizedIdentifiers(t *testing.T) {
+	uri := "https://example.test/" + strings.Repeat("a", schemaartifacts.MaxURIBytes)
+	for _, field := range []string{"$id", "@context"} {
+		t.Run(field, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]any{field: uri})
+			require.NoError(t, err)
+			item := artifact.Artifact{CanonicalURI: testOrigin + "/v1/resources/schema/device/rev-1", PayloadBytes: payload}
+			require.Contains(t, requiredURIs(item), uri)
+		})
+	}
+}
+
+// TestValidateURIChangeByteBoundaries checks typed successors removing aliases from previously accepted release history.
+func TestValidateURIChangeByteBoundaries(t *testing.T) {
+	for _, unit := range []string{"a", "é"} {
+		for _, size := range []int{schemaartifacts.MaxURIBytes - 1, schemaartifacts.MaxURIBytes, schemaartifacts.MaxURIBytes + 1} {
+			t.Run(fmt.Sprintf("%s/%d", unit, size), func(t *testing.T) {
+				const prefix = "https://example.test/"
+				remaining := size - len(prefix)
+				uri := prefix + strings.Repeat(unit, remaining/len(unit)) + strings.Repeat("a", remaining%len(unit))
+				before, err := Parse(fixture(t, "valid-initial.json"))
+				require.NoError(t, err)
+				after := before
+				// Legacy history can contain aliases accepted before the URI length check existed.
+				before.URICatalog = append([]URIEntry{{URI: uri, ArtifactRevision: "rev-1"}}, before.URICatalog...)
+				context := contextFor(before)
+				context.History = []Release{{Manifest: before, Digest: digest(before.Raw)}}
+				after.SchemaVersion = "2.0.0"
+				after.PreviousRelease = &PreviousRelease{SchemaVersion: before.SchemaVersion, ManifestDigest: digest(before.Raw)}
+				changes, err := Diff(before, after, context)
+				require.NoError(t, err)
+				require.Len(t, changes.URICatalog, 1)
+				after.Changes = &changes
+				err = after.Validate(context)
+				if size > schemaartifacts.MaxURIBytes {
+					require.ErrorIs(t, err, ErrInvalid)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
 }
 
 // TestValidateRejectsUnorderedUTF16Arrays distinguishes canonical code-unit ordering from Unicode code-point ordering.
@@ -354,7 +452,7 @@ func TestValidateIsRaceSafe(t *testing.T) {
 
 // TestParseRejectsCollectionLimit rejects a canonical manifest whose artifact array exceeds the entry limit.
 func TestParseRejectsCollectionLimit(t *testing.T) {
-	items := strings.TrimRight(strings.Repeat(`null,`, MaxCollectionEntries+1), ",")
+	items := strings.TrimRight(strings.Repeat(`null,`, schemaartifacts.MaxArrayEntries+1), ",")
 	data := []byte(`{"$schema":"https://example.test/manifest-1.0.0","artifacts":[` + items + `],"formatVersion":"1.0.0","previousRelease":null,"schemaContextBindings":[],"schemaVersion":"1.0.0","source":{"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"https://git.example.test/repo"},"storageCatalog":[],"uriCatalog":[]}`)
 	canonical, err := jcs.Transform(data)
 	require.NoError(t, err)

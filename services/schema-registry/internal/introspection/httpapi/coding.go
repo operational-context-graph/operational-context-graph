@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
 type ContentCoding string
@@ -96,7 +96,7 @@ func EncodeRepresentation(identity []byte, coding ContentCoding) ([]byte, error)
 // EncodeRepresentationContext returns either identity bytes or a deterministic
 // RFC 1952 stream. It checks cancellation between bounded write chunks.
 func EncodeRepresentationContext(ctx context.Context, identity []byte, coding ContentCoding) ([]byte, error) {
-	if int64(len(identity)) > config.MaxGeneratedJSONBytes {
+	if int64(len(identity)) > limits.MaxGeneratedJSONBytes {
 		return nil, ErrRepresentationTooLarge
 	}
 	if err := ctx.Err(); err != nil {

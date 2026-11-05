@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
 func TestNegotiateCoding(t *testing.T) {
@@ -64,18 +64,18 @@ func TestEncodeRepresentationIsDeterministicAndExact(t *testing.T) {
 }
 
 func TestEncodeRepresentationAllows64MiBBoundary(t *testing.T) {
-	identity := bytes.Repeat([]byte("x"), int(config.MaxGeneratedJSONBytes))
+	identity := bytes.Repeat([]byte("x"), int(limits.MaxGeneratedJSONBytes))
 	compressed, err := EncodeRepresentation(identity, Gzip)
 	require.NoError(t, err)
 
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	require.NoError(t, err)
-	written, err := io.Copy(io.Discard, io.LimitReader(reader, config.MaxGeneratedJSONBytes+1))
+	written, err := io.Copy(io.Discard, io.LimitReader(reader, limits.MaxGeneratedJSONBytes+1))
 	require.NoError(t, err)
 	require.NoError(t, reader.Close())
-	assert.Equal(t, config.MaxGeneratedJSONBytes, written)
+	assert.Equal(t, limits.MaxGeneratedJSONBytes, written)
 
-	tooLarge := make([]byte, int(config.MaxGeneratedJSONBytes)+1)
+	tooLarge := make([]byte, int(limits.MaxGeneratedJSONBytes)+1)
 	_, err = EncodeRepresentation(tooLarge, Gzip)
 	require.ErrorIs(t, err, ErrRepresentationTooLarge)
 }

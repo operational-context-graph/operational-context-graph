@@ -133,6 +133,17 @@ Engine names, profiles, and program media types do not imply Registry execution 
 Stored payloads and resources have a 16 MiB limit.
 Descriptor arrays have a 10,000-entry limit. Conditions and transformations obey the same strict JSON rules as other artifacts.
 Generated identity JSON has a 64 MiB limit, including metadata, documents, escaping, Base64 expansion, and collection envelopes.
+Declared document URIs and Internationalized Resource Identifiers (IRIs) have an 8192-byte UTF-8 limit.
+This includes manifest schema, source repository, catalog, change, canonical artifact, and source-mapping schema identifiers.
+
+`pkg/schema-artifacts/limits.go` owns fixed artifact acceptance limits, including JSON structure, identifiers, and exact bytes.
+`pkg/schema-artifacts/strictjson` enforces structural limits using the constants from `pkg/schema-artifacts` directly.
+`internal/introspection/limits` owns the generated response limit. HTTP and pagination packages own their request and cursor limits.
+`internal/config/introspection` contains tunable runtime settings, not fixed contract limits.
+
+JSON structural and string limits do not apply to opaque resource bytes or generated Base64 strings.
+Release serviceability validation checks package sizes separately from reusable artifact format validation.
+Request handling also enforces complete response sizes before writing them.
 The page limit applies to returned items, not the extra pagination lookahead item.
 Format validation rejects candidates requiring oversized individual packages before storage.
 

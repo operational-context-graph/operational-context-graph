@@ -25,14 +25,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	usecase "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
 const mappingBase = "/v1/releases/1.0.0/source-mappings/device-mapping"
@@ -872,7 +872,7 @@ func TestGeneratedPackageSizeBoundary(t *testing.T) {
 	type packageBody struct {
 		Content string `json:"content"`
 	}
-	const limit = int(config.MaxGeneratedJSONBytes)
+	const limit = int(limits.MaxGeneratedJSONBytes)
 	base, err := json.Marshal(packageBody{})
 	require.NoError(t, err)
 	content := strings.Repeat("x", limit-len(base))
@@ -1292,7 +1292,7 @@ func repeatedTargetFixture() *artifactTestSnapshot {
 	mapping := fixture.artifacts["rev-mapping"]
 	detail := fixture.mappings[mapping.Revision]
 	original := detail.Transformations
-	detail.Transformations = make([]model.SourceMappingTransformation, strictjson.MaxArrayEntries)
+	detail.Transformations = make([]model.SourceMappingTransformation, schemaartifacts.MaxArrayEntries)
 	for index := range detail.Transformations {
 		detail.Transformations[index] = original[index%2]
 	}
@@ -1337,7 +1337,7 @@ func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 	require.Equal(t, map[string]int{"incoming": 1, "device": 1, "located-in": 1}, snapshot.lookups)
 	var body v1.SourceMapping
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
-	require.Len(t, body.Programs.Transformations, strictjson.MaxArrayEntries)
+	require.Len(t, body.Programs.Transformations, schemaartifacts.MaxArrayEntries)
 	require.Equal(t, sourcemappingmodel.CardinalityMany, body.Programs.Transformations[1].Cardinality)
 	require.Equal(t, "located-in", body.Programs.Transformations[1].TargetSchema.ArtifactType)
 

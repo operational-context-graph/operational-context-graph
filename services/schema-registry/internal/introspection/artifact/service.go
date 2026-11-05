@@ -16,10 +16,11 @@ import (
 	"mime"
 	"sort"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
@@ -311,7 +312,7 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 	resources := make(map[string]model.Resource, len(descriptor.Resources))
 	for _, resource := range descriptor.Resources {
 		_, _, mediaErr := mime.ParseMediaType(resource.MediaType)
-		if _, duplicate := resources[resource.Name]; duplicate || resource.ArtifactRevision != detail.MappingRevision || !artifactmodel.ValidLogicalType(resource.Role) || !artifactmodel.ValidResourceName(resource.Name) || mediaErr != nil || len(resource.MediaType) > config.MaxIdentifierBytes || resource.Size < 0 || resource.Size > config.MaxArtifactBytes || !artifactmodel.ValidDigest(resource.Digest) || resource.Bytes != nil && !validPayload(resource.ByteDescriptor) {
+		if _, duplicate := resources[resource.Name]; duplicate || resource.ArtifactRevision != detail.MappingRevision || !artifactmodel.ValidLogicalType(resource.Role) || !artifactmodel.ValidResourceName(resource.Name) || mediaErr != nil || len(resource.MediaType) > schemaartifacts.MaxIdentifierBytes || resource.Size < 0 || resource.Size > schemaartifacts.MaxArtifactBytes || !artifactmodel.ValidDigest(resource.Digest) || resource.Bytes != nil && !validPayload(resource.ByteDescriptor) {
 			return model.SourceMapping{}, postgres.ErrInconsistentState
 		}
 		resources[resource.Name] = resource
@@ -413,7 +414,7 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 	for _, resource := range result.Programs {
 		budget += (resource.Size + 2) / 3 * 4
 	}
-	if budget > config.MaxGeneratedJSONBytes {
+	if budget > limits.MaxGeneratedJSONBytes {
 		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	for index, resource := range result.Programs {
@@ -438,7 +439,7 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 		return model.SourceMappingPackage{}, err
 	}
 	budget += int64(len(source.Artifact.Payload.Bytes))
-	if budget > config.MaxGeneratedJSONBytes {
+	if budget > limits.MaxGeneratedJSONBytes {
 		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	result.Schemas = []Descriptor{source}
@@ -461,7 +462,7 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 				return model.SourceMappingPackage{}, err
 			}
 			budget += int64(len(target.Artifact.Payload.Bytes))
-			if budget > config.MaxGeneratedJSONBytes {
+			if budget > limits.MaxGeneratedJSONBytes {
 				return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 			}
 			result.Schemas = append(result.Schemas, target)
@@ -562,7 +563,7 @@ func (s *Service) SourceMappings(ctx context.Context, version string, filter mod
 				return err
 			}
 			minimumBytes += minimumSourceMappingBytes(mapping, version)
-			if minimumBytes > config.MaxGeneratedJSONBytes {
+			if minimumBytes > limits.MaxGeneratedJSONBytes {
 				return postgres.ErrInconsistentState
 			}
 			mappings = append(mappings, mapping)
@@ -614,7 +615,7 @@ func (s *Service) SourceMappingPackages(ctx context.Context, version string, fil
 				minimumBytes += int64(len(schema.Artifact.Payload.Bytes))
 				minimumBytes += extensionBytes(schema.Artifact.Extensions)
 			}
-			if minimumBytes > config.MaxGeneratedJSONBytes {
+			if minimumBytes > limits.MaxGeneratedJSONBytes {
 				return postgres.ErrInconsistentState
 			}
 			result.Value = append(result.Value, value)
@@ -631,7 +632,7 @@ func extensionBytes(raw []byte) int64 {
 	}
 	encoded, err := json.Marshal(json.RawMessage(raw))
 	if err != nil {
-		return config.MaxGeneratedJSONBytes + 1
+		return limits.MaxGeneratedJSONBytes + 1
 	}
 	return int64(len(encoded))
 }
@@ -679,7 +680,7 @@ func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, ve
 
 func validPayload(value model.ByteDescriptor) bool {
 	digest := sha256.Sum256(value.Bytes)
-	return value.Size >= 0 && value.Size <= config.MaxArtifactBytes && int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])
+	return value.Size >= 0 && value.Size <= schemaartifacts.MaxArtifactBytes && int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])
 }
 
 // History returns activated logical artifact selections in descending sequence.

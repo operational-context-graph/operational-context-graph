@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/piprate/json-gold/ld"
 
@@ -225,7 +226,7 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 	if _, _, err := mime.ParseMediaType(descriptor.MediaType); err != nil {
 		return fmt.Errorf("invalid media type: %w", err)
 	}
-	if !ValidBundlePath(descriptor.BundlePath) || !ValidDigest(descriptor.Digest) || descriptor.Size < 0 || descriptor.Size > strictjson.MaxBytes {
+	if !ValidBundlePath(descriptor.BundlePath) || !ValidDigest(descriptor.Digest) || descriptor.Size < 0 || descriptor.Size > schemaartifacts.MaxArtifactBytes {
 		return errors.New("invalid byte descriptor")
 	}
 	if len(data) > schemaartifacts.MaxArtifactBytes || int64(len(data)) != descriptor.Size {
@@ -268,6 +269,16 @@ func ValidBundlePath(value string) bool {
 		}
 	}
 	return true
+}
+
+// ValidDocumentURI accepts bounded absolute URIs or IRIs without query strings or fragments.
+// It preserves the exact identifier and never resolves or retrieves it.
+func ValidDocumentURI(value string) bool {
+	if value == "" || len(value) > schemaartifacts.MaxURIBytes || !utf8.ValidString(value) {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.IsAbs() && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 // ValidateCanonicalURI ensures a Registry-owned immutable resource URI.

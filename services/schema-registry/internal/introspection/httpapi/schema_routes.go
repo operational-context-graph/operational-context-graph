@@ -13,12 +13,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
@@ -264,7 +265,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		return
 	}
 	for key := range values {
-		if values.Get(key) == "" || len(values.Get(key)) > config.MaxIdentifierBytes && key != "cursor" {
+		if values.Get(key) == "" || len(values.Get(key)) > schemaartifacts.MaxIdentifierBytes && key != "cursor" {
 			s.writeArtifactValidationError(c, InvalidQueryParameter)
 			return
 		}
@@ -325,7 +326,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 			return false
 		}
 		encodedItems += len(encoded)
-		return int64(encodedItems) <= config.MaxGeneratedJSONBytes
+		return int64(encodedItems) <= limits.MaxGeneratedJSONBytes
 	}
 	if packages {
 		result, lookupErr := s.artifacts.SourceMappingPackages(c.Request.Context(), version, filter, afterType, limit+1)
@@ -482,7 +483,7 @@ func (s *Server) schemaStores(c *gin.Context) {
 
 func (s *Server) writeBoundedJSON(c *gin.Context, schema, selected string, value any) {
 	body, err := json.Marshal(value)
-	if err != nil || int64(len(body)) > config.MaxGeneratedJSONBytes {
+	if err != nil || int64(len(body)) > limits.MaxGeneratedJSONBytes {
 		s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: schema, SelectedSchemaVersion: selected})
 		return
 	}

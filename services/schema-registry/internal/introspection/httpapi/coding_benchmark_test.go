@@ -11,11 +11,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	config "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
 func BenchmarkEncodeGzipHead64MiB(b *testing.B) {
-	body := bytes.Repeat([]byte(`{"schemaVersion":"1.0.0","items":[]}`), int(config.MaxGeneratedJSONBytes)/36)
+	body := bytes.Repeat([]byte(`{"schemaVersion":"1.0.0","items":[]}`), int(limits.MaxGeneratedJSONBytes)/36)
 	b.SetBytes(int64(len(body)))
 	b.ReportAllocs()
 	b.ResetTimer()
