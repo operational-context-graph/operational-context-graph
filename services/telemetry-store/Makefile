@@ -17,7 +17,11 @@ vet:
 
 test:
 	mkdir -p $(COVERAGE_DIR)
-	go test ./... -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out
+	@go test ./... -race -count=1 -json -coverprofile=$(COVERAGE_DIR)/$(NAME).out \
+	  | go tool tparse; test_rc=$${PIPESTATUS[0]}; \
+	go tool cover -html=$(COVERAGE_DIR)/$(NAME).out -o $(COVERAGE_DIR)/$(NAME).html 2>/dev/null; \
+	printf "  coverage report: \033[4mfile://$(COVERAGE_DIR)/$(NAME).html\033[0m\n"; \
+	exit $$test_rc
 
 lint:
 	golangci-lint run

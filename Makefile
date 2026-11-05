@@ -1,6 +1,15 @@
-SHELL       := /usr/bin/env bash
-BIN_DIR     := bin
+SHELL        := /usr/bin/env bash
+BIN_DIR      := bin
 COVERAGE_DIR := $(CURDIR)/coverage
+VERBOSE      ?= 0
+
+# Quiet filter: strip make echo, mkdir, go test invocation, and raw package result lines.
+# Set VERBOSE=1 to see full output.
+ifeq ($(VERBOSE),0)
+_FILTER = 2>&1 | grep -v -E '^(make\[|/.*make |mkdir |go test |ok  	|[?]   	|	github\.com)'
+else
+_FILTER =
+endif
 
 # Go modules discovery. Connectors carry the subdirectory prefix.
 # TARGET_DIR = services/$(TARGET) resolves correctly for every target.
@@ -65,11 +74,30 @@ test: require-target
 	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) test
 
 # Test every service and connector. Coverage profiles land in $(COVERAGE_DIR).
+# Set VERBOSE=1 for full go test output. Default (VERBOSE=0) shows coverage tables only.
 test-all: require-targets
-	@for s in $(TARGETS); do \
-		echo "==> test $$s"; \
-		$(MAKE) --no-print-directory test TARGET=$$s; \
-	done
+	@failed=0; passed=0; \
+	for s in $(TARGETS); do \
+		printf "\n\033[1m── test: $$s ──\033[0m\n"; \
+		start=$$(date +%s); \
+		{ $(MAKE) --no-print-directory test TARGET=$$s; } $(_FILTER); \
+		rc=$${PIPESTATUS[0]:-$$?}; \
+		elapsed=$$(( $$(date +%s) - start )); \
+		if [ $$rc -eq 0 ]; then \
+			printf "\033[32m✓ PASS\033[0m $$s ($$elapsed s)\n"; \
+			passed=$$((passed + 1)); \
+		else \
+			printf "\033[31m✗ FAIL\033[0m $$s ($$elapsed s)\n"; \
+			failed=$$((failed + 1)); \
+		fi; \
+	done; \
+	total=$$((passed + failed)); \
+	printf "\n\033[1m── results: $$passed/$$total passed"; \
+	if [ $$failed -gt 0 ]; then \
+		printf " · \033[31m$$failed failed\033[0m\033[1m"; \
+	fi; \
+	printf " ──\033[0m\n"; \
+	exit $$failed
 
 # Lint one service. Requires TARGET=<name>.
 lint: require-target
@@ -88,6 +116,7 @@ tidy: require-target
 
 # Tidy go.mod for every module, including the shared gen/go stubs.
 tidy-all: require-targets
+	go work sync
 	cd gen/go && go mod tidy
 	@for s in $(TARGETS); do \
 		echo "==> tidy $$s"; \
