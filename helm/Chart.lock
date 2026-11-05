@@ -1,0 +1,27 @@
+dependencies:
+- name: data-ingestion
+  repository: file://charts/data-ingestion
+  version: 0.1.0
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 18.12.17
+- name: pgadmin
+  repository: file://charts/pgadmin
+  version: 0.1.0
+- name: inventory-store
+  repository: file://charts/inventory-store
+  version: 0.1.0
+- name: telemetry-store
+  repository: file://charts/telemetry-store
+  version: 0.1.0
+- name: inventory-connector
+  repository: file://charts/inventory-connector
+  version: 0.1.0
+- name: doris
+  repository: file://charts/doris
+  version: 0.1.0
+- name: otelcol
+  repository: file://charts/otelcol
+  version: 0.1.0
+digest: sha256:0f0f564b6d92260901a49911be89661db0a5048c2504fa01d12f75d6d722f726
+generated: "2026-11-05T16:20:40.923812871+01:00"
