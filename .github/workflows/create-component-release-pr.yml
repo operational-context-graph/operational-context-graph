@@ -1,5 +1,5 @@
 name: Create Component Release PR
-run-name: "Release PR Creation ${{ inputs.component_path }} v${{ inputs.version }}"
+run-name: "Release PR Creation component ${{ inputs.component_path }} v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
