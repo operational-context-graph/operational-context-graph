@@ -12,7 +12,6 @@ set -euo pipefail
 BASE_REF="${1:?base ref required}"
 
 git diff --name-status "${BASE_REF}...HEAD" \
-  -- 'services/**/go.mod' 'services/**/pyproject.toml' 'services/**/package.json' \
-     'gen/**/go.mod' 'gen/**/pyproject.toml' 'gen/**/package.json' \
+  -- '**/go.mod' '**/pyproject.toml' '**/package.json' \
   | awk '$1 == "A" { print $2 }' \
   | xargs -r -I{} dirname {}

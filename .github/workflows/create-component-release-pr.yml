@@ -6,7 +6,7 @@
 #
 # Triggered manually via workflow_dispatch. Requires the ocg-repository-ops GitHub App to be
 # configured via APP_CLIENT_ID and APP_PRIVATE_KEY.
-
+---
 name: Create Component Release PR
 run-name: "Release PR Creation component ${{ inputs.component_path }} v${{ inputs.version }}"
 
