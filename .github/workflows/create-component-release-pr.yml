@@ -1,10 +1,10 @@
-# TODO: Add short description for this workflow
 name: Create Component Release PR
+run-name: "Release PR Creation ${{ inputs.component_path }} v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
     inputs:
-      component:
+      component_path:
         description: "Component path (e.g. services/data-ingestion, gen/go)"
         required: true
         type: string
@@ -32,36 +32,32 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-
       - name: Validate version format
         run: scripts/validate-version.sh "${{ inputs.version }}"
-
       - name: Validate component path
         run: |
-          if [ ! -d "${{ inputs.component }}" ]; then
-            echo "::error::Component path '${{ inputs.component }}' does not exist"
+          if [ ! -d "${{ inputs.component_path }}" ]; then
+            echo "::error::Component path '${{ inputs.component_path }}' does not exist"
             exit 1
           fi
-          if [ ! -f "${{ inputs.component }}/go.mod" ] && \
-             [ ! -f "${{ inputs.component }}/package.json" ] && \
-             [ ! -f "${{ inputs.component }}/pyproject.toml" ]; then
-            echo "::error::Component path '${{ inputs.component }}' has no recognizable module manifest (go.mod, package.json, pyproject.toml)"
+          if [ ! -f "${{ inputs.component_path }}/go.mod" ] && \
+             [ ! -f "${{ inputs.component_path }}/package.json" ] && \
+             [ ! -f "${{ inputs.component_path }}/pyproject.toml" ]; then
+            echo "::error::Component path '${{ inputs.component_path }}' has no recognizable module manifest (go.mod, package.json, pyproject.toml)"
             exit 1
           fi
-
       - name: Check tag does not already exist
         run: |
-          TAG="${{ inputs.component }}/v${{ inputs.version }}"
+          TAG="${{ inputs.component_path }}/v${{ inputs.version }}"
           if git tag --list | grep -qxF "$TAG"; then
             echo "::error::Tag '$TAG' already exists"
             exit 1
           fi
-
       - name: Derive release metadata
         id: derive
         run: |
-          SLUG=$(basename "${{ inputs.component }}")
-          echo "tag=${{ inputs.component }}/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          SLUG=$(basename "${{ inputs.component_path }}")
+          echo "tag=${{ inputs.component_path }}/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           echo "branch=release/${SLUG}/${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
 
@@ -91,7 +87,6 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-
       - name: Configure git identity
         run: |
           APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
@@ -103,41 +98,21 @@ jobs:
       - name: Create release branch
         run: git checkout -b "${{ env.BRANCH }}"
 
-      # TODO: Add version descriptor bump here for non-Go components.
+      # TODO: Add version descriptor bump here for non-Go components in the future.
       # Python (pyproject.toml) and TypeScript (package.json) components need their
       # version field updated to match the release version.
 
       - name: Update changelog
-        id: cliff-prepend
-        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
-        with:
-          version: 2.14.2
-          config: cliff.toml
-          args: >-
-            --include-path "${{ inputs.component }}/**"
-            --tag "${{ env.TAG }}"
-            --prepend "${{ inputs.component }}/CHANGELOG.md"
-        env:
-          OUTPUT: ${{ inputs.component }}/CHANGELOG.md
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      - name: Generate PR body
-        id: cliff-body
-        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
-        with:
-          version: 2.14.2
-          config: cliff.toml
-          args: >-
-            --include-path "${{ inputs.component }}/**"
-            --tag "${{ env.TAG }}"
-            --unreleased
-            --strip all
+        run: |
+          scripts/generate-component-changelog.sh \
+            "${{ inputs.component_path }}" \
+            "${{ env.TAG }}"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Commit changelog
         run: |
-          git add "${{ inputs.component }}/CHANGELOG.md"
+          git add "${{ inputs.component_path }}/CHANGELOG.md"
           git diff --cached --quiet || git commit -m "chore(release): update ${{ env.SLUG }} changelog for v${{ inputs.version }}"
 
       - name: Open release PR
@@ -149,4 +124,4 @@ jobs:
             --base main \
             --head "${{ env.BRANCH }}" \
             --title "chore(release): ${{ env.SLUG }} v${{ inputs.version }}" \
-            --body "${{ steps.cliff-body.outputs.content }}"
+            --body "$(cat "${{ inputs.component_path }}/CHANGELOG.new")"

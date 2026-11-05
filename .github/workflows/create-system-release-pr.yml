@@ -1,5 +1,5 @@
-# TODO: Add short description for this workflow
 name: Create System Release PR
+run-name: "Release PR Creation system v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
@@ -40,7 +40,6 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.resolve.outputs.matrix }}
-      matrix_md: ${{ steps.resolve.outputs.matrix_md }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +48,6 @@ jobs:
           fetch-depth: 0
       - name: Validate version format
         run: scripts/validate-version.sh "${{ inputs.version }}"
-
       - name: Validate version overrides
         run: |
           for override in \
@@ -71,60 +69,14 @@ jobs:
       - name: Resolve component versions
         id: resolve
         run: |
-          resolve_version() {
-            local module_path="$1"
-            local override="$2"
-            if [ -n "$override" ]; then
-              local tag="${module_path}/v${override}"
-              if ! git tag --list | grep -qxF "$tag"; then
-                echo "::error::Override tag '$tag' does not exist" >&2
-                exit 1
-              fi
-              echo "$tag"
-            else
-              local latest
-              latest=$(git tag --list "${module_path}/v*" --sort=-version:refname | head -1)
-              if [ -z "$latest" ]; then
-                echo "::error::No tag found for '${module_path}'" >&2
-                exit 1
-              fi
-              echo "$latest"
-            fi
-          }
-
-          di=$(resolve_version "services/data-ingestion"       "${{ inputs.data_ingestion }}")
-          is=$(resolve_version "services/inventory-store"      "${{ inputs.inventory_store }}")
-          ts=$(resolve_version "services/telemetry-store"      "${{ inputs.telemetry_store }}")
-          ci=$(resolve_version "services/connectors/inventory" "${{ inputs.connectors_inventory }}")
-          gg=$(resolve_version "gen/go"                        "${{ inputs.gen_go }}")
-
-          DATE=$(date -u +%Y-%m-%d)
-
-          # Full versioned section for CHANGELOG.md
-          matrix_md="## [${{ inputs.version }}] - ${DATE}"$'\n\n'
-          matrix_md+="| Component | Tag |"$'\n'
-          matrix_md+="| --- | --- |"$'\n'
-          matrix_md+="| \`services/data-ingestion\` | ${di} |"$'\n'
-          matrix_md+="| \`services/inventory-store\` | ${is} |"$'\n'
-          matrix_md+="| \`services/telemetry-store\` | ${ts} |"$'\n'
-          matrix_md+="| \`services/connectors/inventory\` | ${ci} |"$'\n'
-          matrix_md+="| \`gen/go\` | ${gg} |"
-
-          # Table only for the PR body
-          matrix="| Component | Tag |"$'\n'
-          matrix+="| --- | --- |"$'\n'
-          matrix+="| \`services/data-ingestion\` | ${di} |"$'\n'
-          matrix+="| \`services/inventory-store\` | ${is} |"$'\n'
-          matrix+="| \`services/telemetry-store\` | ${ts} |"$'\n'
-          matrix+="| \`services/connectors/inventory\` | ${ci} |"$'\n'
-          matrix+="| \`gen/go\` | ${gg} |"
-
+          matrix=$(scripts/resolve-component-versions.sh \
+            "${{ inputs.data_ingestion }}" \
+            "${{ inputs.inventory_store }}" \
+            "${{ inputs.telemetry_store }}" \
+            "${{ inputs.connectors_inventory }}" \
+            "${{ inputs.gen_go }}")
           echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
           echo "$matrix" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-          echo "matrix_md<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$matrix_md" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
   create-release:
@@ -143,13 +95,11 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-
       - name: Configure git identity
         run: |
           APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
@@ -157,18 +107,17 @@ jobs:
           scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
       - name: Create release branch
         run: git checkout -b "release/${{ inputs.version }}"
-
       - name: Update changelog
         run: |
+          DATE=$(date -u +%Y-%m-%d)
+          SECTION="## [${{ inputs.version }}] - ${DATE}"$'\n\n'"${{ needs.validate.outputs.matrix }}"
           scripts/prepend-changelog.sh \
             "${{ inputs.version }}" \
-            "${{ needs.validate.outputs.matrix_md }}"
+            "$SECTION"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for system v${{ inputs.version }}"
-
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
