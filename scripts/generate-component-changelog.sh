@@ -23,6 +23,7 @@ fi
 git cliff \
   --include-path "${COMPONENT_PATH}/**" \
   --tag "$TAG" \
+  --unreleased \
   --prepend "$CHANGELOG"
 
 # Print the new (unreleased) section to stdout for use as the PR body.
