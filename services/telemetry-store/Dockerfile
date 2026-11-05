@@ -14,8 +14,8 @@ COPY services/telemetry-store/go.mod services/telemetry-store/go.sum services/te
 RUN cd services/telemetry-store && go mod download
 
 COPY services/telemetry-store/ services/telemetry-store/
-RUN CGO_ENABLED=0 go build -trimpath -o /out/telemetry-store \
-    ./services/telemetry-store/cmd/telemetry-store
+RUN cd services/telemetry-store && CGO_ENABLED=0 go build -trimpath -o /out/telemetry-store \
+    ./cmd/telemetry-store
 
 FROM ${DISTROLESS_IMAGE}
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph

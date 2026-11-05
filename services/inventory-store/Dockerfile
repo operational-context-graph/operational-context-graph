@@ -19,11 +19,11 @@ COPY services/inventory-store/go.mod services/inventory-store/go.sum services/in
 RUN cd services/inventory-store && go mod download
 
 COPY services/inventory-store/ services/inventory-store/
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN cd services/inventory-store && CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/inventory-store \
-    ./services/inventory-store/cmd/inventory-store
+    ./cmd/inventory-store
 
 FROM ${GO_IMAGE} AS goose
 RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
