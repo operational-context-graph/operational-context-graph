@@ -5,7 +5,7 @@
 # changelog diff as the PR body.
 ---
 name: Create Component Release PR
-run-name: "Release PR Creation ${{ inputs.component_path }} v${{ inputs.version }}"
+run-name: "Release PR Creation for ${{ inputs.component_path }} v${{ inputs.version }}"
 
 on:
   workflow_dispatch:

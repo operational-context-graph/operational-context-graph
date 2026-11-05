@@ -5,7 +5,7 @@
 # against main with a component version matrix as the PR body.
 ---
 name: Create Release PR
-run-name: "Release PR Creation v${{ inputs.version }}"
+run-name: "Release PR Creation for v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
