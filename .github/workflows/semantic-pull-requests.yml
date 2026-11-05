@@ -66,6 +66,7 @@ jobs:
           scopes: |
             deps
             devops
+            proto
             security
             deployment
             architecture
@@ -89,7 +90,7 @@ jobs:
             snb
             sn
             br
-          requireScope: false
+          requireScope: true
 
       - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         # When the previous steps fails, the workflow would stop. By adding this
@@ -99,11 +100,46 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           header: pr-title-lint-error
           message: |
-            We require pull request titles to follow the [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/) and we detected that your proposed title needs to be adjusted.
+            PR title must follow the [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`
 
+            **Error:**
             ~~~
             ${{ steps.lint_pr_title.outputs.error_message }}
             ~~~
+
+            <details>
+            <summary><strong>Available scopes</strong></summary>
+
+            | Scope | Component |
+            | --- | --- |
+            | `deps` | Dependencies |
+            | `devops` | DevOps |
+            | `proto` | Proto |
+            | `security` | Security |
+            | `deployment` | Deployment |
+            | `architecture` | Architecture |
+            | `github` | GitHub |
+            | `ocg` | Operational Context Graph |
+            | `sc` | Satellite Connector |
+            | `tc` | Telemetry Connector |
+            | `ic` | Inventory Connector |
+            | `edc` | External Data Connector |
+            | `di` | Data Ingestion |
+            | `sv` | Secrets Vault |
+            | `ikb` | Infrastructure Knowledge Base |
+            | `dci` | Data Center Inventory |
+            | `sr` | Schema Registry |
+            | `ts` | Telemetry Store |
+            | `ir` | Insights Repository |
+            | `rar` | Recorded Actions Repository |
+            | `als` | Audit Log Service |
+            | `pas` | Permission & Authorization Service |
+            | `dl` | Document Library |
+            | `snb` | Semantic Network Builder |
+            | `sn` | Semantic Network |
+            | `br` | Bundle Repository |
+
+            </details>
 
       # Delete a previous comment when the issue has been resolved
       - if: ${{ steps.lint_pr_title.outputs.error_message == null }}
