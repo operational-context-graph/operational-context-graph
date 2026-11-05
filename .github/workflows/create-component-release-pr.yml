@@ -5,7 +5,7 @@
 # changelog diff as the PR body.
 ---
 name: Create Component Release PR
-run-name: "Release PR Creation component ${{ inputs.component_path }} v${{ inputs.version }}"
+run-name: "Release PR Creation ${{ inputs.component_path }} v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
@@ -76,6 +76,9 @@ jobs:
           echo "tag=${COMPONENT_PATH}/v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "branch=release/${SLUG}/${VERSION}" >> "$GITHUB_OUTPUT"
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "Tag:    ${COMPONENT_PATH}/v${VERSION}"
+          echo "Branch: release/${SLUG}/${VERSION}"
+          echo "Slug:   ${SLUG}"
 
   create-release-pr:
     name: Create Component Release PR
@@ -119,7 +122,12 @@ jobs:
       # Python (pyproject.toml) and TypeScript (package.json) components need their
       # version field updated to match the release version.
 
-      - name: Update changelog
+      - name: Install git-cliff
+        env:
+          GIT_CLIFF_VERSION: ${{ vars.GIT_CLIFF_VERSION }}
+        run: sudo scripts/install-git-cliff.sh "$GIT_CLIFF_VERSION"
+
+      - name: Generate changelog
         id: changelog
         env:
           COMPONENT_PATH: ${{ inputs.component_path }}

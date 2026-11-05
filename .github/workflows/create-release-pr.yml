@@ -100,6 +100,8 @@ jobs:
           echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
           echo "$matrix" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Resolved component matrix:"
+          echo "$matrix"
 
   create-release-pr:
     name: Create Release PR
