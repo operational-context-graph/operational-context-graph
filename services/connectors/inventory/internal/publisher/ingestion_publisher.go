@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/operational-context-graph/operational-context-graph/gen/go/ocg/ingestion/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
+	grpcclient "github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/grpc"
 )
 
 type GRPCPublisher struct {
@@ -19,7 +20,7 @@ type GRPCPublisher struct {
 }
 
 func NewGRPCPublisher(endpoint, certFile, keyFile, connectorID string) (*GRPCPublisher, error) {
-	conn, err := dial(endpoint, certFile, keyFile)
+	conn, err := grpcclient.Dial(endpoint, certFile, keyFile)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func (p *GRPCPublisher) Publish(ctx context.Context, msgs []envelope.Message) er
 		if err != nil {
 			return err
 		}
-		_, err = p.client.Ingest(outCtx(ctx, p.connectorID), &pb.IngestRequest{Messages: envelopes})
+		_, err = p.client.Ingest(grpcclient.OutCtx(ctx, p.connectorID), &pb.IngestRequest{Messages: envelopes})
 		if err != nil {
 			if status.Code(err) == codes.Unavailable {
 				return errors.New("publisher: back-pressure — data ingestion unavailable")

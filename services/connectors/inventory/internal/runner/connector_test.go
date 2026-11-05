@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/netbox"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/publisher"
@@ -26,25 +27,12 @@ func (f *fakeNetboxClient) Paginate(_ context.Context, _ string, params url.Valu
 	return f.records, f.err
 }
 
-// fakeWatermarkReader records the partitions it was asked about and returns a
-// fixed watermark or error.
-type fakeWatermarkReader struct {
-	watermark  map[string]any
-	err        error
-	partitions []map[string]any
-}
-
-func (f *fakeWatermarkReader) GetWatermark(_ context.Context, partition map[string]any) (map[string]any, error) {
-	f.partitions = append(f.partitions, partition)
-	return f.watermark, f.err
-}
-
 func newConnector(nb *fakeNetboxClient, artifactTypes map[string]string) *Connector {
 	cfg := &config.Config{
 		SchemaVersion: "0.1.0",
 		ArtifactTypes: artifactTypes,
 	}
-	return New(&publisher.StubPublisher{}, nb, &fakeWatermarkReader{}, cfg)
+	return New(&publisher.StubPublisher{}, nb, &backfill.StubBackfillClient{}, cfg)
 }
 
 func TestProcessEndpoint_PublishesRecords(t *testing.T) {
@@ -75,7 +63,7 @@ func TestProcessEndpoint_DefaultsArtifactType(t *testing.T) {
 	nb := &fakeNetboxClient{records: []json.RawMessage{json.RawMessage(`{"id":1}`)}}
 	pub := &publisher.StubPublisher{}
 	cfg := &config.Config{SchemaVersion: "0.1.0"}
-	conn := New(pub, nb, &fakeWatermarkReader{}, cfg)
+	conn := New(pub, nb, &backfill.StubBackfillClient{}, cfg)
 
 	_, err := conn.ProcessEndpoint(context.Background(), "dcim/devices/", nil)
 
@@ -116,7 +104,7 @@ func TestBuildEnvelopes_SkipsMalformed(t *testing.T) {
 	assert.Equal(t, "netbox.Device", messages[1].LogicalArtifactId)
 }
 
-func runWithWatermark(t *testing.T, reader *fakeWatermarkReader) (*fakeNetboxClient, Result, error) {
+func runWithWatermark(t *testing.T, stub *backfill.StubBackfillClient) (*fakeNetboxClient, Result, error) {
 	t.Helper()
 	nb := &fakeNetboxClient{records: []json.RawMessage{json.RawMessage(`{"id":7,"last_updated":"2026-07-10T07:47:31Z"}`)}}
 	cfg := &config.Config{
@@ -124,42 +112,42 @@ func runWithWatermark(t *testing.T, reader *fakeWatermarkReader) (*fakeNetboxCli
 		Endpoints:     []string{"dcim/devices/"},
 		ArtifactTypes: map[string]string{"dcim/devices/": "netbox.Device"},
 	}
-	conn := New(&publisher.StubPublisher{}, nb, reader, cfg)
+	conn := New(&publisher.StubPublisher{}, nb, stub, cfg)
 	result, err := conn.Run(context.Background())
 	return nb, result, err
 }
 
 func TestRun_WatermarkPresent_QueriesPartitionAndPublishes(t *testing.T) {
-	reader := &fakeWatermarkReader{watermark: map[string]any{"last_updated": "2026-07-10T07:47:31Z"}}
+	stub := &backfill.StubBackfillClient{Watermark: map[string]any{"last_updated": "2026-07-10T07:47:31Z"}}
 
-	nb, result, err := runWithWatermark(t, reader)
+	nb, result, err := runWithWatermark(t, stub)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Published)
-	require.Len(t, reader.partitions, 1)
-	assert.Equal(t, map[string]any{"endpoint": "dcim/devices/"}, reader.partitions[0])
+	require.Len(t, stub.Partitions, 1)
+	assert.Equal(t, map[string]any{"endpoint": "dcim/devices/"}, stub.Partitions[0])
 	assert.Equal(t, "2026-07-10T07:47:31Z", nb.lastParams.Get("last_updated__gt"))
 	assert.Equal(t, "last_updated", nb.lastParams.Get("ordering"))
 }
 
 func TestRun_WatermarkAbsent_StillPublishes(t *testing.T) {
-	reader := &fakeWatermarkReader{watermark: nil}
+	stub := &backfill.StubBackfillClient{Watermark: nil}
 
-	nb, result, err := runWithWatermark(t, reader)
+	nb, result, err := runWithWatermark(t, stub)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Published)
-	assert.Len(t, reader.partitions, 1)
+	assert.Len(t, stub.Partitions, 1)
 	assert.Nil(t, nb.lastParams)
 }
 
 func TestRun_WatermarkError_WarnsAndContinues(t *testing.T) {
-	reader := &fakeWatermarkReader{err: errors.New("ingestion unavailable")}
+	stub := &backfill.StubBackfillClient{Err: errors.New("ingestion unavailable")}
 
-	nb, result, err := runWithWatermark(t, reader)
+	nb, result, err := runWithWatermark(t, stub)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Published)
-	assert.Len(t, reader.partitions, 1)
+	assert.Len(t, stub.Partitions, 1)
 	assert.Nil(t, nb.lastParams)
 }

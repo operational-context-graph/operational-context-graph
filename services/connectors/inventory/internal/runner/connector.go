@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/netbox"
@@ -42,7 +43,7 @@ func NewFromConfig(cfg *config.Config) (*Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	watermarks := publisher.NewWatermarkReader(grpcPublisher.Conn(), cfg.GRPC.ConnectorID)
+	watermarks := backfill.NewBackfillClient(grpcPublisher.Conn(), cfg.GRPC.ConnectorID)
 	return New(grpcPublisher, netboxClient, watermarks, cfg), nil
 }
 
