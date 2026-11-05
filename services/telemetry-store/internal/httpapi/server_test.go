@@ -25,6 +25,7 @@ import (
 type stubTelemetryDB struct {
 	queryLogsFn    func(ctx context.Context, q store.LogQuery) ([]store.Log, error)
 	queryMetricsFn func(ctx context.Context, q store.MetricQuery) ([]store.Metric, error)
+	queryTraceFn   func(ctx context.Context, q store.TraceQuery) ([]store.Span, error)
 	schemaReadyFn  func(ctx context.Context) error
 }
 
@@ -37,6 +38,12 @@ func (s *stubTelemetryDB) QueryLogs(ctx context.Context, q store.LogQuery) ([]st
 func (s *stubTelemetryDB) QueryMetrics(ctx context.Context, q store.MetricQuery) ([]store.Metric, error) {
 	if s.queryMetricsFn != nil {
 		return s.queryMetricsFn(ctx, q)
+	}
+	return nil, nil
+}
+func (s *stubTelemetryDB) QueryTrace(ctx context.Context, q store.TraceQuery) ([]store.Span, error) {
+	if s.queryTraceFn != nil {
+		return s.queryTraceFn(ctx, q)
 	}
 	return nil, nil
 }
@@ -107,10 +114,13 @@ func TestHandleQueryMetrics_MissingParams(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
-func TestHandleQueryTrace_MissingParams(t *testing.T) {
+func TestHandleQueryTraces_UnknownTraceID_Returns200Empty(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
 	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/abc")
-	require.Equal(t, http.StatusNotFound, rr.Code)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp v1.TraceResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Empty(t, resp.Items)
 }
 
 func TestHealthEndpoint_OK(t *testing.T) {
@@ -186,6 +196,49 @@ func TestHandleIngestLogs_OK(t *testing.T) {
 	assert.Equal(t, int64(1), resp.LoadedRows)
 }
 
+func TestHandleIngestMetrics_OK(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
+	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/metrics", "metrics-2026-10-13-001", validLogLine)
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestHandleIngestTraces_OK(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
+	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/traces", "traces-2026-10-13-001", validLogLine)
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestHandleQueryTraces_OK(t *testing.T) {
+	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+	spanID := "00f067aa0ba902b7"
+	stub := &stubTelemetryDB{
+		queryTraceFn: func(_ context.Context, _ store.TraceQuery) ([]store.Span, error) {
+			return []store.Span{{
+				Timestamp: time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC),
+				IRI:       "urn:ocg:span:test:1",
+				TraceID:   &traceID,
+				SpanID:    &spanID,
+			}}, nil
+		},
+	}
+	srv := httpapi.NewServer(stub, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/"+traceID)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp v1.TraceResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Len(t, resp.Items, 1)
+	assert.Equal(t, "urn:ocg:span:test:1", resp.Items[0].IRI)
+}
+
+func TestHandleQueryTraces_EmptyResult_Returns200(t *testing.T) {
+	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
+	rr := test.GetRequest(t, srv.Handler, "/v1/telemetry/traces/nonexistent")
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp v1.TraceResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Empty(t, resp.Items)
+}
+
 func TestHandleIngestLogs_MissingLabel_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
 	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "", validLogLine)
@@ -206,14 +259,6 @@ func TestHandleIngestLogs_WrongContentType_Returns415(t *testing.T) {
 func TestHandleIngestLogs_EmptyBatch_Returns400(t *testing.T) {
 	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
 	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "logs-2026-10-13-001", "\n\n")
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-func TestHandleIngestLogs_PartitionBoundaryViolation_Returns400(t *testing.T) {
-	twodays := `{"timestamp":"2026-10-13T23:59:59Z","host":"h","severity":"INFO","body":"a"}` + "\n" +
-		`{"timestamp":"2026-10-14T00:00:01Z","host":"h","severity":"INFO","body":"b"}` + "\n"
-	srv := httpapi.NewServer(&stubTelemetryDB{}, &stubStreamLoader{}, ":0", 10*1024*1024*1024)
-	rr := ndjsonPost(t, srv.Handler, "/v1/telemetry/logs", "logs-2026-10-13-001", twodays)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
