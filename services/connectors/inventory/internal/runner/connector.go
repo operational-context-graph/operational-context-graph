@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
@@ -51,8 +52,7 @@ func (connector *Connector) Run(ctx context.Context) (Result, error) {
 		if ctx.Err() != nil {
 			break
 		}
-		connector.logWatermark(ctx, endpoint)
-		result, err := connector.ProcessEndpoint(ctx, endpoint)
+		result, err := connector.ProcessEndpoint(ctx, endpoint, connector.deltaParams(ctx, endpoint))
 		if err != nil {
 			return totals, fmt.Errorf("%s: %w", endpoint, err)
 		}
@@ -62,28 +62,32 @@ func (connector *Connector) Run(ctx context.Context) (Result, error) {
 	return totals, nil
 }
 
-// logWatermark reports the last committed backfill watermark for an endpoint.
-// It is observe-only: a failure is logged and the run continues, because this
-// does not affect what the connector ingests.
-func (connector *Connector) logWatermark(ctx context.Context, endpoint string) {
-	partition := map[string]any{"endpoint": endpoint}
-	watermark, err := connector.watermarks.GetWatermark(ctx, partition)
-	switch {
-	case err != nil:
-		slog.Warn("failed to read backfill watermark", "endpoint", endpoint, "err", err)
-	case watermark == nil:
-		slog.Info("no backfill watermark recorded", "endpoint", endpoint)
-	default:
-		slog.Info("backfill watermark", "endpoint", endpoint, "watermark", watermark)
+// deltaParams returns last_updated__gt + ordering filter when a watermark exists,
+// nil for a full scan (bootstrap or on error).
+func (connector *Connector) deltaParams(ctx context.Context, endpoint string) url.Values {
+	watermark, err := connector.watermarks.GetWatermark(ctx, map[string]any{"endpoint": endpoint})
+	if err != nil {
+		slog.Warn("failed to read watermark, running full scan", "endpoint", endpoint, "err", err)
+		return nil
 	}
+	lastUpdated, _ := watermark["last_updated"].(string)
+	if lastUpdated == "" {
+		slog.Info("no watermark, running full scan", "endpoint", endpoint)
+		return nil
+	}
+	slog.Info("delta fetch", "endpoint", endpoint, "last_updated", lastUpdated)
+	params := url.Values{}
+	params.Set("last_updated__gt", lastUpdated)
+	params.Set("ordering", "last_updated")
+	return params
 }
 
 func (connector *Connector) endpoints() []string {
 	return connector.cfg.Endpoints
 }
 
-func (connector *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Result, error) {
-	records, err := connector.netbox.Paginate(ctx, endpoint)
+func (connector *Connector) ProcessEndpoint(ctx context.Context, endpoint string, params url.Values) (Result, error) {
+	records, err := connector.netbox.Paginate(ctx, endpoint, params)
 	if errors.Is(err, netbox.ErrNotFound) {
 		slog.Debug("endpoint not found, skipping", "endpoint", endpoint)
 		return Result{Skipped: 1}, nil

@@ -65,14 +65,14 @@ func newTestWatermarkReader(t *testing.T, server *fakeBackfillServer) *Watermark
 }
 
 func TestWatermarkReader_WatermarkPresent(t *testing.T) {
-	server := &fakeBackfillServer{watermark: map[string]any{"last_id": float64(42)}}
+	server := &fakeBackfillServer{watermark: map[string]any{"last_updated": "2026-07-10T07:47:31Z"}}
 	reader := newTestWatermarkReader(t, server)
 
 	partition := map[string]any{"endpoint": "dcim/devices/"}
 	watermark, err := reader.GetWatermark(context.Background(), partition)
 
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"last_id": float64(42)}, watermark)
+	assert.Equal(t, map[string]any{"last_updated": "2026-07-10T07:47:31Z"}, watermark)
 }
 
 func TestWatermarkReader_WatermarkAbsent(t *testing.T) {

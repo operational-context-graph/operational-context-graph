@@ -4,8 +4,8 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,10 +99,10 @@ func TestIntegration_SlowEndpoints(t *testing.T) {
 func runEndpoint(t *testing.T, ctx context.Context, nb netbox.Client, stub *publisher.StubPublisher, path, lat string, wantMin int) {
 	t.Helper()
 
-	records, err := nb.Paginate(ctx, path)
+	records, err := nb.Paginate(ctx, path, nil)
 	if err != nil {
 		// 404 means the mock does not serve this endpoint — skip gracefully.
-		if strings.Contains(err.Error(), "404") {
+		if errors.Is(err, netbox.ErrNotFound) {
 			t.Skipf("endpoint %s not served by mock (404)", path)
 		}
 		require.NoError(t, err, "paginate %s", path)
@@ -128,6 +128,6 @@ func runEndpoint(t *testing.T, ctx context.Context, nb netbox.Client, stub *publ
 		assert.Equal(t, "application/json", first.ContentType)
 		assert.Equal(t, map[string]any{"endpoint": path}, first.Partition)
 		assert.NotEmpty(t, first.Payload)
-		assert.Contains(t, first.Watermark, "last_id")
+		assert.Contains(t, first.Watermark, "last_updated")
 	}
 }
