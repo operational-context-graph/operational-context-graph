@@ -72,6 +72,8 @@ jobs:
           - [ ] Add the component to \`scripts/resolve-component-versions.sh\`
           - [ ] Add a version override input for the component to \`.github/workflows/create-system-release-pr.yml\`
           - [ ] Add the component to the \`Validate version overrides\` step in \`.github/workflows/create-system-release-pr.yml\`
+          - [ ] Add a label entry for the component to \`.github/labeler.yml\`
+          - [ ] Add a scope for the component to \`.github/workflows/semantic-pull-requests.yml\` if one does not already exist
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
