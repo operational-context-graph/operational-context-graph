@@ -114,13 +114,17 @@ jobs:
       # version field updated to match the release version.
 
       - name: Update changelog
+        id: changelog
         env:
           COMPONENT_PATH: ${{ inputs.component_path }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          scripts/generate-component-changelog.sh \
+          pr_body=$(scripts/generate-component-changelog.sh \
             "$COMPONENT_PATH" \
-            "$TAG"
+            "$TAG")
+          echo "pr_body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$pr_body" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Commit changelog
         env:
@@ -133,12 +137,12 @@ jobs:
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          COMPONENT_PATH: ${{ inputs.component_path }}
           VERSION: ${{ inputs.version }}
+          PR_BODY: ${{ steps.changelog.outputs.pr_body }}
         run: |
           git push origin "$BRANCH"
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore(release): ${SLUG} v${VERSION}" \
-            --body "$(cat "${COMPONENT_PATH}/CHANGELOG.new")"
+            --body "$PR_BODY"
