@@ -47,10 +47,16 @@ ts=$(resolve_version "services/telemetry-store"      "${3:-}")
 ci=$(resolve_version "services/connectors/inventory" "${4:-}")
 gg=$(resolve_version "gen/go"                        "${5:-}")
 
+release_url() {
+  local tag="$1"
+  local encoded="${tag//\//%2F}"
+  echo "https://github.com/operational-context-graph/operational-context-graph/releases/tag/${encoded}"
+}
+
 printf '| Component | Tag |\n'
 printf '| --- | --- |\n'
-printf '| `services/data-ingestion` | %s |\n'       "$di"
-printf '| `services/inventory-store` | %s |\n'      "$is"
-printf '| `services/telemetry-store` | %s |\n'      "$ts"
-printf '| `services/connectors/inventory` | %s |\n' "$ci"
-printf '| `gen/go` | %s |\n'                        "$gg"
+printf '| `services/data-ingestion` | [%s](%s) |\n'       "$di" "$(release_url "$di")"
+printf '| `services/inventory-store` | [%s](%s) |\n'      "$is" "$(release_url "$is")"
+printf '| `services/telemetry-store` | [%s](%s) |\n'      "$ts" "$(release_url "$ts")"
+printf '| `services/connectors/inventory` | [%s](%s) |\n' "$ci" "$(release_url "$ci")"
+printf '| `gen/go` | [%s](%s) |\n'                        "$gg" "$(release_url "$gg")"
