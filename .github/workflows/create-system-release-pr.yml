@@ -47,34 +47,50 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Validate version format
-        run: scripts/validate-version.sh "${{ inputs.version }}"
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/validate-version.sh "$VERSION"
       - name: Validate version overrides
+        env:
+          DATA_INGESTION: ${{ inputs.data_ingestion }}
+          INVENTORY_STORE: ${{ inputs.inventory_store }}
+          TELEMETRY_STORE: ${{ inputs.telemetry_store }}
+          CONNECTORS_INVENTORY: ${{ inputs.connectors_inventory }}
+          GEN_GO: ${{ inputs.gen_go }}
         run: |
           for override in \
-            "${{ inputs.data_ingestion }}" \
-            "${{ inputs.inventory_store }}" \
-            "${{ inputs.telemetry_store }}" \
-            "${{ inputs.connectors_inventory }}" \
-            "${{ inputs.gen_go }}"; do
+            "$DATA_INGESTION" \
+            "$INVENTORY_STORE" \
+            "$TELEMETRY_STORE" \
+            "$CONNECTORS_INVENTORY" \
+            "$GEN_GO"; do
             if [ -n "$override" ]; then
               scripts/validate-version.sh "$override"
             fi
           done
       - name: Check tag does not already exist
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          if git tag --list | grep -qxF "v${{ inputs.version }}"; then
-            echo "::error::Tag 'v${{ inputs.version }}' already exists"
+          if git tag --list | grep -qxF "v${VERSION}"; then
+            echo "::error::Tag 'v${VERSION}' already exists"
             exit 1
           fi
       - name: Resolve component versions
         id: resolve
+        env:
+          DATA_INGESTION: ${{ inputs.data_ingestion }}
+          INVENTORY_STORE: ${{ inputs.inventory_store }}
+          TELEMETRY_STORE: ${{ inputs.telemetry_store }}
+          CONNECTORS_INVENTORY: ${{ inputs.connectors_inventory }}
+          GEN_GO: ${{ inputs.gen_go }}
         run: |
           matrix=$(scripts/resolve-component-versions.sh \
-            "${{ inputs.data_ingestion }}" \
-            "${{ inputs.inventory_store }}" \
-            "${{ inputs.telemetry_store }}" \
-            "${{ inputs.connectors_inventory }}" \
-            "${{ inputs.gen_go }}")
+            "$DATA_INGESTION" \
+            "$INVENTORY_STORE" \
+            "$TELEMETRY_STORE" \
+            "$CONNECTORS_INVENTORY" \
+            "$GEN_GO")
           echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
           echo "$matrix" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -108,23 +124,30 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Create release branch
-        run: git checkout -b "release/${{ inputs.version }}"
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git checkout -b "release/${VERSION}"
       - name: Update changelog
+        env:
+          VERSION: ${{ inputs.version }}
+          MATRIX: ${{ needs.validate.outputs.matrix }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
-          SECTION="## [${{ inputs.version }}] - ${DATE}"$'\n\n'"${{ needs.validate.outputs.matrix }}"
+          SECTION="## [${VERSION}] - ${DATE}"$'\n\n'"${MATRIX}"
           scripts/prepend-changelog.sh \
-            "${{ inputs.version }}" \
-            "$SECTION"
+            "${VERSION}" \
+            "${SECTION}"
           git add CHANGELOG.md
-          git commit -m "chore(release): update changelog for system v${{ inputs.version }}"
+          git commit -m "chore(release): update changelog for system v${VERSION}"
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          MATRIX: ${{ needs.validate.outputs.matrix }}
         run: |
-          git push origin "release/${{ inputs.version }}"
+          git push origin "release/${VERSION}"
           gh pr create \
             --base main \
-            --head "release/${{ inputs.version }}" \
-            --title "chore(release): system v${{ inputs.version }}" \
-            --body "${{ needs.validate.outputs.matrix }}"
+            --head "release/${VERSION}" \
+            --title "chore(release): system v${VERSION}" \
+            --body "${MATRIX}"

@@ -36,8 +36,10 @@ jobs:
           fetch-depth: 0
       - name: Detect new component manifests
         id: detect
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          new_components=$(scripts/detect-new-components.sh "origin/${{ github.base_ref }}")
+          new_components=$(scripts/detect-new-components.sh "origin/${BASE_REF}")
 
           if [ -z "$new_components" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -60,6 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENTS: ${{ steps.detect.outputs.components }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           body="## Possible new component detected
 
@@ -77,4 +80,4 @@ jobs:
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
-          gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+          gh pr comment "$PR_NUMBER" --body "$body"

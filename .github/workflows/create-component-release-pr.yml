@@ -33,32 +33,42 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Validate version format
-        run: scripts/validate-version.sh "${{ inputs.version }}"
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/validate-version.sh "$VERSION"
       - name: Validate component path
+        env:
+          COMPONENT_PATH: ${{ inputs.component_path }}
         run: |
-          if [ ! -d "${{ inputs.component_path }}" ]; then
-            echo "::error::Component path '${{ inputs.component_path }}' does not exist"
+          if [ ! -d "$COMPONENT_PATH" ]; then
+            echo "::error::Component path '$COMPONENT_PATH' does not exist"
             exit 1
           fi
-          if [ ! -f "${{ inputs.component_path }}/go.mod" ] && \
-             [ ! -f "${{ inputs.component_path }}/package.json" ] && \
-             [ ! -f "${{ inputs.component_path }}/pyproject.toml" ]; then
-            echo "::error::Component path '${{ inputs.component_path }}' has no recognizable module manifest (go.mod, package.json, pyproject.toml)"
+          if [ ! -f "$COMPONENT_PATH/go.mod" ] && \
+             [ ! -f "$COMPONENT_PATH/package.json" ] && \
+             [ ! -f "$COMPONENT_PATH/pyproject.toml" ]; then
+            echo "::error::Component path '$COMPONENT_PATH' has no recognizable module manifest (go.mod, package.json, pyproject.toml)"
             exit 1
           fi
       - name: Check tag does not already exist
+        env:
+          COMPONENT_PATH: ${{ inputs.component_path }}
+          VERSION: ${{ inputs.version }}
         run: |
-          TAG="${{ inputs.component_path }}/v${{ inputs.version }}"
+          TAG="${COMPONENT_PATH}/v${VERSION}"
           if git tag --list | grep -qxF "$TAG"; then
             echo "::error::Tag '$TAG' already exists"
             exit 1
           fi
       - name: Derive release metadata
         id: derive
+        env:
+          COMPONENT_PATH: ${{ inputs.component_path }}
+          VERSION: ${{ inputs.version }}
         run: |
-          SLUG=$(basename "${{ inputs.component_path }}")
-          echo "tag=${{ inputs.component_path }}/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          echo "branch=release/${SLUG}/${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          SLUG=$(basename "$COMPONENT_PATH")
+          echo "tag=${COMPONENT_PATH}/v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "branch=release/${SLUG}/${VERSION}" >> "$GITHUB_OUTPUT"
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
 
   create-release:
@@ -96,32 +106,38 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Create release branch
-        run: git checkout -b "${{ env.BRANCH }}"
+        run: git checkout -b "$BRANCH"
 
       # TODO: Add version descriptor bump here for non-Go components in the future.
       # Python (pyproject.toml) and TypeScript (package.json) components need their
       # version field updated to match the release version.
 
       - name: Update changelog
+        env:
+          COMPONENT_PATH: ${{ inputs.component_path }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           scripts/generate-component-changelog.sh \
-            "${{ inputs.component_path }}" \
-            "${{ env.TAG }}"
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+            "$COMPONENT_PATH" \
+            "$TAG"
 
       - name: Commit changelog
+        env:
+          COMPONENT_PATH: ${{ inputs.component_path }}
+          VERSION: ${{ inputs.version }}
         run: |
-          git add "${{ inputs.component_path }}/CHANGELOG.md"
-          git diff --cached --quiet || git commit -m "chore(release): update ${{ env.SLUG }} changelog for v${{ inputs.version }}"
+          git add "$COMPONENT_PATH/CHANGELOG.md"
+          git diff --cached --quiet || git commit -m "chore(release): update ${SLUG} changelog for v${VERSION}"
 
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          COMPONENT_PATH: ${{ inputs.component_path }}
+          VERSION: ${{ inputs.version }}
         run: |
-          git push origin "${{ env.BRANCH }}"
+          git push origin "$BRANCH"
           gh pr create \
             --base main \
-            --head "${{ env.BRANCH }}" \
-            --title "chore(release): ${{ env.SLUG }} v${{ inputs.version }}" \
-            --body "$(cat "${{ inputs.component_path }}/CHANGELOG.new")"
+            --head "$BRANCH" \
+            --title "chore(release): ${SLUG} v${VERSION}" \
+            --body "$(cat "${COMPONENT_PATH}/CHANGELOG.new")"
