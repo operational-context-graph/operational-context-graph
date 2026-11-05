@@ -34,4 +34,5 @@ git cliff \
   --include-path "${COMPONENT_PATH}/**" \
   --tag "$TAG" \
   --unreleased \
-  --strip all
+  --strip all \
+  | sed 's|## .*/\(v[0-9][^ )]*\)|## \1|g'
