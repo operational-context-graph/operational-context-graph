@@ -26,13 +26,12 @@ git cliff \
   --unreleased \
   --prepend "$CHANGELOG"
 
-# Strip the component path prefix from version headers in the changelog (e.g. [services/data-ingestion/v1.0.0] -> [v1.0.0]).
-sed -i 's|## .*/\(v[0-9][^ )]*\)|\## \1|g' "$CHANGELOG"
+# Strip the component path prefix from version headers in the changelog (e.g. services/data-ingestion/v1.0.0 -> v1.0.0).
+sed -i 's|## .*/\(v[0-9][^ )]*\)|## \1|g' "$CHANGELOG"
 
 # Print the new (unreleased) section to stdout for use as the PR body.
 git cliff \
   --include-path "${COMPONENT_PATH}/**" \
   --tag "$TAG" \
   --unreleased \
-  --strip all \
-  | sed 's|## .*/\(v[0-9][^ )]*\)|## \1|g'
+  --strip all
