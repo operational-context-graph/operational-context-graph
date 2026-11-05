@@ -72,7 +72,7 @@ jobs:
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
 
   create-release:
-    name: Create Release PR
+    name: Create Component Release PR
     runs-on: ubuntu-latest
     needs: validate
     permissions:
