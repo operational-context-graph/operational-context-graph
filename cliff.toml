@@ -12,7 +12,7 @@ header_marker = "<!-- git-cliff: end of header -->"
 # See https://keats.github.io/tera/#getting-started
 body = """
 {% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+    ## {{ version }} ({{ timestamp | date(format="%Y-%m-%d") }})
 {% else %}\
     ## [unreleased]
 {% endif %}\
@@ -31,33 +31,33 @@ trim = true
 render_always = true
 # An array of regex based postprocessors to modify the changelog.
 postprocessors = [
-  { pattern = '<REPO>', replace = "https://github.com/operational-context-graph/operational-context-graph" },
-  { pattern = '\*(ocg)\*', replace = "*Operational Context Graph*" },
-  { pattern = '\*(sc)\*', replace = "*Satellite Connector*" },
-  { pattern = '\*(tc)\*', replace = "*Telemetry Connector*" },
-  { pattern = '\*(ic)\*', replace = "*Inventory Connector*" },
-  { pattern = '\*(edc)\*', replace = "*External Data Connector*" },
-  { pattern = '\*(di)\*', replace = "*Data Ingestion*" },
-  { pattern = '\*(sv)\*', replace = "*Secrets Vault*" },
-  { pattern = '\*(ikb)\*', replace = "*Infrastructure Knowledge Base*" },
-  { pattern = '\*(dci)\*', replace = "*Data Center Inventory*" },
-  { pattern = '\*(sr)\*', replace = "*Schema Registry*" },
-  { pattern = '\*(ts)\*', replace = "*Telemetry Store*" },
-  { pattern = '\*(ir)\*', replace = "*Insights Repository*" },
-  { pattern = '\*(rar)\*', replace = "*Recorded Actions Repository*" },
-  { pattern = '\*(als)\*', replace = "*Audit Log Service*" },
-  { pattern = '\*(pas)\*', replace = "*Permission & Authorization Service*" },
-  { pattern = '\*(dl)\*', replace = "*Document Library*" },
-  { pattern = '\*(snb)\*', replace = "*Semantic Network Builder*" },
-  { pattern = '\*(sn)\*', replace = "*Semantic Network*" },
-  { pattern = '\*(br)\*', replace = "*Bundle Repository*" },
-  { pattern = '\*(deps)\*', replace = "*Dependencies*" },
-  { pattern = '\*(devops)\*', replace = "*DevOps*" },
-  { pattern = '\*(proto)\*', replace = "*Proto*" },
-  { pattern = '\*(security)\*', replace = "*Security*" },
-  { pattern = '\*(deployment)\*', replace = "*Deployment*" },
-  { pattern = '\*(architecture)\*', replace = "*Architecture*" },
-  { pattern = '\*(github)\*', replace = "*GitHub*" },
+  { pattern = "<REPO>", replace = "https://github.com/operational-context-graph/operational-context-graph" },
+  { pattern = "\\*\\(ocg\\)\\*", replace = "*(Operational Context Graph)*" },
+  { pattern = "\\*\\(sc\\)\\*", replace = "*(Satellite Connector)*" },
+  { pattern = "\\*\\(tc\\)\\*", replace = "*(Telemetry Connector)*" },
+  { pattern = "\\*\\(ic\\)\\*", replace = "*(Inventory Connector)*" },
+  { pattern = "\\*\\(edc\\)\\*", replace = "*(External Data Connector)*" },
+  { pattern = "\\*\\(di\\)\\*", replace = "*(Data Ingestion)*" },
+  { pattern = "\\*\\(sv\\)\\*", replace = "*(Secrets Vault)*" },
+  { pattern = "\\*\\(ikb\\)\\*", replace = "*(Infrastructure Knowledge Base)*" },
+  { pattern = "\\*\\(dci\\)\\*", replace = "*(Data Center Inventory)*" },
+  { pattern = "\\*\\(sr\\)\\*", replace = "*(Schema Registry)*" },
+  { pattern = "\\*\\(ts\\)\\*", replace = "*(Telemetry Store)*" },
+  { pattern = "\\*\\(ir\\)\\*", replace = "*(Insights Repository)*" },
+  { pattern = "\\*\\(rar\\)\\*", replace = "*(Recorded Actions Repository)*" },
+  { pattern = "\\*\\(als\\)\\*", replace = "*(Audit Log Service)*" },
+  { pattern = "\\*\\(pas\\)\\*", replace = "*(Permission & Authorization Service)*" },
+  { pattern = "\\*\\(dl\\)\\*", replace = "*(Document Library)*" },
+  { pattern = "\\*\\(snb\\)\\*", replace = "*(Semantic Network Builder)*" },
+  { pattern = "\\*\\(sn\\)\\*", replace = "*(Semantic Network)*" },
+  { pattern = "\\*\\(br\\)\\*", replace = "*(Bundle Repository)*" },
+  { pattern = "\\*\\(deps\\)\\*", replace = "*(Dependencies)*" },
+  { pattern = "\\*\\(devops\\)\\*", replace = "*(DevOps)*" },
+  { pattern = "\\*\\(proto\\)\\*", replace = "*(Proto)*" },
+  { pattern = "\\*\\(security\\)\\*", replace = "*(Security)*" },
+  { pattern = "\\*\\(deployment\\)\\*", replace = "*(Deployment)*" },
+  { pattern = "\\*\\(architecture\\)\\*", replace = "*(Architecture)*" },
+  { pattern = "\\*\\(github\\)\\*", replace = "*(GitHub)*" },
 ]
 
 [git]
@@ -73,8 +73,7 @@ require_conventional = false
 split_commits = false
 # An array of regex based parsers to modify commit messages prior to further processing.
 commit_preprocessors = [
-  # Replace issue numbers with links to the backlog repository.
-  { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/operational-context-graph/backlog/issues/${2}))" },
+  { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/operational-context-graph/operational-context-graph/pull/${1}))" },
 ]
 # Prevent commits that are breaking from being excluded by commit parsers.
 protect_breaking_commits = true

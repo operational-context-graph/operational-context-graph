@@ -64,6 +64,7 @@ jobs:
           # 'sn' - Semantic Network
           # 'br' - Bundle Repository
           scopes: |
+            release
             deps
             devops
             proto
