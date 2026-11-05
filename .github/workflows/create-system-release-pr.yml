@@ -118,12 +118,12 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
       - name: Configure git identity
-        run: |
-          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
-          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
-          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
       - name: Create release branch
         env:
           VERSION: ${{ inputs.version }}
