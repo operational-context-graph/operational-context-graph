@@ -1,0 +1,30 @@
+Operational Context Graph {{ .Chart.AppVersion }} has been deployed as release {{ .Release.Name }}.
+
+Enabled services:
+{{- if (index .Values "data-ingestion" "enabled") }}
+  - data-ingestion   (HTTP :8080, gRPC :9090, metrics :8081)
+{{- end }}
+{{- if (index .Values "telemetry-store" "enabled") }}
+  - telemetry-store  (HTTP :8080, metrics :8081)
+{{- end }}
+{{- if (index .Values "inventory-store" "enabled") }}
+  - inventory-store  (HTTP :8080, metrics :8081)
+{{- end }}
+{{- if (index .Values "inventory-connector" "enabled") }}
+  - inventory-connector  (Job — runs once on install/upgrade)
+{{- end }}
+{{- if (index .Values "otelcol" "enabled") }}
+  - otelcol          (OTLP/HTTP :4318, metrics :8081)
+{{- end }}
+{{- if (index .Values "postgresql" "enabled") }}
+  - postgresql
+{{- end }}
+{{- if (index .Values "pgadmin" "enabled") }}
+  - pgadmin          (HTTP :80)
+{{- end }}
+{{- if (index .Values "doris" "enabled") }}
+  - doris            (managed by Doris Operator)
+    Watch the DorisCluster CR:
+      kubectl get doriscluster -n {{ .Release.Namespace }}
+    The Doris Operator must be installed separately before deploying this chart.
+{{- end }}
