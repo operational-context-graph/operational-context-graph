@@ -79,6 +79,7 @@ jobs:
           - [ ] Add the component to the \`Validate version overrides\` step in \`.github/workflows/create-release-pr.yml\`
           - [ ] Add a label entry for the component to \`.github/labeler.yml\`
           - [ ] Add a scope for the component to \`.github/workflows/semantic-pull-requests.yml\` if one does not already exist
+          - [ ] Add a target for the component to \`docker-bake.hcl\` and add it to the \`default\` group
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
