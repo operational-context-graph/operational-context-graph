@@ -1169,21 +1169,6 @@ func TestPackagePageLimitIncludesEveryReturnedPackage(t *testing.T) {
 	require.NotContains(t, response.Body.String(), `"items"`)
 }
 
-func BenchmarkMultiTargetPackagePage(b *testing.B) {
-	server := artifactTestServer(multiMappingFixture())
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		request := httptest.NewRequest(http.MethodHead, candidateBase+"/packages", nil)
-		request.Header.Set("Accept-Encoding", "gzip")
-		response := httptest.NewRecorder()
-		server.Handler().ServeHTTP(response, request)
-		if response.Code != http.StatusOK {
-			b.Fatal(response.Code)
-		}
-	}
-}
-
 func TestPackagePageFailsAtomicallyForLaterMapping(t *testing.T) {
 	for _, change := range []func(*artifactTestSnapshot){
 		func(f *artifactTestSnapshot) {

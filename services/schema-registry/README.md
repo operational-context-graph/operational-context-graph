@@ -58,9 +58,24 @@ A convenience `Makefile` target is available to run the test suite:
 make test
 ```
 
+Additional `Makefile` targets are available to run individual tests suites:
+
+```sh
+make test-unit
+make test-integration
+make test-benchmark
+```
+
 The integration tests make use of [Testcontainers](https://golang.testcontainers.org/) to create container-based
 dependencies for the application (e.g. the PostgreSQL database). No additional setup is required here, the
 Testcontainers setup is fully integrated into the test suite itself.
+
+All test-related `Makefile` targets support supplying additional [arguments](https://pkg.go.dev/cmd/go/internal/test)
+to the underlying `go test` command:
+
+```shell
+make test-benchmark TEST_ARGS='-benchtime=1x'
+```
 
 ### Open Source license compliance check
 

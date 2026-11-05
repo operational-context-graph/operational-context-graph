@@ -230,7 +230,7 @@ func TestGetPreservesCurrentVersionForUnknownRelease(t *testing.T) {
 
 func comparisonManifest(t *testing.T, version, revision string, previous []byte) []byte {
 	t.Helper()
-	value, err := os.ReadFile(filepath.Join("..", "..", "..", "pkg", "schema-artifacts", "manifest", "testdata", "valid-initial.json"))
+	value, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", "valid-initial.json"))
 	require.NoError(t, err)
 	var document map[string]any
 	require.NoError(t, json.Unmarshal(value, &document))

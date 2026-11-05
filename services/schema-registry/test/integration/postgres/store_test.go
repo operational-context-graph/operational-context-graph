@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package postgres
+package postgres_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	storage "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ type readStoreSuite struct {
 	PostgreSQLSuite
 }
 
-func (suite *readStoreSuite) candidateStore() *Store {
+func (suite *readStoreSuite) candidateStore() *storage.Store {
 	t := suite.T()
 	_, err := loadValidatedFixture(t, suite.Context, suite.Database, candidateFixture(t))
 	require.NoError(t, err)
@@ -33,14 +34,14 @@ func (suite *readStoreSuite) candidateStore() *Store {
 	pool, err := pgxpool.New(suite.Context, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: 5 * time.Second, Query: 5 * time.Second, Statement: 5 * time.Second, Lock: 5 * time.Second, IdleInTransaction: 5 * time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: 5 * time.Second, Query: 5 * time.Second, Statement: 5 * time.Second, Lock: 5 * time.Second, IdleInTransaction: 5 * time.Second})
 	require.NoError(t, err)
 	return store
 }
 
 func (suite *readStoreSuite) TestCandidateMappingsAndParameterizedFilters() {
 	store := suite.candidateStore()
-	require.NoError(suite.T(), store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
+	require.NoError(suite.T(), store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
 		items, err := snapshot.ReleaseArtifacts(ctx, "8.0.0", model.ArtifactFilter{Kind: "source-mapping", SourceArtifactType: "candidate-source"}, nil, nil, 1000)
 		if err != nil {
 			return err
@@ -90,11 +91,11 @@ func (suite *readStoreSuite) TestOrderedMappingProjectionDrift() {
 	store := suite.candidateStore()
 	_, err := suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.source_mapping_transformations SET cardinality = 'many' WHERE mapping_revision = 'candidate-mapping-0-r1' AND ordinal = 0`)
 	suite.Require().NoError(err)
-	err = store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
+	err = store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
 		_, mappingErr := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
 		return mappingErr
 	})
-	suite.ErrorIs(err, ErrInconsistentState)
+	suite.ErrorIs(err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestCandidateAncillaryResources() {
@@ -109,9 +110,9 @@ func (suite *readStoreSuite) TestCandidateAncillaryResources() {
 	pool, err := pgxpool.New(suite.Context, suite.DatabaseURL)
 	suite.Require().NoError(err)
 	suite.T().Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	suite.Require().NoError(err)
-	suite.Require().NoError(store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
+	suite.Require().NoError(store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
 		resources, err := snapshot.Resources(ctx, mapping.Revision)
 		if err != nil {
 			return err
@@ -155,10 +156,10 @@ func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 	pool, err := pgxpool.New(suite.Context, suite.DatabaseURL)
 	suite.Require().NoError(err)
 	suite.T().Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	suite.Require().NoError(err)
 	for _, family := range []model.ProjectionFamily{model.ProjectionResource, model.ProjectionDependency} {
-		read := func(ctx context.Context, snapshot *Snapshot) error {
+		read := func(ctx context.Context, snapshot *storage.Snapshot) error {
 			if family == model.ProjectionResource {
 				_, err := snapshot.Resources(ctx, "rev-device-v1")
 				return err
@@ -172,7 +173,7 @@ func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 			suite.Require().NoError(suite.Database.QueryRowContext(suite.Context, `SELECT commitment FROM schema_registry.release_projection_commitments WHERE schema_version = $1 AND family = $2`, version, family).Scan(&commitment))
 			_, err := suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, make([]byte, 32), version, family)
 			suite.Require().NoError(err)
-			suite.ErrorIs(store.Read(suite.Context, read), ErrInconsistentState, "family %s in release %s must remain verified", family, version)
+			suite.ErrorIs(store.Read(suite.Context, read), storage.ErrInconsistentState, "family %s in release %s must remain verified", family, version)
 			_, err = suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, commitment, version, family)
 			suite.Require().NoError(err)
 		}
@@ -183,11 +184,11 @@ func (suite *readStoreSuite) requireMappingProjectionFailure(statement string) {
 	store := suite.candidateStore()
 	_, err := suite.Database.ExecContext(suite.Context, statement)
 	suite.Require().NoError(err)
-	err = store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
+	err = store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
 		_, mappingErr := snapshot.SourceMappingByRevision(ctx, "8.0.0", "candidate-mapping-0-r1")
 		return mappingErr
 	})
-	suite.ErrorIs(err, ErrInconsistentState)
+	suite.ErrorIs(err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestMissingMappingConditionProjection() {
@@ -218,13 +219,13 @@ func (suite *readStoreSuite) TestConcurrentCandidateSnapshots() {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			results <- store.Read(suite.Context, func(ctx context.Context, snapshot *Snapshot) error {
+			results <- store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
 				items, err := snapshot.ReleaseArtifacts(ctx, "8.0.0", model.ArtifactFilter{Kind: "source-mapping", SourceArtifactType: "candidate-source"}, nil, nil, 1)
 				if err != nil {
 					return err
 				}
 				if len(items) != 1 || snapshot.CurrentState().SchemaVersion != "8.0.0" {
-					return ErrInconsistentState
+					return storage.ErrInconsistentState
 				}
 				return nil
 			})
@@ -248,13 +249,13 @@ func (suite *readStoreSuite) TestReleasesRejectsMissingInitialActivationSequence
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, releasesErr := snapshot.Releases(readCtx, nil, 1)
 		return releasesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestReleasesRejectsMissingActivationSequence() {
@@ -274,13 +275,13 @@ func (suite *readStoreSuite) TestReleasesRejectsMissingActivationSequence() {
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, releasesErr := snapshot.Releases(readCtx, nil, 1)
 		return releasesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestReleasesRejectsCorruptionOutsideReturnedPage() {
@@ -305,16 +306,16 @@ WHERE schema_version = '1.1.0'`)
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		// Only the newest item belongs to this page. The corrupt middle release
 		// MUST still invalidate the complete externally supplied activation chain.
 		items, releasesErr := snapshot.Releases(readCtx, nil, 1)
 		require.Empty(t, items)
 		return releasesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestIsAncestorRejectsPredecessorMismatch() {
@@ -338,13 +339,13 @@ WHERE schema_version = '2.0.0'`)
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, ancestryErr := snapshot.IsAncestor(readCtx, "1.0.0", "2.0.0")
 		return ancestryErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestIsAncestorRejectsMissingLineageEvidence() {
@@ -365,13 +366,13 @@ func (suite *readStoreSuite) TestIsAncestorRejectsMissingLineageEvidence() {
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, ancestryErr := snapshot.IsAncestor(readCtx, "1.0.0", "2.0.0")
 		return ancestryErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
 func (suite *readStoreSuite) TestIsAncestorRejectsDisconnectedBranchWithAscendingActivationSequence() {
@@ -401,9 +402,9 @@ WHERE schema_version = '2.0.0'`)
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		isAncestor, ancestryErr := snapshot.IsAncestor(readCtx, "1.0.0", "2.0.0")
 		require.NoError(t, ancestryErr)
 		require.False(t, isAncestor)
@@ -426,13 +427,13 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{
+	store, err := storage.NewStore(pool, storage.Timeouts{
 		Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second,
 	})
 	require.NoError(t, err)
 
-	err = store.Read(ctx, func(context.Context, *Snapshot) error { return nil })
-	require.ErrorIs(t, err, ErrNoActiveRelease)
+	err = store.Read(ctx, func(context.Context, *storage.Snapshot) error { return nil })
+	require.ErrorIs(t, err, storage.ErrNoActiveRelease)
 
 	require.NoError(t, prepopulateReadModelState(ctx, database, "1.1.0", map[string]int64{
 		"1.0.0": 1,
@@ -440,7 +441,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 		"2.0.0": 3,
 	}))
 
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		require.Equal(t, "1.1.0", snapshot.Current.SchemaVersion)
 		require.EqualValues(t, 3, snapshot.Current.SnapshotSequence)
 		current, currentErr := snapshot.CurrentRelease(readCtx)
@@ -453,7 +454,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 			require.NotEqual(t, "2.1.0", release.SchemaVersion)
 		}
 		_, inactiveReleaseErr := snapshot.Release(readCtx, "2.1.0")
-		require.ErrorIs(t, inactiveReleaseErr, ErrNotFound)
+		require.ErrorIs(t, inactiveReleaseErr, storage.ErrNotFound)
 		firstPage, pageErr := snapshot.ReleasesAt(readCtx, nil, snapshot.Current.SnapshotSequence, 2)
 		require.NoError(t, pageErr)
 		require.Len(t, firstPage, 2)
@@ -470,21 +471,21 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 		require.NoError(t, artifactErr)
 		require.Equal(t, selected, visible)
 		inactive, artifactErr := snapshot.Artifact(readCtx, "rev-inactive-v1")
-		require.ErrorIs(t, artifactErr, ErrNotFound)
+		require.ErrorIs(t, artifactErr, storage.ErrNotFound)
 		require.Empty(t, inactive)
 		inactiveResources, resourcesErr := snapshot.Resources(readCtx, "rev-inactive-v1")
-		require.ErrorIs(t, resourcesErr, ErrNotFound)
+		require.ErrorIs(t, resourcesErr, storage.ErrNotFound)
 		require.Empty(t, inactiveResources)
 		_, uriErr := snapshot.URIEntry(readCtx, "2.1.0", "https://registry.example.test/v1/resources/schema/inactive/rev-inactive-v1")
-		require.ErrorIs(t, uriErr, ErrNotFound)
+		require.ErrorIs(t, uriErr, storage.ErrNotFound)
 		inactiveStores, storesErr := snapshot.StorageEntries(readCtx, "2.1.0", "inactive")
-		require.ErrorIs(t, storesErr, ErrNotFound)
+		require.ErrorIs(t, storesErr, storage.ErrNotFound)
 		require.Empty(t, inactiveStores)
 		history, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, snapshot.Current.SnapshotSequence, 10)
 		require.NoError(t, historyErr)
 		require.Len(t, history, 3)
 		_, mappingErr := snapshot.SourceMappingByRevision(readCtx, "1.1.0", "missing-mapping")
-		require.ErrorIs(t, mappingErr, ErrNotFound)
+		require.ErrorIs(t, mappingErr, storage.ErrNotFound)
 		return nil
 	})
 	require.NoError(t, err)
@@ -493,7 +494,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	// column must not affect a release descriptor or collection item.
 	_, err = database.ExecContext(ctx, `UPDATE schema_registry.releases SET changes = '{"compatibility":"breaking"}'::jsonb WHERE schema_version = '1.1.0'`)
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		release, releaseErr := snapshot.Release(readCtx, "1.1.0")
 		require.NoError(t, releaseErr)
 		require.Empty(t, release.Changes)
@@ -509,11 +510,11 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	require.NoError(t, err)
 	_, err = database.ExecContext(ctx, `SET session_replication_role = origin`)
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, releasesErr := snapshot.Releases(readCtx, nil, 10)
 		return releasesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 
 	_, err = database.ExecContext(ctx, `SET session_replication_role = replica`)
 	require.NoError(t, err)
@@ -521,11 +522,11 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	require.NoError(t, err)
 	_, err = database.ExecContext(ctx, `SET session_replication_role = origin`)
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, releasesErr := snapshot.Releases(readCtx, nil, 10)
 		return releasesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 
 	_, err = database.ExecContext(ctx, `SET session_replication_role = replica`)
 	require.NoError(t, err)
@@ -533,11 +534,11 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	require.NoError(t, err)
 	_, err = database.ExecContext(ctx, `SET session_replication_role = origin`)
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, artifactErr := snapshot.ReleaseArtifact(readCtx, "1.1.0", "schema", "device")
 		return artifactErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 
 	_, err = database.ExecContext(ctx, `SET session_replication_role = replica`)
 	require.NoError(t, err)
@@ -545,16 +546,16 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	require.NoError(t, err)
 	_, err = database.ExecContext(ctx, `SET session_replication_role = origin`)
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, entriesErr := snapshot.StorageEntries(readCtx, "1.1.0", "device")
 		return entriesErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 
 	// A cancelled request must release its pool connection for later callers.
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	err = store.Read(cancelled, func(context.Context, *Snapshot) error { return nil })
+	err = store.Read(cancelled, func(context.Context, *storage.Snapshot) error { return nil })
 	require.Error(t, err)
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 0 }, time.Second, 10*time.Millisecond)
 }
@@ -585,13 +586,13 @@ WHERE schema_version = '1.0.0' AND kind = 'schema' AND artifact_type = 'device'`
 	pool, err := pgxpool.New(ctx, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := NewStore(pool, Timeouts{
+	store, err := storage.NewStore(pool, storage.Timeouts{
 		Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second,
 	})
 	require.NoError(t, err)
-	err = store.Read(ctx, func(readCtx context.Context, snapshot *Snapshot) error {
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
 		_, historyErr := snapshot.ArtifactHistory(readCtx, "schema", "device", nil, snapshot.Current.SnapshotSequence, 10)
 		return historyErr
 	})
-	require.ErrorIs(t, err, ErrInconsistentState)
+	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }

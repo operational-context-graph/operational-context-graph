@@ -13,7 +13,7 @@ TEST_PACKAGES ?= ./...
 TEST_ARGS ?=
 
 .PHONY: build build-schema-introspection-api run run-schema-introspection-api \
-	test race-test coverage vet lint tidy vuln sbom migrate-up migrate-down
+	test test-unit test-integration test-benchmark race-test coverage vet lint tidy vuln sbom migrate-up migrate-down
 
 build: build-schema-introspection-api ## Build all Schema Registry commands
 
@@ -27,6 +27,15 @@ run-schema-introspection-api: ## Run the Schema Introspection API from source
 
 test: ## Run tests with race detection
 	go test $(TEST_PACKAGES) -race $(TEST_ARGS)
+
+test-unit: ## Run package unit tests with race detection
+	go test ./internal/... ./pkg/... -race $(TEST_ARGS)
+
+test-integration: ## Run boundary integration tests with race detection
+	go test ./test/integration/... -race $(TEST_ARGS)
+
+test-benchmark: ## Run black-box benchmarks with allocation reporting
+	go test ./test/benchmark -bench=. -benchmem $(TEST_ARGS)
 
 race-test: test ## Run race-enabled tests
 

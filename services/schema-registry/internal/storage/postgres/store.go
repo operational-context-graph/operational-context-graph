@@ -943,6 +943,12 @@ func mappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact
 	return rows, nil
 }
 
+// MappingDescriptorProjection derives source-mapping projection rows from a
+// parsed manifest artifact. Integration tests use it to create valid fixtures.
+func MappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
+	return mappingDescriptorProjection(value, item, descriptor)
+}
+
 func releaseManifestBytes(ctx context.Context, tx pgx.Tx, schemaVersion string) ([]byte, error) {
 	var bytes []byte
 	err := tx.QueryRow(ctx, `SELECT manifest_bytes FROM schema_registry.releases WHERE schema_version = $1 AND activated_sequence IS NOT NULL`, schemaVersion).Scan(&bytes)
@@ -1010,6 +1016,12 @@ func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.
 	}
 	sort.Strings(rows)
 	return rows, nil
+}
+
+// ManifestProjectionRows derives the projection rows for one manifest family.
+// Integration tests use it to create valid fixture commitments.
+func ManifestProjectionRows(value manifest.Manifest, bytes []byte, family model.ProjectionFamily) ([]string, error) {
+	return manifestProjectionRows(value, bytes, family)
 }
 
 func manifestDigest(bytes []byte) string {

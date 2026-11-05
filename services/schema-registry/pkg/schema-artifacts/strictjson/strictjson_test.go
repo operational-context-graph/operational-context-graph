@@ -121,15 +121,3 @@ func FuzzParse(f *testing.F) {
 		_, _ = Parse(input)
 	})
 }
-
-// BenchmarkParse measures allocations and throughput for a representative nested document.
-func BenchmarkParse(b *testing.B) {
-	input := []byte(`{"metadata":{"name":"device"},"values":[1,2,3],"active":true}`)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(input)))
-	for b.Loop() {
-		if _, err := Parse(input); err != nil {
-			b.Fatal(err)
-		}
-	}
-}

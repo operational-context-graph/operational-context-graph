@@ -49,7 +49,7 @@ MUST NOT read network, file, environment, or authoring-repository resources.
 ## Conformance corpus
 
 Manifest conformance fixtures live in
-`pkg/schema-artifacts/manifest/testdata/`. `corpus.json` identifies each
+`test/fixtures/manifest/`. `corpus.json` identifies each
 fixture and its expected result. The format-package tests load this corpus and
 also exercise strict parsing, artifact validation, source-mapping validation,
 offline resolver canaries, and canonical serialization. Run the format and

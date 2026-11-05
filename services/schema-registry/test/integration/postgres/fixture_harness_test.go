@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package postgres
+package postgres_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	storage "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
@@ -280,11 +281,11 @@ func loadValidatedFixture(t testing.TB, ctx context.Context, database *sql.DB, f
 		return manifest.Manifest{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	commitmentRows, err := manifestProjectionRows(parsed, parsed.Raw, model.ProjectionRelease)
+	commitmentRows, err := storage.ManifestProjectionRows(parsed, parsed.Raw, model.ProjectionRelease)
 	if err != nil {
 		return manifest.Manifest{}, err
 	}
-	commitment := ProjectionCommitment(commitmentRows)
+	commitment := storage.ProjectionCommitment(commitmentRows)
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, previous_schema_version, previous_manifest_digest, source_repository, source_commit, projection_commitment)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -418,7 +419,7 @@ ON CONFLICT (artifact_revision) DO NOTHING`); err != nil {
 
 func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value manifest.Manifest) error {
 	for _, family := range []model.ProjectionFamily{model.ProjectionRelease, model.ProjectionArtifact, model.ProjectionResource, model.ProjectionDependency, model.ProjectionBinding, model.ProjectionURI, model.ProjectionStorage, model.ProjectionSourceMapping} {
-		rows, err := manifestProjectionRows(value, value.Raw, family)
+		rows, err := storage.ManifestProjectionRows(value, value.Raw, family)
 		if err != nil && family == model.ProjectionSourceMapping {
 			rows = make([]string, 0)
 			for _, item := range value.Artifacts {
@@ -435,7 +436,7 @@ func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value 
 					return err
 				}
 				var derived []string
-				derived, err = mappingDescriptorProjection(value, item, descriptor)
+				derived, err = storage.MappingDescriptorProjection(value, item, descriptor)
 				if err != nil {
 					return err
 				}
@@ -445,7 +446,7 @@ func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value 
 		if err != nil {
 			return err
 		}
-		if _, err := transaction.ExecContext(ctx, `INSERT INTO schema_registry.release_projection_commitments (schema_version, family, commitment) VALUES ($1, $2, $3)`, value.SchemaVersion, family, ProjectionCommitment(rows)); err != nil {
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO schema_registry.release_projection_commitments (schema_version, family, commitment) VALUES ($1, $2, $3)`, value.SchemaVersion, family, storage.ProjectionCommitment(rows)); err != nil {
 			return err
 		}
 	}

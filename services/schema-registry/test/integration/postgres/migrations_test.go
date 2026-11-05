@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package postgres
+package postgres_test
 
 import (
 	"context"

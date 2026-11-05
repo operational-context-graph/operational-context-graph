@@ -480,19 +480,6 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
-// BenchmarkParseCanonicalManifest measures allocations and throughput for the initial-release conformance manifest.
-func BenchmarkParseCanonicalManifest(b *testing.B) {
-	data := fixtureForFuzz("valid-initial.json")
-	b.ReportAllocs()
-	b.SetBytes(int64(len(data)))
-	for b.Loop() {
-		_, err := Parse(data)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 // fixture loads a repository fixture and removes one optional final newline before canonical parsing.
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()
@@ -504,7 +491,7 @@ func fixture(t *testing.T, name string) []byte {
 func fixtureRaw(t *testing.T, name string) []byte {
 	t.Helper()
 	// #nosec G304 -- name selects a repository-controlled fixture.
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", name))
 	require.NoError(t, err)
 	return data
 }
@@ -512,7 +499,7 @@ func fixtureRaw(t *testing.T, name string) []byte {
 // fixtureForFuzz loads newline-trimmed seed bytes and panics if a required repository fixture is unavailable.
 func fixtureForFuzz(name string) []byte {
 	// #nosec G304 -- name selects a repository-controlled fixture.
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", name))
 	if err != nil {
 		panic(err)
 	}

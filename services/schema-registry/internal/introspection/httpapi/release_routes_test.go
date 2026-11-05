@@ -797,7 +797,7 @@ func releaseTestServer(snapshot *releaseTestSnapshot) *Server {
 }
 func mustTestManifest(t *testing.T) []byte {
 	t.Helper()
-	value, err := os.ReadFile(filepath.Join("..", "..", "..", "pkg", "schema-artifacts", "manifest", "testdata", "valid-initial.json"))
+	value, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", "valid-initial.json"))
 	require.NoError(t, err)
 	canonical, err := jcs.Transform(value)
 	require.NoError(t, err)
