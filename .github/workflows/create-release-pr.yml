@@ -135,7 +135,7 @@ jobs:
       - name: Create release branch
         env:
           VERSION: ${{ inputs.version }}
-        run: git checkout -b "release/v${VERSION}"
+        run: git checkout -b "release/${VERSION}"
       - name: Update changelog
         env:
           VERSION: ${{ inputs.version }}

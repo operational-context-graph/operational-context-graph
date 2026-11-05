@@ -74,10 +74,10 @@ jobs:
         run: |
           SLUG=$(basename "$COMPONENT_PATH")
           echo "tag=${COMPONENT_PATH}/v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "branch=release/${SLUG}/v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "branch=release/${SLUG}/${VERSION}" >> "$GITHUB_OUTPUT"
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
           echo "Tag:    ${COMPONENT_PATH}/v${VERSION}"
-          echo "Branch: release/${SLUG}/v${VERSION}"
+          echo "Branch: release/${SLUG}/${VERSION}"
           echo "Slug:   ${SLUG}"
 
   create-release-pr:
