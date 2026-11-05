@@ -123,9 +123,7 @@ jobs:
       # version field updated to match the release version.
 
       - name: Install git-cliff
-        env:
-          GIT_CLIFF_VERSION: ${{ vars.GIT_CLIFF_VERSION }}
-        run: sudo scripts/install-git-cliff.sh "$GIT_CLIFF_VERSION"
+        run: sudo scripts/install-git-cliff.sh v2.14.2
 
       - name: Generate changelog
         id: changelog
