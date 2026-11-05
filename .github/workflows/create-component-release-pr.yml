@@ -1,3 +1,12 @@
+# Creates a release PR for a single component.
+#
+# Validates the component path and version, derives the release tag and branch,
+# generates the changelog using git-cliff, and opens a PR against main with the
+# changelog diff as the PR body.
+#
+# Triggered manually via workflow_dispatch. Requires the ocg-repository-ops GitHub App to be
+# configured via APP_CLIENT_ID and APP_PRIVATE_KEY.
+
 name: Create Component Release PR
 run-name: "Release PR Creation component ${{ inputs.component_path }} v${{ inputs.version }}"
 

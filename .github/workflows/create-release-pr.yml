@@ -1,3 +1,12 @@
+# Creates a release PR for the full operational-context-graph stack.
+#
+# Resolves each component to its latest tag or a pinned version override,
+# prepends a versioned section to the root CHANGELOG.md, and opens a PR
+# against main with a component version matrix as the PR body.
+#
+# Triggered manually via workflow_dispatch. Requires the ocg-repository-ops GitHub App to be
+# configured via APP_CLIENT_ID and APP_PRIVATE_KEY.
+
 name: Create Release PR
 run-name: "Release PR Creation v${{ inputs.version }}"
 
@@ -140,6 +149,7 @@ jobs:
             "${SECTION}"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
+      # TODO: Add step that updates OCM component descriptor with the new component versions
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
