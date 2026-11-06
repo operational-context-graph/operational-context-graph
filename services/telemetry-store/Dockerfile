@@ -9,13 +9,26 @@ COPY services/telemetry-store/go.mod services/telemetry-store/go.sum services/te
 RUN cd services/telemetry-store && go mod download
 
 COPY services/telemetry-store/ services/telemetry-store/
-RUN cd services/telemetry-store && CGO_ENABLED=0 go build -trimpath -o /out/telemetry-store \
+
+RUN cd services/telemetry-store && CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/telemetry-store \
     ./cmd/telemetry-store
+
+RUN cd services/telemetry-store && CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/migrate \
+    ./cmd/migrate
+
+# Goose stage — stock goose CLI for developer file-management tasks only
+# (goose create, goose fix). It is not used to apply migrations to Doris.
+FROM golang:1.27@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS goose
+RUN CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 # Runtime stage.
 FROM gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2
 LABEL org.opencontainers.image.source=https://github.com/operational-context-graph/operational-context-graph
+
 COPY --from=build /out/telemetry-store /usr/local/bin/telemetry-store
+COPY --from=build /out/migrate /usr/local/bin/migrate
+COPY --from=goose /go/bin/goose /usr/local/bin/goose
+
 EXPOSE 8080
 USER 1000:1000
 ENTRYPOINT ["/usr/local/bin/telemetry-store"]
