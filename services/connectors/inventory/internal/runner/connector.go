@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/backfill"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
 	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/netbox"
@@ -18,32 +20,40 @@ type Result struct {
 	Skipped   int
 }
 
-type Connector struct {
-	publisher publisher.Publisher
-	netbox    netbox.Client
-	cfg       *config.Config
+// watermarkReader reads the last committed backfill watermark for a partition.
+// It is satisfied by publisher.WatermarkReader and faked in tests.
+type watermarkReader interface {
+	GetWatermark(ctx context.Context, partition map[string]any) (map[string]any, error)
 }
 
-func New(pub publisher.Publisher, nb netbox.Client, cfg *config.Config) *Connector {
-	return &Connector{publisher: pub, netbox: nb, cfg: cfg}
+type Connector struct {
+	publisher  publisher.Publisher
+	netbox     netbox.Client
+	watermarks watermarkReader
+	cfg        *config.Config
+}
+
+func New(pub publisher.Publisher, nb netbox.Client, watermarks watermarkReader, cfg *config.Config) *Connector {
+	return &Connector{publisher: pub, netbox: nb, watermarks: watermarks, cfg: cfg}
 }
 
 func NewFromConfig(cfg *config.Config) (*Connector, error) {
-	nb := netbox.NewHTTPClient(cfg.NetBox.BaseURL, cfg.NetBox.Token, cfg.NetBox.PageSize)
-	pub, err := publisher.NewGRPCPublisher(cfg.GRPC.Endpoint, cfg.GRPC.CertFile, cfg.GRPC.KeyFile, cfg.GRPC.ConnectorID)
+	netboxClient := netbox.NewHTTPClient(cfg.NetBox.BaseURL, cfg.NetBox.Token, cfg.NetBox.PageSize)
+	grpcPublisher, err := publisher.NewGRPCPublisher(cfg.GRPC.Endpoint, cfg.GRPC.CertFile, cfg.GRPC.KeyFile, cfg.GRPC.ConnectorID)
 	if err != nil {
 		return nil, err
 	}
-	return New(pub, nb, cfg), nil
+	watermarks := backfill.NewBackfillClient(grpcPublisher.Conn(), cfg.GRPC.ConnectorID)
+	return New(grpcPublisher, netboxClient, watermarks, cfg), nil
 }
 
-func (c *Connector) Run(ctx context.Context) (Result, error) {
+func (connector *Connector) Run(ctx context.Context) (Result, error) {
 	totals := Result{}
-	for _, endpoint := range c.endpoints() {
+	for _, endpoint := range connector.endpoints() {
 		if ctx.Err() != nil {
 			break
 		}
-		result, err := c.ProcessEndpoint(ctx, endpoint)
+		result, err := connector.ProcessEndpoint(ctx, endpoint, connector.deltaParams(ctx, endpoint))
 		if err != nil {
 			return totals, fmt.Errorf("%s: %w", endpoint, err)
 		}
@@ -53,12 +63,32 @@ func (c *Connector) Run(ctx context.Context) (Result, error) {
 	return totals, nil
 }
 
-func (c *Connector) endpoints() []string {
-	return c.cfg.Endpoints
+// deltaParams returns last_updated__gt + ordering filter when a watermark exists,
+// nil for a full scan (bootstrap or on error).
+func (connector *Connector) deltaParams(ctx context.Context, endpoint string) url.Values {
+	watermark, err := connector.watermarks.GetWatermark(ctx, map[string]any{"endpoint": endpoint})
+	if err != nil {
+		slog.Warn("failed to read watermark, running full scan", "endpoint", endpoint, "err", err)
+		return nil
+	}
+	lastUpdated, _ := watermark["last_updated"].(string)
+	if lastUpdated == "" {
+		slog.Info("no watermark, running full scan", "endpoint", endpoint)
+		return nil
+	}
+	slog.Info("delta fetch", "endpoint", endpoint, "last_updated", lastUpdated)
+	params := url.Values{}
+	params.Set("last_updated__gt", lastUpdated)
+	params.Set("ordering", "last_updated")
+	return params
 }
 
-func (c *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Result, error) {
-	records, err := c.netbox.Paginate(ctx, endpoint)
+func (connector *Connector) endpoints() []string {
+	return connector.cfg.Endpoints
+}
+
+func (connector *Connector) ProcessEndpoint(ctx context.Context, endpoint string, params url.Values) (Result, error) {
+	records, err := connector.netbox.Paginate(ctx, endpoint, params)
 	if errors.Is(err, netbox.ErrNotFound) {
 		slog.Debug("endpoint not found, skipping", "endpoint", endpoint)
 		return Result{Skipped: 1}, nil
@@ -71,16 +101,16 @@ func (c *Connector) ProcessEndpoint(ctx context.Context, endpoint string) (Resul
 		return Result{Skipped: 1}, nil
 	}
 
-	messages := c.buildEnvelopes(endpoint, records)
+	messages := connector.buildEnvelopes(endpoint, records)
 
-	if err = c.publisher.Publish(ctx, messages); err != nil {
+	if err = connector.publisher.Publish(ctx, messages); err != nil {
 		return Result{}, err
 	}
 	return Result{Published: len(messages)}, nil
 }
 
-func (c *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) []envelope.Message {
-	artifactType := c.cfg.ArtifactTypes[endpoint]
+func (connector *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) []envelope.Message {
+	artifactType := connector.cfg.ArtifactTypes[endpoint]
 	if artifactType == "" {
 		artifactType = netbox.DefaultArtifactTypes[endpoint]
 	}
@@ -89,7 +119,7 @@ func (c *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) [
 	}
 	messages := make([]envelope.Message, 0, len(records))
 	for _, raw := range records {
-		msg, err := envelope.Build(raw, endpoint, artifactType, c.cfg.SchemaVersion)
+		msg, err := envelope.Build(raw, endpoint, artifactType, connector.cfg.SchemaVersion)
 		if err == nil {
 			messages = append(messages, msg)
 		} else {

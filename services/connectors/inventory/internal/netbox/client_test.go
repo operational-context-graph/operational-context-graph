@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,7 +34,7 @@ func TestPaginate_SinglePage(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "", 1000)
-	records, err := c.Paginate(context.Background(), "dcim/devices/")
+	records, err := c.Paginate(context.Background(), "dcim/devices/", nil)
 	require.NoError(t, err)
 	assert.Len(t, records, 2)
 }
@@ -55,7 +56,7 @@ func TestPaginate_MultiPage(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "", 2)
-	records, err := c.Paginate(context.Background(), "dcim/devices/")
+	records, err := c.Paginate(context.Background(), "dcim/devices/", nil)
 	require.NoError(t, err)
 	assert.Len(t, records, 4)
 	assert.Equal(t, 2, calls)
@@ -70,7 +71,7 @@ func TestPaginate_AuthHeader(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "secret123", 1000)
-	_, err := c.Paginate(context.Background(), "dcim/devices/")
+	_, err := c.Paginate(context.Background(), "dcim/devices/", nil)
 	require.NoError(t, err)
 }
 
@@ -82,7 +83,7 @@ func TestPaginate_EmptyEndpoint(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "", 1000)
-	records, err := c.Paginate(context.Background(), "dcim/sites/")
+	records, err := c.Paginate(context.Background(), "dcim/sites/", nil)
 	require.NoError(t, err)
 	assert.Empty(t, records)
 }
@@ -94,7 +95,7 @@ func TestPaginate_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "", 1000)
-	_, err := c.Paginate(context.Background(), "dcim/cable-terminations/")
+	_, err := c.Paginate(context.Background(), "dcim/cable-terminations/", nil)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -105,7 +106,26 @@ func TestPaginate_PermanentError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewHTTPClient(srv.URL, "", 1000)
-	_, err := c.Paginate(context.Background(), "dcim/devices/")
+	_, err := c.Paginate(context.Background(), "dcim/devices/", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
+}
+
+func TestPaginate_WithFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "2026-07-10T07:47:31Z", r.URL.Query().Get("last_updated__gt"))
+		assert.Equal(t, "last_updated", r.URL.Query().Get("ordering"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture(1, nil, 1))
+	}))
+	defer srv.Close()
+
+	params := url.Values{}
+	params.Set("last_updated__gt", "2026-07-10T07:47:31Z")
+	params.Set("ordering", "last_updated")
+
+	c := NewHTTPClient(srv.URL, "", 1000)
+	records, err := c.Paginate(context.Background(), "dcim/devices/", params)
+	require.NoError(t, err)
+	assert.Len(t, records, 1)
 }
