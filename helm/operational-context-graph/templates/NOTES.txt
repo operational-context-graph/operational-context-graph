@@ -1,9 +1,0 @@
-Operational Context Graph has been deployed as release {{ .Release.Name }}.
-
-Enabled services:
-{{- if (index .Values "data-ingestion" "enabled") }}
-  - data-ingestion
-{{- end }}
-{{- if (index .Values "doris" "enabled") }}
-  - doris (managed by Doris Operator — watch the DorisCluster CR with: kubectl get doriscluster -n {{ .Release.Namespace }})
-{{- end }}

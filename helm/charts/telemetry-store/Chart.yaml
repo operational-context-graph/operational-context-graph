@@ -1,0 +1,6 @@
+apiVersion: v2
+name: telemetry-store
+description: Subchart for the Telemetry Store Go HTTP service
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
