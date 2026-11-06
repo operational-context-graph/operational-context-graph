@@ -141,7 +141,7 @@ jobs:
           username: ${{ steps.app-token.outputs.app-slug }}
           password: ${{ steps.app-token.outputs.token }}
       - name: Build and push all images
-        uses: docker/bake-action@37816e747588cb78e2ec06b6a9b8bb5a1e1b6f74 # v6.8.0
+        uses: docker/bake-action@37816e747588cb137173af99ab33873600c46ea8 # v6.8.0
         with:
           push: true
         env:
