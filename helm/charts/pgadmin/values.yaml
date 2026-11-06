@@ -1,5 +1,8 @@
 enabled: false
 
+nameOverride: ""
+fullnameOverride: ""
+
 image:
   repository: dpage/pgadmin4
   tag: "9@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83"
@@ -10,6 +13,3 @@ secretName: pgadmin-secret
 
 service:
   port: 80
-
-nameOverride: ""
-fullnameOverride: ""
