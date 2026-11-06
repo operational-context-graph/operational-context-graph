@@ -880,7 +880,7 @@ func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.
 	return rows, nil
 }
 
-func mappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
+func mappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
 	if descriptor.ID != item.Type {
 		return nil, ErrInconsistentState
 	}
@@ -945,7 +945,7 @@ func mappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact
 
 // MappingDescriptorProjection derives source-mapping projection rows from a
 // parsed manifest artifact. Integration tests use it to create valid fixtures.
-func MappingDescriptorProjection(value manifest.Manifest, item manifest.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
+func MappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
 	return mappingDescriptorProjection(value, item, descriptor)
 }
 

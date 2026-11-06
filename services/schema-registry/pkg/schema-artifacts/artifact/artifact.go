@@ -115,8 +115,8 @@ type Artifact struct {
 	Type string
 	// Revision identifies the immutable revision without implying an order.
 	Revision string
-	// CreatedUnder records the schema release that first selects this revision.
-	CreatedUnder string
+	// CreatedUnderSchemaVersion records the schema release that first selects this revision.
+	CreatedUnderSchemaVersion string
 	// SchemaClass classifies schema artifacts and remains empty for other kinds.
 	SchemaClass SchemaClass
 	// TargetSchema identifies the canonical release targeted by a source mapping; other kinds leave it empty.
@@ -135,10 +135,23 @@ type Artifact struct {
 	Extensions map[string]any
 }
 
+// Metadata returns revision metadata without payload or resource bytes.
+// It copies resources and represents absent resources as an empty slice.
+func (a Artifact) Metadata() Artifact {
+	a.PayloadBytes = nil
+	resources := make([]Resource, len(a.Resources))
+	copy(resources, a.Resources)
+	for index := range resources {
+		resources[index].Bytes = nil
+	}
+	a.Resources = resources
+	return a
+}
+
 // Validate validates lexical fields and exact bytes independent of a release.
 // It does not resolve dependencies or validate payload-specific formats.
 func (a Artifact) Validate(registryOrigin string) error {
-	if !validKind(a.Kind) || !ValidLogicalType(a.Type) || !ValidRevision(a.Revision) || !ValidVersion(a.CreatedUnder) {
+	if !validKind(a.Kind) || !ValidLogicalType(a.Type) || !ValidRevision(a.Revision) || !ValidVersion(a.CreatedUnderSchemaVersion) {
 		return errors.New("invalid artifact identity")
 	}
 	if err := validateKindFields(a); err != nil {

@@ -31,11 +31,11 @@ func TestParseAndValidateConformanceFixture(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	parsed, err := Parse(data)
 	require.NoError(t, err)
-	bound := contextFor(parsed).Artifacts[Key{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
+	bound := contextFor(parsed).Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
 	assert.Equal(t, parsed.Artifacts[0].Kind, bound.Kind)
 	assert.Equal(t, parsed.Artifacts[0].Type, bound.Type)
 	assert.Equal(t, parsed.Artifacts[0].Revision, bound.Revision)
-	assert.Equal(t, parsed.Artifacts[0].CreatedUnderSchemaVersion, bound.CreatedUnder)
+	assert.Equal(t, parsed.Artifacts[0].CreatedUnderSchemaVersion, bound.CreatedUnderSchemaVersion)
 	assert.Equal(t, parsed.Artifacts[0].SchemaClass, bound.SchemaClass)
 	assert.Equal(t, parsed.Artifacts[0].CanonicalURI, bound.CanonicalURI)
 	assert.Equal(t, parsed.Artifacts[0].Payload, bound.Payload)
@@ -45,6 +45,22 @@ func TestParseAndValidateConformanceFixture(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, parsed, validated)
 	assert.Equal(t, data, validated.Raw)
+}
+
+// TestSharedArtifactModel validates shared artifact selections and dependency-keyed byte closures without conversion.
+func TestSharedArtifactModel(t *testing.T) {
+	parsed, err := Parse(fixture(t, "valid-initial.json"))
+	require.NoError(t, err)
+	selection := parsed.Artifacts[0]
+	assert.Nil(t, selection.PayloadBytes)
+	assert.Equal(t, "1.0.0", selection.CreatedUnderSchemaVersion)
+	context := contextFor(parsed)
+	key := artifact.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}
+	bound := context.Artifacts[key]
+	bound.PayloadBytes = []byte("non-authoritative")
+	parsed.Artifacts = []artifact.Artifact{bound}
+	require.NoError(t, parsed.Validate(context))
+	assert.Equal(t, []byte("true"), context.Artifacts[key].PayloadBytes)
 }
 
 // TestParseRejectsConformanceFailures checks unknown-field and trailing-newline rejection using repository fixtures.
@@ -180,14 +196,14 @@ func TestValidateRejectsClosureAndImmutableReuseFailures(t *testing.T) {
 	assert.Error(t, withoutURI.Validate(context))
 
 	changed := current
-	changed.Artifacts = append([]Artifact(nil), current.Artifacts...)
+	changed.Artifacts = append([]artifact.Artifact(nil), current.Artifacts...)
 	changed.Artifacts[0].Extensions = map[string]any{"org.example.review": "changed"}
 	context.History = []Release{{Manifest: current, Digest: digest(data)}}
 	changed.PreviousRelease = &PreviousRelease{SchemaVersion: current.SchemaVersion, ManifestDigest: digest(data)}
 	assert.Error(t, changed.Validate(context))
 
 	wrongCreatedUnder := current
-	wrongCreatedUnder.Artifacts = append([]Artifact(nil), current.Artifacts...)
+	wrongCreatedUnder.Artifacts = append([]artifact.Artifact(nil), current.Artifacts...)
 	wrongCreatedUnder.Artifacts[0].CreatedUnderSchemaVersion = "0.9.0"
 	assert.Error(t, wrongCreatedUnder.Validate(contextFor(current)))
 
@@ -264,22 +280,22 @@ func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 	require.NoError(t, err)
 	after := before
 	after.SchemaVersion = "2.0.0"
-	after.Artifacts = append([]Artifact(nil), before.Artifacts...)
+	after.Artifacts = append([]artifact.Artifact(nil), before.Artifacts...)
 	after.Artifacts[0].Revision = "rev-2"
 	after.Artifacts[0].CreatedUnderSchemaVersion = "2.0.0"
 	after.URICatalog = []URIEntry{{URI: before.Artifacts[0].CanonicalURI, ArtifactRevision: "rev-2"}}
 	context := contextFor(before)
-	oldBound := context.Artifacts[Key{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
+	oldBound := context.Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
 	oldBound.PayloadBytes = []byte(`{"type":"object"}`)
 	oldBound.Payload = descriptor(oldBound.PayloadBytes, artifact.SchemaMediaType, "schemas/device.json")
-	context.Artifacts[Key{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}] = oldBound
-	newBound := context.Artifacts[Key{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
+	context.Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}] = oldBound
+	newBound := context.Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}]
 	newBound.Revision = "rev-2"
-	newBound.CreatedUnder = "1.0.1"
+	newBound.CreatedUnderSchemaVersion = "1.0.1"
 	newBound.CanonicalURI = before.Artifacts[0].CanonicalURI
 	newBound.PayloadBytes = []byte(`{"description":"new","type":"object"}`)
 	newBound.Payload = descriptor(newBound.PayloadBytes, artifact.SchemaMediaType, "schemas/device-2.json")
-	context.Artifacts[Key{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}] = newBound
+	context.Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}] = newBound
 	assert.True(t, sameSchemaRelations(before.Artifacts[0], after.Artifacts[0]))
 	assert.True(t, annotationOnly(before.Artifacts[0], after.Artifacts[0], context))
 	diff, err := Diff(before, after, context)
@@ -296,15 +312,15 @@ func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 
 // TestDiffClassifiesVersionOneNetChangeCases checks compatibility precedence across artifact, binding, URI, and storage differences.
 func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
-	base := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-1"}}}
+	base := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-1"}}}
 	tests := []struct {
 		name  string
 		want  Compatibility
 		after Manifest
 	}{
-		{"add", "additive", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}, URICatalog: base.URICatalog}},
+		{"add", "additive", Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}, URICatalog: base.URICatalog}},
 		{"remove", "breaking", Manifest{Artifacts: nil, URICatalog: nil}},
-		{"schema-update-unknown", "breaking", Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
+		{"schema-update-unknown", "breaking", Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"uri-update", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"binding-remove", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog}},
 		{"storage-add", "additive", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []Store{StoreTelemetryStore}}}}},
@@ -315,7 +331,7 @@ func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
 			if test.name != "binding-remove" {
 				test.after.SchemaContextBindings = base.SchemaContextBindings
 			}
-			diff, err := Diff(base, test.after, Context{Artifacts: map[Key]artifact.Artifact{}})
+			diff, err := Diff(base, test.after, Context{Artifacts: map[artifact.Dependency]artifact.Artifact{}})
 			require.NoError(t, err)
 			assert.Equal(t, test.want, diff.Compatibility)
 		})
@@ -325,7 +341,7 @@ func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
 // TestDiffClassifiesContextAndSourceMappingUpdatesDirectly keeps non-schema revision updates conservatively breaking.
 func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 	t.Parallel()
-	baseArtifacts := []Artifact{
+	baseArtifacts := []artifact.Artifact{
 		{Kind: artifact.KindSchema, Type: "device", Revision: "schema-1"},
 		{Kind: artifact.KindContext, Type: "device-context", Revision: "context-1"},
 		{Kind: artifact.KindSourceMapping, Type: "device-map", Revision: "mapping-1"},
@@ -338,14 +354,14 @@ func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			before := Manifest{Artifacts: append([]Artifact(nil), baseArtifacts...)}
-			after := Manifest{Artifacts: append([]Artifact(nil), baseArtifacts...)}
+			before := Manifest{Artifacts: append([]artifact.Artifact(nil), baseArtifacts...)}
+			after := Manifest{Artifacts: append([]artifact.Artifact(nil), baseArtifacts...)}
 			for index := range after.Artifacts {
 				if string(after.Artifacts[index].Kind) == test.kind {
 					after.Artifacts[index].Revision = test.afterRevision
 				}
 			}
-			diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+			diff, err := Diff(before, after, Context{Artifacts: map[artifact.Dependency]artifact.Artifact{}})
 			require.NoError(t, err)
 			require.Len(t, diff.Artifacts, 1)
 			assert.Equal(t, OperationUpdate, diff.Artifacts[0].Operation)
@@ -360,9 +376,9 @@ func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 
 // TestDiffUsesNetEndpointsAndDeterministicOrdering excludes intermediate changes and orders logical artifact differences consistently.
 func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
-	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}}
-	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"}, {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
-	diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+	before := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}}
+	after := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"}, {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
+	diff, err := Diff(before, after, Context{Artifacts: map[artifact.Dependency]artifact.Artifact{}})
 	require.NoError(t, err)
 	// The result compares endpoints only. It does not include an intermediate
 	// addition that was removed before the target manifest.
@@ -376,9 +392,9 @@ func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
 
 // TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational checks the narrow operational exception when schema relations remain unchanged.
 func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
-	before := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
-	after := Manifest{Artifacts: []Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}}
-	context := Context{Artifacts: map[Key]artifact.Artifact{
+	before := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
+	after := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}}
+	context := Context{Artifacts: map[artifact.Dependency]artifact.Artifact{
 		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"old"}`)},
 		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-2", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"new"}`)},
 	}}
@@ -392,7 +408,7 @@ func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
 // TestDiffOrdersEveryChangeCollection verifies canonical artifact, binding, URI, and storage change sort keys.
 func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 	before := Manifest{
-		Artifacts: []Artifact{
+		Artifacts: []artifact.Artifact{
 			{Kind: artifact.KindSchema, Type: "zebra", Revision: "rev-z-1"},
 			{Kind: artifact.KindSchema, Type: "alpha", Revision: "rev-a-1"},
 		},
@@ -404,7 +420,7 @@ func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 		StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []Store{StoreTelemetryStore, StoreDataCenterInventory}}},
 	}
 	after := Manifest{
-		Artifacts: []Artifact{
+		Artifacts: []artifact.Artifact{
 			{Kind: artifact.KindSchema, Type: "alpha", Revision: "rev-a-2"},
 			{Kind: artifact.KindSchema, Type: "middle", Revision: "rev-m-1"},
 		},
@@ -413,7 +429,7 @@ func TestDiffOrdersEveryChangeCollection(t *testing.T) {
 		StorageCatalog:        []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "alpha", Stores: []Store{StoreDataCenterInventory}}, {Kind: artifact.KindSchema, ArtifactType: "zebra", Stores: []Store{StoreTelemetryStore}}},
 	}
 
-	diff, err := Diff(before, after, Context{Artifacts: map[Key]artifact.Artifact{}})
+	diff, err := Diff(before, after, Context{Artifacts: map[artifact.Dependency]artifact.Artifact{}})
 	require.NoError(t, err)
 	require.Len(t, diff.Artifacts, 3)
 	assert.Equal(t, []string{"alpha", "middle", "zebra"}, []string{diff.Artifacts[0].ArtifactType, diff.Artifacts[1].ArtifactType, diff.Artifacts[2].ArtifactType})
@@ -510,10 +526,10 @@ func fixtureForFuzz(name string) []byte {
 func contextFor(manifest Manifest) Context {
 	payload := []byte("true")
 	item := artifact.Artifact{
-		Kind: artifact.KindSchema, Type: "device", Revision: "rev-1", CreatedUnder: "1.0.0", SchemaClass: artifact.SchemaClassEntity,
+		Kind: artifact.KindSchema, Type: "device", Revision: "rev-1", CreatedUnderSchemaVersion: "1.0.0", SchemaClass: artifact.SchemaClassEntity,
 		CanonicalURI: testOrigin + "/v1/resources/schema/device/rev-1", Payload: descriptor(payload, artifact.SchemaMediaType, "schemas/device.json"), PayloadBytes: payload,
 	}
-	return Context{RegistryOrigin: testOrigin, Artifacts: map[Key]artifact.Artifact{{Kind: item.Kind, Type: item.Type, Revision: item.Revision}: item}}
+	return Context{RegistryOrigin: testOrigin, Artifacts: map[artifact.Dependency]artifact.Artifact{{Kind: item.Kind, Type: item.Type, Revision: item.Revision}: item}}
 }
 
 // descriptor builds byte-integrity metadata for a test payload at its declared bundle location.

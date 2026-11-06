@@ -188,7 +188,7 @@ func TestValidateRejectsInvalidFormatBeforeApplicationSize(t *testing.T) {
 		want   string
 	}{
 		{"missing artifact", func(_ *manifest.Manifest, context manifest.Context) {
-			delete(context.Artifacts, manifest.Key{Kind: artifact.KindSchema, Type: "entity", Revision: "entity-r1"})
+			delete(context.Artifacts, artifact.Dependency{Kind: artifact.KindSchema, Type: "entity", Revision: "entity-r1"})
 		}, "bytes are unavailable"},
 		{"missing dependency", func(value *manifest.Manifest, context manifest.Context) {
 			item := context.Artifacts[mappingKey("mapping-b")]
@@ -248,7 +248,7 @@ func TestMappingPackageRejectsMissingValidatedInputs(t *testing.T) {
 		{"missing source schema", func(c *selectedClosure) { delete(c.schemas, "source") }, "selected schema source/"},
 		{"missing target schema", func(c *selectedClosure) { delete(c.schemas, "entity") }, "selected schema entity/"},
 		{"missing schema bytes", func(c *selectedClosure) {
-			delete(c.context.Artifacts, manifest.Key{Kind: artifact.KindSchema, Type: "entity", Revision: "entity-r1"})
+			delete(c.context.Artifacts, artifact.Dependency{Kind: artifact.KindSchema, Type: "entity", Revision: "entity-r1"})
 		}, "bytes are missing"},
 		{"missing condition program", func(c *selectedClosure) {
 			key := mappingKey("mapping-a")
@@ -290,8 +290,8 @@ func TestMappingPackageRejectsMissingValidatedInputs(t *testing.T) {
 	}
 }
 
-func mappingKey(name string) manifest.Key {
-	return manifest.Key{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1"}
+func mappingKey(name string) artifact.Dependency {
+	return artifact.Dependency{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1"}
 }
 
 func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
@@ -300,14 +300,14 @@ func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 		Schema: "https://example.test/manifest-1.0.0", FormatVersion: manifest.FormatVersion, SchemaVersion: "1.0.0",
 		Source: manifest.Source{Repository: "https://git.example.test/model", Commit: strings.Repeat("a", 40)},
 	}
-	context := manifest.Context{RegistryOrigin: testOrigin, Artifacts: make(map[manifest.Key]artifact.Artifact)}
+	context := manifest.Context{RegistryOrigin: testOrigin, Artifacts: make(map[artifact.Dependency]artifact.Artifact)}
 	for _, definition := range []struct {
 		name  string
 		class artifact.SchemaClass
 		data  string
 	}{{"edge", artifact.SchemaClassEdge, "false"}, {"entity", artifact.SchemaClassEntity, `{"type":"object"}`}, {"source", artifact.SchemaClassSource, "true"}} {
 		item := artifact.Artifact{
-			Kind: artifact.KindSchema, Type: definition.name, Revision: definition.name + "-r1", CreatedUnder: "1.0.0",
+			Kind: artifact.KindSchema, Type: definition.name, Revision: definition.name + "-r1", CreatedUnderSchemaVersion: "1.0.0",
 			SchemaClass: definition.class, PayloadBytes: []byte(definition.data),
 			Payload: testDescriptor([]byte(definition.data), artifact.SchemaMediaType, "schemas/"+definition.name+".json"),
 		}
@@ -341,7 +341,7 @@ func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 		})
 		require.NoError(t, err)
 		item := artifact.Artifact{
-			Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1", CreatedUnder: "1.0.0", TargetSchema: "1.0.0",
+			Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1", CreatedUnderSchemaVersion: "1.0.0", TargetSchema: "1.0.0",
 			PayloadBytes: payload, Payload: testDescriptor(payload, sourcemapping.DescriptorMediaType, "mappings/"+name+".json"),
 			CanonicalURI: testOrigin + "/v1/resources/source-mapping/" + name + "/" + name + "-r1",
 			Resources:    []artifact.Resource{program, condition},
@@ -366,17 +366,9 @@ func updateArtifact(value *manifest.Manifest, context manifest.Context, item art
 		}
 		return left.Role < right.Role
 	})
-	key := manifest.Key{Kind: item.Kind, Type: item.Type, Revision: item.Revision}
+	key := artifact.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}
 	context.Artifacts[key] = item
-	resources := append([]artifact.Resource{}, item.Resources...)
-	for index := range resources {
-		resources[index].Bytes = nil
-	}
-	selection := manifest.Artifact{
-		Kind: item.Kind, Type: item.Type, Revision: item.Revision, CreatedUnderSchemaVersion: item.CreatedUnder,
-		SchemaClass: item.SchemaClass, TargetSchema: item.TargetSchema, CanonicalURI: item.CanonicalURI,
-		Payload: item.Payload, Resources: resources, Dependencies: item.Dependencies, Extensions: item.Extensions,
-	}
+	selection := item.Metadata()
 	for index, previous := range value.Artifacts {
 		if previous.Kind == item.Kind && previous.Type == item.Type {
 			value.Artifacts[index] = selection

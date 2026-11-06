@@ -12,6 +12,7 @@ import (
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,7 +57,7 @@ func mappingClosure(t testing.TB) (Manifest, Context) {
 		SchemaVersion: "1.0.0",
 		Source:        Source{Repository: "https://git.example.test/model", Commit: strings.Repeat("a", 40)},
 	}
-	context := Context{RegistryOrigin: testOrigin, Artifacts: make(map[Key]artifactmodel.Artifact)}
+	context := Context{RegistryOrigin: testOrigin, Artifacts: make(map[artifactmodel.Dependency]artifactmodel.Artifact)}
 
 	for _, definition := range []struct {
 		name  string
@@ -69,12 +70,12 @@ func mappingClosure(t testing.TB) (Manifest, Context) {
 		{"mapping-b", ""},
 	} {
 		item := artifactmodel.Artifact{
-			Kind:         artifactmodel.KindSchema,
-			Type:         definition.name,
-			Revision:     definition.name + "-r1",
-			CreatedUnder: "1.0.0",
-			SchemaClass:  definition.class,
-			PayloadBytes: []byte("true"),
+			Kind:                      artifactmodel.KindSchema,
+			Type:                      definition.name,
+			Revision:                  definition.name + "-r1",
+			CreatedUnderSchemaVersion: "1.0.0",
+			SchemaClass:               definition.class,
+			PayloadBytes:              []byte("true"),
 		}
 
 		if definition.class == "" {
@@ -102,21 +103,9 @@ func mappingClosure(t testing.TB) (Manifest, Context) {
 
 		item.Payload = descriptor(item.PayloadBytes, mediaType, "artifacts/"+item.Type+".json")
 		item.CanonicalURI = testOrigin + "/v1/resources/" + string(item.Kind) + "/" + item.Type + "/" + item.Revision
-		context.Artifacts[Key{item.Kind, item.Type, item.Revision}] = item
+		context.Artifacts[artifactmodel.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}] = item
 
-		artifact := Artifact{
-			Kind:                      item.Kind,
-			Type:                      item.Type,
-			Revision:                  item.Revision,
-			CreatedUnderSchemaVersion: item.CreatedUnder,
-			SchemaClass:               item.SchemaClass,
-			TargetSchema:              item.TargetSchema,
-			CanonicalURI:              item.CanonicalURI,
-			Payload:                   item.Payload,
-			Resources:                 stripResourceBytes(item.Resources),
-			Dependencies:              item.Dependencies,
-		}
-		m.Artifacts = append(m.Artifacts, artifact)
+		m.Artifacts = append(m.Artifacts, item.Metadata())
 
 		m.URICatalog = append(m.URICatalog, URIEntry{URI: item.CanonicalURI, ArtifactRevision: item.Revision})
 
@@ -140,13 +129,13 @@ func TestMultiCandidateMappingClosure(t *testing.T) {
 		func(m *Manifest, _ Context) { m.StorageCatalog = m.StorageCatalog[1:] },
 		func(m *Manifest, _ Context) { m.Artifacts = m.Artifacts[1:] },
 		func(_ *Manifest, c Context) {
-			key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+			key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 			item := c.Artifacts[key]
 			item.Resources[0].Bytes = []byte("corrupt")
 			c.Artifacts[key] = item
 		},
 		func(m *Manifest, c Context) {
-			key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+			key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 			item := c.Artifacts[key]
 
 			resource := artifactmodel.Resource{
@@ -157,13 +146,59 @@ func TestMultiCandidateMappingClosure(t *testing.T) {
 			item.Resources = append(item.Resources, resource)
 
 			c.Artifacts[key] = item
-			m.Artifacts[3].Resources = stripResourceBytes(item.Resources)
+			m.Artifacts[3].Resources = item.Metadata().Resources
 		},
 	} {
 		m, context := mappingClosure(t)
 		mutate(&m, context)
 		require.Error(t, m.Validate(context))
 	}
+}
+
+// TestMatchesSelectionChecksAllMetadata rejects changes to every shared artifact metadata field.
+func TestMatchesSelectionChecksAllMetadata(t *testing.T) {
+	m, context := mappingClosure(t)
+	selection := m.Artifacts[3]
+	bound := context.Artifacts[artifactmodel.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}]
+	require.True(t, matchesSelection(selection, bound))
+	for _, test := range []struct {
+		name   string
+		mutate func(*artifactmodel.Artifact)
+	}{
+		{"kind", func(a *artifactmodel.Artifact) { a.Kind = artifactmodel.KindContext }},
+		{"type", func(a *artifactmodel.Artifact) { a.Type = "other" }},
+		{"revision", func(a *artifactmodel.Artifact) { a.Revision = "other-r1" }},
+		{"created under", func(a *artifactmodel.Artifact) { a.CreatedUnderSchemaVersion = "0.9.0" }},
+		{"schema class", func(a *artifactmodel.Artifact) { a.SchemaClass = artifactmodel.SchemaClassSource }},
+		{"target schema", func(a *artifactmodel.Artifact) { a.TargetSchema = "2.0.0" }},
+		{"canonical URI", func(a *artifactmodel.Artifact) { a.CanonicalURI += "-other" }},
+		{"payload media type", func(a *artifactmodel.Artifact) { a.Payload.MediaType = "application/octet-stream" }},
+		{"payload digest", func(a *artifactmodel.Artifact) { a.Payload.Digest = digest([]byte("other")) }},
+		{"payload size", func(a *artifactmodel.Artifact) { a.Payload.Size++ }},
+		{"payload path", func(a *artifactmodel.Artifact) { a.Payload.BundlePath = "other/descriptor.json" }},
+		{"resource name", func(a *artifactmodel.Artifact) { a.Resources[0].Name = "other.bin" }},
+		{"resource role", func(a *artifactmodel.Artifact) { a.Resources[0].Role = "metadata" }},
+		{"resource media type", func(a *artifactmodel.Artifact) { a.Resources[0].MediaType = "text/plain" }},
+		{"resource digest", func(a *artifactmodel.Artifact) { a.Resources[0].Digest = digest([]byte("other")) }},
+		{"resource size", func(a *artifactmodel.Artifact) { a.Resources[0].Size++ }},
+		{"resource path", func(a *artifactmodel.Artifact) { a.Resources[0].BundlePath = "other/program.bin" }},
+		{"resource removal", func(a *artifactmodel.Artifact) { a.Resources = nil }},
+		{"dependencies", func(a *artifactmodel.Artifact) { a.Dependencies = nil }},
+		{"extensions", func(a *artifactmodel.Artifact) { a.Extensions = map[string]any{"org.example.note": "other"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			changed := selection.Metadata()
+			test.mutate(&changed)
+			assert.False(t, matchesSelection(changed, bound))
+		})
+	}
+
+	selection.PayloadBytes = []byte("non-authoritative")
+	selection.Resources[0].Bytes = []byte("non-authoritative")
+	assert.True(t, matchesSelection(selection, bound))
+	assert.Equal(t, []byte{0, 255}, bound.Resources[0].Bytes)
+	selection.Dependencies, bound.Dependencies = nil, []artifactmodel.Dependency{}
+	assert.True(t, matchesSelection(selection, bound))
 }
 
 // TestMappingAdditionCompatibilityUsesResolvedSourceIdentity requires a newly
@@ -181,7 +216,7 @@ func TestMappingAdditionCompatibilityUsesResolvedSourceIdentity(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before := full
-			before.Artifacts = append([]Artifact(nil), full.Artifacts[:2]...)
+			before.Artifacts = append([]artifactmodel.Artifact(nil), full.Artifacts[:2]...)
 			if test.keepSource {
 				before.Artifacts = append(before.Artifacts, full.Artifacts[2])
 			}
@@ -226,11 +261,30 @@ func TestMappingRevisionReuseExcludesPackagingButPreservesPrograms(t *testing.T)
 	require.Error(t, immutableReuse(m.Artifacts[3], append(history, Release{Manifest: retired})))
 }
 
+// TestSharedArtifactBytesDoNotAffectMetadataComparisons preserves revision reuse and annotation-only comparison semantics.
+func TestSharedArtifactBytesDoNotAffectMetadataComparisons(t *testing.T) {
+	m, context := mappingClosure(t)
+	selection := m.Artifacts[3]
+	bound := context.Artifacts[artifactmodel.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}]
+	require.NoError(t, immutableReuse(bound, []Release{{Manifest: m}}))
+	assert.Equal(t, revisionBoundSelection(selection), revisionBoundSelection(bound))
+	assert.Equal(t, bound.PayloadBytes, context.Artifacts[artifactmodel.Dependency{Kind: bound.Kind, Type: bound.Type, Revision: bound.Revision}].PayloadBytes)
+	assert.Equal(t, []byte{0, 255}, bound.Resources[0].Bytes)
+	assert.Equal(t, "mappings/mapping-a/shared.bin", bound.Resources[0].BundlePath)
+
+	left := m.Artifacts[0]
+	right := left
+	left.PayloadBytes, right.PayloadBytes = []byte("true"), []byte("false")
+	assert.True(t, sameSchemaRelations(left, right))
+	right.SchemaClass = artifactmodel.SchemaClassEntity
+	assert.False(t, sameSchemaRelations(left, right))
+}
+
 // TestManifestFormatAcceptsOversizedMultiProgramPackage separates individual
 // resource validity from application-level assembled-response size limits.
 func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
 	m, context := mappingClosure(t)
-	key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+	key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 	item := context.Artifacts[key]
 	program := bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes)
 	item.Resources = make([]artifactmodel.Resource, 0, 3)
@@ -256,7 +310,7 @@ func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
 	require.NoError(t, err)
 	item.PayloadBytes, item.Payload = payload, descriptor(payload, "application/vnd.apeiro.ocg.source-mapping.v1+json", "artifacts/mapping-a.json")
 	context.Artifacts[key] = item
-	m.Artifacts[3].Payload, m.Artifacts[3].Resources = item.Payload, stripResourceBytes(item.Resources)
+	m.Artifacts[3] = item.Metadata()
 	// Format validity does not establish application response serviceability.
 	require.NoError(t, m.Validate(context))
 }
@@ -265,7 +319,7 @@ func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
 // unbound metadata resources in a valid mapping closure.
 func TestManifestFormatAcceptsLargeAncillaryResources(t *testing.T) {
 	m, context := mappingClosure(t)
-	key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+	key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 	item := context.Artifacts[key]
 	ancillary := bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes)
 	resources := make([]artifactmodel.Resource, 0, 4)
@@ -280,7 +334,7 @@ func TestManifestFormatAcceptsLargeAncillaryResources(t *testing.T) {
 	}
 	item.Resources = append(resources, item.Resources...)
 	context.Artifacts[key] = item
-	m.Artifacts[3].Resources = stripResourceBytes(item.Resources)
+	m.Artifacts[3].Resources = item.Metadata().Resources
 	require.NoError(t, m.Validate(context))
 }
 
@@ -288,7 +342,7 @@ func TestManifestFormatAcceptsLargeAncillaryResources(t *testing.T) {
 // resource referenced by both a condition and multiple transformations.
 func TestManifestFormatAcceptsLargeSharedProgram(t *testing.T) {
 	m, context := mappingClosure(t)
-	key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+	key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 	item := context.Artifacts[key]
 	program := bytes.Repeat([]byte{255}, schemaartifacts.MaxArtifactBytes)
 	item.Resources[0].Bytes = program
@@ -306,7 +360,7 @@ func TestManifestFormatAcceptsLargeSharedProgram(t *testing.T) {
 
 	item.PayloadBytes, item.Payload = payload, descriptor(payload, item.Payload.MediaType, item.Payload.BundlePath)
 	context.Artifacts[key] = item
-	m.Artifacts[3].Payload, m.Artifacts[3].Resources = item.Payload, stripResourceBytes(item.Resources)
+	m.Artifacts[3] = item.Metadata()
 	require.NoError(t, m.Validate(context))
 }
 
@@ -332,7 +386,7 @@ func TestManifestRejectsInvalidAncillaryResourcesAndBindings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			m, context := mappingClosure(t)
-			key := Key{artifactmodel.KindSourceMapping, "mapping-a", "mapping-a-r1"}
+			key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 			item := context.Artifacts[key]
 			data := []byte("metadata")
 			ancillary := artifactmodel.Resource{
@@ -351,7 +405,7 @@ func TestManifestRejectsInvalidAncillaryResourcesAndBindings(t *testing.T) {
 
 			item.PayloadBytes, item.Payload = payload, descriptor(payload, item.Payload.MediaType, item.Payload.BundlePath)
 			context.Artifacts[key] = item
-			m.Artifacts[3].Payload, m.Artifacts[3].Resources = item.Payload, stripResourceBytes(item.Resources)
+			m.Artifacts[3] = item.Metadata()
 			require.ErrorContains(t, m.Validate(context), test.want)
 		})
 	}

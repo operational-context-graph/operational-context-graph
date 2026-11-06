@@ -190,13 +190,13 @@ func (s *Service) Compare(ctx context.Context, from, to string) (manifest.Change
 		if err != nil {
 			return withRequestMetadata(current, "", fmt.Errorf("parse stored target manifest: %w", postgres.ErrInconsistentState))
 		}
-		artifacts := make(map[manifest.Key]artifact.Artifact)
-		for _, entry := range append(append([]manifest.Artifact{}, beforeManifest.Artifacts...), afterManifest.Artifacts...) {
+		artifacts := make(map[artifact.Dependency]artifact.Artifact)
+		for _, entry := range append(append([]artifact.Artifact{}, beforeManifest.Artifacts...), afterManifest.Artifacts...) {
 			stored, artifactErr := snapshot.Artifact(readCtx, entry.Revision)
 			if artifactErr != nil {
 				return withRequestMetadata(current, "", artifactErr)
 			}
-			artifacts[manifest.Key{Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision}] = artifact.Artifact{
+			artifacts[artifact.Dependency{Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision}] = artifact.Artifact{
 				Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision, Payload: artifact.Descriptor{MediaType: stored.Payload.MediaType, Digest: stored.Payload.Digest, Size: stored.Payload.Size}, PayloadBytes: stored.Payload.Bytes,
 			}
 		}

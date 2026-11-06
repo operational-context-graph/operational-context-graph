@@ -159,7 +159,7 @@ func candidateFixture(t testing.TB) registryFixture {
 		if index == 0 {
 			dependencies = append([]artifact.Dependency{{Kind: artifact.KindSchema, Type: edge.Type, Revision: edge.Revision}}, dependencies...)
 		}
-		result.artifacts = append(result.artifacts, artifact.Artifact{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1", CreatedUnder: version, TargetSchema: version, CanonicalURI: fixtureOrigin + "/v1/resources/source-mapping/" + name + "/" + name + "-r1", Payload: fixtureDescriptor(data, sourcemapping.DescriptorMediaType, "mappings/"+name+"/descriptor.json"), PayloadBytes: data, Resources: resources, Dependencies: dependencies})
+		result.artifacts = append(result.artifacts, artifact.Artifact{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1", CreatedUnderSchemaVersion: version, TargetSchema: version, CanonicalURI: fixtureOrigin + "/v1/resources/source-mapping/" + name + "/" + name + "-r1", Payload: fixtureDescriptor(data, sourcemapping.DescriptorMediaType, "mappings/"+name+"/descriptor.json"), PayloadBytes: data, Resources: resources, Dependencies: dependencies})
 		if index == 0 {
 			result.artifacts[len(result.artifacts)-1].Extensions = map[string]any{"org.example.test": map[string]any{"approved": true, "note": "<accepted>", "nested": []any{"first", "second"}}}
 		}
@@ -169,7 +169,7 @@ func candidateFixture(t testing.TB) registryFixture {
 
 func fixtureSchema(artifactType, revision, created string, payload []byte, resources []artifact.Resource) artifact.Artifact {
 	return artifact.Artifact{
-		Kind: artifact.KindSchema, Type: artifactType, Revision: revision, CreatedUnder: created,
+		Kind: artifact.KindSchema, Type: artifactType, Revision: revision, CreatedUnderSchemaVersion: created,
 		SchemaClass:  artifact.SchemaClassEntity,
 		CanonicalURI: fixtureOrigin + "/v1/resources/schema/" + artifactType + "/" + revision,
 		Payload:      fixtureDescriptor(payload, artifact.SchemaMediaType, "schemas/"+artifactType+".json"),
@@ -198,7 +198,7 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 	entries := make([]map[string]any, 0, len(fixture.artifacts))
 	uris := make([]map[string]any, 0, len(fixture.artifacts))
 	storage := make([]map[string]any, 0, len(fixture.artifacts))
-	bound := make(map[manifest.Key]artifact.Artifact, len(fixture.artifacts))
+	bound := make(map[artifact.Dependency]artifact.Artifact, len(fixture.artifacts))
 	for _, item := range fixture.artifacts {
 		resourceEntries := make([]map[string]any, 0, len(item.Resources))
 		for _, resource := range item.Resources {
@@ -210,7 +210,7 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 		}
 		entry := map[string]any{
 			"kind": item.Kind, "artifactType": item.Type, "artifactRevision": item.Revision,
-			"createdUnderSchemaVersion": item.CreatedUnder,
+			"createdUnderSchemaVersion": item.CreatedUnderSchemaVersion,
 			"canonicalUri":              item.CanonicalURI, "payload": descriptorMap(item.Payload, nil),
 			"resources": resourceEntries, "dependencies": dependencies,
 		}
@@ -228,7 +228,7 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 		if item.Kind == artifact.KindSchema && item.SchemaClass != artifact.SchemaClassSource {
 			storage = append(storage, map[string]any{"kind": item.Kind, "artifactType": item.Type, "stores": []string{"data-center-inventory"}})
 		}
-		bound[manifest.Key{Kind: item.Kind, Type: item.Type, Revision: item.Revision}] = item
+		bound[artifact.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}] = item
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		a, b := fmt.Sprint(entries[i]["kind"])+"/"+fmt.Sprint(entries[i]["artifactType"]), fmt.Sprint(entries[j]["kind"])+"/"+fmt.Sprint(entries[j]["artifactType"])
@@ -312,7 +312,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		_, err = tx.ExecContext(ctx, `
 INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes,target_schema_version,extensions)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,$11,$12)
-ON CONFLICT (artifact_revision) DO NOTHING`, item.Revision, item.Kind, item.Type, item.CreatedUnder, schemaClass, item.CanonicalURI, item.Payload.MediaType, item.Payload.Digest, item.Payload.Size, item.PayloadBytes, targetVersion, extensions)
+ON CONFLICT (artifact_revision) DO NOTHING`, item.Revision, item.Kind, item.Type, item.CreatedUnderSchemaVersion, schemaClass, item.CanonicalURI, item.Payload.MediaType, item.Payload.Digest, item.Payload.Size, item.PayloadBytes, targetVersion, extensions)
 		if err != nil {
 			return manifest.Manifest{}, err
 		}

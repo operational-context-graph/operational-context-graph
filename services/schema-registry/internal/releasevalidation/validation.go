@@ -42,18 +42,18 @@ func Validate(value manifest.Manifest, context manifest.Context) error {
 type selectedClosure struct {
 	version     string
 	context     manifest.Context
-	selections  map[manifest.Key]manifest.Artifact
-	schemas     map[string]manifest.Artifact
-	descriptors map[manifest.Key]model.Descriptor
+	selections  map[artifact.Dependency]artifact.Artifact
+	schemas     map[string]artifact.Artifact
+	descriptors map[artifact.Dependency]model.Descriptor
 	stores      map[string][]model.StorageEntry
 }
 
 func indexClosure(value manifest.Manifest, context manifest.Context) *selectedClosure {
 	closure := &selectedClosure{
 		version: value.SchemaVersion, context: context,
-		selections:  make(map[manifest.Key]manifest.Artifact, len(value.Artifacts)),
-		schemas:     make(map[string]manifest.Artifact),
-		descriptors: make(map[manifest.Key]model.Descriptor),
+		selections:  make(map[artifact.Dependency]artifact.Artifact, len(value.Artifacts)),
+		schemas:     make(map[string]artifact.Artifact),
+		descriptors: make(map[artifact.Dependency]model.Descriptor),
 		stores:      make(map[string][]model.StorageEntry, len(value.StorageCatalog)),
 	}
 	for _, selection := range value.Artifacts {
@@ -72,11 +72,11 @@ func indexClosure(value manifest.Manifest, context manifest.Context) *selectedCl
 	return closure
 }
 
-func selectionKey(value manifest.Artifact) manifest.Key {
-	return manifest.Key{Kind: value.Kind, Type: value.Type, Revision: value.Revision}
+func selectionKey(value artifact.Artifact) artifact.Dependency {
+	return artifact.Dependency{Kind: value.Kind, Type: value.Type, Revision: value.Revision}
 }
 
-func (c *selectedClosure) descriptor(key manifest.Key) (model.Descriptor, error) {
+func (c *selectedClosure) descriptor(key artifact.Dependency) (model.Descriptor, error) {
 	if descriptor, exists := c.descriptors[key]; exists {
 		return descriptor, nil
 	}
@@ -150,7 +150,7 @@ func (c *selectedClosure) schema(reference sourcemapping.SchemaReference) (model
 	return c.descriptor(selectionKey(selection))
 }
 
-func (c *selectedClosure) mappingPackage(selection manifest.Artifact) (model.SourceMappingPackage, error) {
+func (c *selectedClosure) mappingPackage(selection artifact.Artifact) (model.SourceMappingPackage, error) {
 	mapping, err := c.descriptor(selectionKey(selection))
 	if err != nil {
 		return model.SourceMappingPackage{}, err

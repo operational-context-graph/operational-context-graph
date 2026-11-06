@@ -21,18 +21,48 @@ import (
 // origin supplies the fixed Registry origin used by artifact-validation fixtures.
 const origin = "https://registry.example.test"
 
+// TestArtifactMetadata checks byte exclusion, metadata preservation, and independent resource storage.
+func TestArtifactMetadata(t *testing.T) {
+	payload, program := []byte(`true`), []byte{0, 255}
+	item := Artifact{
+		Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnderSchemaVersion: "1.0.0", SchemaClass: SchemaClassEntity,
+		CanonicalURI: origin + "/v1/resources/schema/device/rev-1",
+		Payload:      descriptor(payload, SchemaMediaType, "schemas/device.json"), PayloadBytes: payload,
+		Resources: []Resource{
+			{Name: "program.bin", Role: ResourceRoleProgram, Descriptor: descriptor(program, "application/octet-stream", "resources/program.bin"), Bytes: program},
+		},
+		Dependencies: []Dependency{{Kind: KindContext, Type: "device-context", Revision: "ctx-1"}},
+		Extensions:   map[string]any{"org.example.note": "retained"},
+	}
+	expected := item
+	expected.PayloadBytes = nil
+	expected.Resources = append([]Resource(nil), item.Resources...)
+	expected.Resources[0].Bytes = nil
+	metadata := item.Metadata()
+	assert.Equal(t, expected, metadata)
+	assert.Equal(t, payload, item.PayloadBytes)
+	assert.Equal(t, program, item.Resources[0].Bytes)
+	metadata.Resources[0].BundlePath = "repacked/program.bin"
+	assert.Equal(t, "resources/program.bin", item.Resources[0].BundlePath)
+
+	for _, resources := range [][]Resource{nil, {}} {
+		metadata := (Artifact{Resources: resources}).Metadata()
+		assert.Equal(t, []Resource{}, metadata.Resources)
+	}
+}
+
 // TestArtifactValidation checks a valid boolean schema and rejection of an unsafe revision identifier.
 func TestArtifactValidation(t *testing.T) {
 	payload := []byte(`true`)
 	item := Artifact{
-		Kind:         KindSchema,
-		Type:         "device",
-		Revision:     "rev-1",
-		CreatedUnder: "1.0.0",
-		SchemaClass:  SchemaClassEntity,
-		CanonicalURI: origin + "/v1/resources/schema/device/rev-1",
-		Payload:      descriptor(payload, "application/schema+json", "bundles/device.json"),
-		PayloadBytes: payload,
+		Kind:                      KindSchema,
+		Type:                      "device",
+		Revision:                  "rev-1",
+		CreatedUnderSchemaVersion: "1.0.0",
+		SchemaClass:               SchemaClassEntity,
+		CanonicalURI:              origin + "/v1/resources/schema/device/rev-1",
+		Payload:                   descriptor(payload, "application/schema+json", "bundles/device.json"),
+		PayloadBytes:              payload,
 	}
 	require.NoError(t, item.Validate(origin))
 	require.NoError(t, item.ValidatePayloadFormat())
@@ -47,7 +77,7 @@ func TestResourceRoleRemainsExtensible(t *testing.T) {
 		t.Run(string(role), func(t *testing.T) {
 			payload := []byte(`true`)
 			item := Artifact{
-				Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnder: "1.0.0", SchemaClass: SchemaClassEntity,
+				Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnderSchemaVersion: "1.0.0", SchemaClass: SchemaClassEntity,
 				CanonicalURI: origin + "/v1/resources/schema/device/rev-1",
 				Payload:      descriptor(payload, SchemaMediaType, "schemas/device.json"), PayloadBytes: payload,
 				Resources: []Resource{
@@ -121,7 +151,7 @@ func TestValidDocumentURIByteBoundaries(t *testing.T) {
 func TestPayloadFormatFailsClosedForExternalReferences(t *testing.T) {
 	payload := []byte(`{"$ref":"https://example.test/unavailable"}`)
 	item := Artifact{
-		Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnder: "1.0.0", SchemaClass: SchemaClassEntity,
+		Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnderSchemaVersion: "1.0.0", SchemaClass: SchemaClassEntity,
 		CanonicalURI: origin + "/v1/resources/schema/device/rev-1", Payload: descriptor(payload, SchemaMediaType, "bundles/device.json"), PayloadBytes: payload,
 	}
 	assert.Error(t, item.ValidatePayloadFormat())
@@ -132,7 +162,7 @@ func TestPayloadFormatAcceptsCatalogOnlySchemaReference(t *testing.T) {
 	referenced := map[string]any{"type": "string"}
 	payload := []byte(`{"$ref":"https://example.test/catalog"}`)
 	item := Artifact{
-		Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnder: "1.0.0", SchemaClass: SchemaClassEntity,
+		Kind: KindSchema, Type: "device", Revision: "rev-1", CreatedUnderSchemaVersion: "1.0.0", SchemaClass: SchemaClassEntity,
 		CanonicalURI: origin + "/v1/resources/schema/device/rev-1", Payload: descriptor(payload, SchemaMediaType, "bundles/device.json"), PayloadBytes: payload,
 	}
 	require.NoError(t, item.ValidatePayloadFormatWithCatalog(map[string]any{"https://example.test/catalog": referenced}))
@@ -147,14 +177,14 @@ func descriptor(data []byte, mediaType, bundlePath string) Descriptor {
 // TestMultiProgramResourcesAndDistinctDependencies checks shared resource roles, unique identities, byte integrity, and descriptor bounds.
 func TestMultiProgramResourcesAndDistinctDependencies(t *testing.T) {
 	item := Artifact{
-		Kind:         KindSourceMapping,
-		Type:         "mapping",
-		Revision:     "mapping-r1",
-		CreatedUnder: "1.0.0",
-		TargetSchema: "1.0.0",
-		CanonicalURI: origin + "/v1/resources/source-mapping/mapping/mapping-r1",
-		PayloadBytes: []byte(`{}`),
-		Payload:      descriptor([]byte(`{}`), "application/json", "mapping/descriptor.json"),
+		Kind:                      KindSourceMapping,
+		Type:                      "mapping",
+		Revision:                  "mapping-r1",
+		CreatedUnderSchemaVersion: "1.0.0",
+		TargetSchema:              "1.0.0",
+		CanonicalURI:              origin + "/v1/resources/source-mapping/mapping/mapping-r1",
+		PayloadBytes:              []byte(`{}`),
+		Payload:                   descriptor([]byte(`{}`), "application/json", "mapping/descriptor.json"),
 		Resources: []Resource{
 			{Name: "condition.bin", Role: "program", Descriptor: descriptor(nil, "application/octet-stream", "mapping/condition.bin")},
 			{Name: "entity.bin", Role: "program", Descriptor: descriptor([]byte{0, 255}, "application/octet-stream", "mapping/entity.bin"), Bytes: []byte{0, 255}},

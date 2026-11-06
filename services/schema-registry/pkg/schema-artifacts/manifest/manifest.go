@@ -114,7 +114,7 @@ type Manifest struct {
 	// Source records the authoring repository and exact Git revision.
 	Source Source
 	// Artifacts selects one immutable revision per logical artifact identity.
-	Artifacts []Artifact
+	Artifacts []artifactmodel.Artifact
 	// SchemaContextBindings associates selected schema revisions with selected JSON-LD context revisions.
 	SchemaContextBindings []Binding
 	// URICatalog resolves exact document identifiers within the selected release closure.
@@ -143,32 +143,6 @@ type Source struct {
 	Repository string
 	// Commit pins the authoring revision using a lowercase Git SHA-1 or SHA-256 object identifier.
 	Commit string
-}
-
-// Artifact is a release selection. Bytes are supplied through Context, never JSON.
-type Artifact struct {
-	// Kind determines the selected artifact's format and conditional metadata requirements.
-	Kind artifactmodel.Kind
-	// Type identifies the case-sensitive logical artifact within Kind.
-	Type string
-	// Revision pins the selected immutable artifact revision.
-	Revision string
-	// CreatedUnderSchemaVersion records the release that first selects this revision.
-	CreatedUnderSchemaVersion string
-	// SchemaClass classifies schemas and remains empty for other artifact kinds.
-	SchemaClass artifactmodel.SchemaClass
-	// TargetSchema identifies the canonical release targeted by a source mapping; other kinds leave it empty.
-	TargetSchema string
-	// CanonicalURI identifies the immutable primary payload under the Registry origin.
-	CanonicalURI string
-	// Payload declares the exact primary payload bytes and their release-specific bundle location.
-	Payload artifactmodel.Descriptor
-	// Resources declares this revision's named resources without embedding their bytes in the manifest.
-	Resources []artifactmodel.Resource
-	// Dependencies pins external artifact references to exact revisions selected by this release.
-	Dependencies []artifactmodel.Dependency
-	// Extensions preserves publisher metadata bound to the selected immutable revision.
-	Extensions map[string]any
 }
 
 // Binding associates one selected schema revision with its selected JSON-LD contexts.
@@ -275,16 +249,6 @@ type StorageChange struct {
 	Impact Impact `json:"impact"`
 }
 
-// Key identifies one immutable artifact revision.
-type Key struct {
-	// Kind selects the immutable artifact's category.
-	Kind artifactmodel.Kind
-	// Type identifies the logical artifact within Kind.
-	Type string
-	// Revision pins the exact immutable revision.
-	Revision string
-}
-
 // Release records a previously validated manifest and its digest.
 type Release struct {
 	// Manifest contains the previously validated release selection and provenance.
@@ -299,7 +263,7 @@ type Context struct {
 	// RegistryOrigin supplies the absolute origin required by every selected artifact's canonical URI.
 	RegistryOrigin string
 	// Artifacts supplies exact payload and resource bytes keyed by immutable identity.
-	Artifacts map[Key]artifactmodel.Artifact
+	Artifacts map[artifactmodel.Dependency]artifactmodel.Artifact
 	// History lists validated predecessors oldest first, ending with the immediate predecessor.
 	History []Release
 }
@@ -393,10 +357,10 @@ func (m Manifest) Validate(context Context) error {
 	if err := m.validateLineage(context.History); err != nil {
 		return err
 	}
-	selected := make(map[Key]artifactmodel.Artifact, len(m.Artifacts))
-	byRevision := make(map[string]Artifact, len(m.Artifacts))
+	selected := make(map[artifactmodel.Dependency]artifactmodel.Artifact, len(m.Artifacts))
+	byRevision := make(map[string]artifactmodel.Artifact, len(m.Artifacts))
 	for _, selectedArtifact := range m.Artifacts {
-		key := Key{Kind: selectedArtifact.Kind, Type: selectedArtifact.Type, Revision: selectedArtifact.Revision}
+		key := artifactmodel.Dependency{Kind: selectedArtifact.Kind, Type: selectedArtifact.Type, Revision: selectedArtifact.Revision}
 		bound, ok := context.Artifacts[key]
 		if !ok {
 			return fmt.Errorf("%w: artifact %s/%s/%s bytes are unavailable", errInvalid, key.Kind, key.Type, key.Revision)
@@ -529,7 +493,7 @@ func (m Manifest) validateLineage(history []Release) error {
 }
 
 // validateReferences enforces unique selections, dependency closure, context bindings, URI ownership, and class-appropriate store placement.
-func (m Manifest) validateReferences(selected map[Key]artifactmodel.Artifact, revisions map[string]Artifact) error {
+func (m Manifest) validateReferences(selected map[artifactmodel.Dependency]artifactmodel.Artifact, revisions map[string]artifactmodel.Artifact) error {
 	logical := make(map[string]struct{}, len(m.Artifacts))
 	canonical := make(map[string]struct{}, len(m.Artifacts))
 	for _, item := range m.Artifacts {
@@ -543,7 +507,7 @@ func (m Manifest) validateReferences(selected map[Key]artifactmodel.Artifact, re
 		}
 		canonical[item.CanonicalURI] = struct{}{}
 		for _, dep := range item.Dependencies {
-			if _, ok := selected[Key{dep.Kind, dep.Type, dep.Revision}]; !ok {
+			if _, ok := selected[dep]; !ok {
 				return fmt.Errorf("%w: unresolved dependency", errInvalid)
 			}
 		}
@@ -596,7 +560,7 @@ func (m Manifest) validateReferences(selected map[Key]artifactmodel.Artifact, re
 		}
 	}
 	for _, item := range m.Artifacts {
-		bound := selected[Key{item.Kind, item.Type, item.Revision}]
+		bound := selected[artifactmodel.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}]
 		for _, required := range requiredURIs(bound) {
 			if _, ok := uris[required]; !ok {
 				return fmt.Errorf("%w: missing required URI catalog entry %q", errInvalid, required)
@@ -628,7 +592,7 @@ func (m Manifest) validateReferences(selected map[Key]artifactmodel.Artifact, re
 }
 
 // validateSourceMappings resolves selected mapping descriptors against the containing release and its supplied ancestors.
-func (m Manifest) validateSourceMappings(selected map[Key]artifactmodel.Artifact, context Context) error {
+func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]artifactmodel.Artifact, context Context) error {
 	schemas := make([]sourcemappingmodel.Schema, 0)
 	for _, item := range m.Artifacts {
 		if item.Kind == artifactmodel.KindSchema {
@@ -649,7 +613,7 @@ func (m Manifest) validateSourceMappings(selected map[Key]artifactmodel.Artifact
 	mappings := make([]artifactmodel.Artifact, 0)
 	for _, item := range m.Artifacts {
 		if item.Kind == artifactmodel.KindSourceMapping {
-			mappings = append(mappings, selected[Key{item.Kind, item.Type, item.Revision}])
+			mappings = append(mappings, selected[artifactmodel.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}])
 		}
 	}
 	_, err := sourcemappingmodel.ValidateRelease(mappings, sourcemappingmodel.ValidationContext{Version: m.SchemaVersion, Lineage: lineage})
@@ -739,8 +703,8 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 }
 
 // addedMappingImpact permits additive mappings only when their descriptor proves the source schema is newly introduced.
-func addedMappingImpact(before Manifest, added Artifact, context Context) Impact {
-	bound, ok := context.Artifacts[Key{Kind: added.Kind, Type: added.Type, Revision: added.Revision}]
+func addedMappingImpact(before Manifest, added artifactmodel.Artifact, context Context) Impact {
+	bound, ok := context.Artifacts[artifactmodel.Dependency{Kind: added.Kind, Type: added.Type, Revision: added.Revision}]
 	if !ok {
 		return ImpactBreaking
 	}
@@ -801,12 +765,12 @@ func parseSource(raw any) (Source, error) {
 }
 
 // parseArtifacts decodes bounded release selections and rejects unknown artifact fields before structural validation.
-func parseArtifacts(raw any) ([]Artifact, error) {
+func parseArtifacts(raw any) ([]artifactmodel.Artifact, error) {
 	values, err := array(raw, "artifacts")
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Artifact, 0, len(values))
+	result := make([]artifactmodel.Artifact, 0, len(values))
 	for _, value := range values {
 		object, ok := value.(map[string]any)
 		if !ok {
@@ -815,7 +779,7 @@ func parseArtifacts(raw any) ([]Artifact, error) {
 		if validationErr := strictjson.RejectUnknownFields(object, "kind", "artifactType", "artifactRevision", "createdUnderSchemaVersion", "schemaClass", "targetSchemaVersion", "canonicalUri", "payload", "resources", "dependencies", "extensions"); validationErr != nil {
 			return nil, validationErr
 		}
-		item := Artifact{}
+		item := artifactmodel.Artifact{}
 		if item.Kind, err = kind(object, "kind"); err != nil {
 			return nil, err
 		}
@@ -1397,7 +1361,7 @@ func validImpact(value Impact) bool {
 }
 
 // validateArtifact checks selection metadata and collection bounds without resolving or verifying the selected bytes.
-func validateArtifact(item Artifact) error {
+func validateArtifact(item artifactmodel.Artifact) error {
 	if !artifactmodel.ValidLogicalType(item.Type) || !artifactmodel.ValidRevision(item.Revision) || !artifactmodel.ValidVersion(item.CreatedUnderSchemaVersion) || !artifactmodel.ValidDocumentURI(item.CanonicalURI) {
 		return invalid("invalid artifact identity")
 	}
@@ -1448,49 +1412,18 @@ func validChangeShape(operation Operation, before, after string) bool {
 	return false
 }
 
-// matchesSelection compares manifest metadata with caller-supplied artifact metadata, excluding embedded resource bytes.
-func matchesSelection(selection Artifact, bound artifactmodel.Artifact) bool {
-	if selection.Kind != bound.Kind || selection.Type != bound.Type || selection.Revision != bound.Revision || selection.CreatedUnderSchemaVersion != bound.CreatedUnder || selection.SchemaClass != bound.SchemaClass || selection.TargetSchema != bound.TargetSchema || selection.CanonicalURI != bound.CanonicalURI || !reflect.DeepEqual(selection.Payload, bound.Payload) || !sameResources(selection.Resources, stripResourceBytes(bound.Resources)) || !sameDependencies(selection.Dependencies, bound.Dependencies) || !sameExtensions(selection.Extensions, bound.Extensions) {
+// matchesSelection compares shared revision metadata without caller-supplied bytes.
+func matchesSelection(selection, bound artifactmodel.Artifact) bool {
+	if !slices.Equal(selection.Dependencies, bound.Dependencies) {
 		return false
 	}
-	return true
-}
-
-// sameResources compares ordered resource values, including the distinction between nil and empty slices.
-func sameResources(left, right []artifactmodel.Resource) bool {
-	return len(left) == len(right) && reflect.DeepEqual(left, right)
-}
-
-// sameDependencies compares ordered dependency identities while treating nil and empty slices as equal.
-func sameDependencies(left, right []artifactmodel.Dependency) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
-// sameExtensions deeply compares extension keys, values, and nil-map representation.
-func sameExtensions(left, right map[string]any) bool {
-	return len(left) == len(right) && reflect.DeepEqual(left, right)
-}
-
-// stripResourceBytes copies resource descriptors and clears bytes without modifying the caller's resource slice.
-func stripResourceBytes(resources []artifactmodel.Resource) []artifactmodel.Resource {
-	result := make([]artifactmodel.Resource, len(resources))
-	copy(result, resources)
-	for index := range result {
-		result[index].Bytes = nil
-	}
-	return result
+	selection, bound = selection.Metadata(), bound.Metadata()
+	selection.Dependencies, bound.Dependencies = nil, nil
+	return reflect.DeepEqual(selection, bound)
 }
 
 // immutableReuse rejects changed revision metadata, reassigned canonical identifiers, and reuse of retired logical identities.
-func immutableReuse(selection Artifact, history []Release) error {
+func immutableReuse(selection artifactmodel.Artifact, history []Release) error {
 	seenIdentity, retired := false, false
 	for _, release := range history {
 		present := false
@@ -1517,9 +1450,9 @@ func immutableReuse(selection Artifact, history []Release) error {
 }
 
 // revisionBoundSelection copies selection metadata while removing release-specific payload and resource bundle paths.
-func revisionBoundSelection(value Artifact) Artifact {
+func revisionBoundSelection(value artifactmodel.Artifact) artifactmodel.Artifact {
+	value = value.Metadata()
 	value.Payload.BundlePath = ""
-	value.Resources = append([]artifactmodel.Resource(nil), value.Resources...)
 	for index := range value.Resources {
 		value.Resources[index].BundlePath = ""
 	}
@@ -1527,7 +1460,7 @@ func revisionBoundSelection(value Artifact) Artifact {
 }
 
 // validateCreatedUnder preserves a reused revision's creation release and binds new revisions to the containing release.
-func validateCreatedUnder(selection Artifact, version string, history []Release) error {
+func validateCreatedUnder(selection artifactmodel.Artifact, version string, history []Release) error {
 	for _, release := range history {
 		for _, prior := range release.Manifest.Artifacts {
 			if prior.Kind == selection.Kind && prior.Type == selection.Type && prior.Revision == selection.Revision {
@@ -1545,17 +1478,17 @@ func validateCreatedUnder(selection Artifact, version string, history []Release)
 }
 
 // findSelected looks up a selected artifact by its kind and case-sensitive logical type.
-func findSelected(items []Artifact, kind artifactmodel.Kind, artifactType string) (Artifact, bool) {
+func findSelected(items []artifactmodel.Artifact, kind artifactmodel.Kind, artifactType string) (artifactmodel.Artifact, bool) {
 	for _, item := range items {
 		if item.Kind == kind && item.Type == artifactType {
 			return item, true
 		}
 	}
-	return Artifact{}, false
+	return artifactmodel.Artifact{}, false
 }
 
 // hasResource reports whether the selection declares an owned resource with the exact requested name.
-func hasResource(item Artifact, name string) bool {
+func hasResource(item artifactmodel.Artifact, name string) bool {
 	for _, resource := range item.Resources {
 		if resource.Name == name {
 			return true
@@ -1596,7 +1529,7 @@ func requiredURIs(item artifactmodel.Artifact) []string {
 
 // validateOrder checks strict UTF-16 lexical ordering for artifact, resource, catalog, binding, and change collections.
 func (m Manifest) validateOrder() error {
-	if !sorted(m.Artifacts, func(left, right Artifact) int {
+	if !sorted(m.Artifacts, func(left, right artifactmodel.Artifact) int {
 		return compareMany(string(left.Kind), left.Type, string(right.Kind), right.Type)
 	}) {
 		return invalid("artifacts are not ordered")
@@ -1685,8 +1618,8 @@ func compareUTF16[T ~string](left, right T) int {
 }
 
 // artifactMap indexes selected artifacts by kind and logical type using an unambiguous separator.
-func artifactMap(manifest Manifest) map[string]Artifact {
-	result := make(map[string]Artifact, len(manifest.Artifacts))
+func artifactMap(manifest Manifest) map[string]artifactmodel.Artifact {
+	result := make(map[string]artifactmodel.Artifact, len(manifest.Artifacts))
 	for _, item := range manifest.Artifacts {
 		result[string(item.Kind)+"\x00"+item.Type] = item
 	}
@@ -1694,7 +1627,7 @@ func artifactMap(manifest Manifest) map[string]Artifact {
 }
 
 // unionKeys returns the distinct logical artifact keys from both maps in canonical lexical order.
-func unionKeys(left, right map[string]Artifact) []string {
+func unionKeys(left, right map[string]artifactmodel.Artifact) []string {
 	values := make([]string, 0, len(left)+len(right))
 	seen := make(map[string]struct{}, len(left)+len(right))
 	for key := range left {
@@ -1711,12 +1644,12 @@ func unionKeys(left, right map[string]Artifact) []string {
 }
 
 // annotationOnly proves both schema payloads differ only in allowed annotations and preserve comparison-relevant artifact relations.
-func annotationOnly(before, after Artifact, context Context) bool {
-	left, ok := context.Artifacts[Key{before.Kind, before.Type, before.Revision}]
+func annotationOnly(before, after artifactmodel.Artifact, context Context) bool {
+	left, ok := context.Artifacts[artifactmodel.Dependency{Kind: before.Kind, Type: before.Type, Revision: before.Revision}]
 	if !ok {
 		return false
 	}
-	right, ok := context.Artifacts[Key{after.Kind, after.Type, after.Revision}]
+	right, ok := context.Artifacts[artifactmodel.Dependency{Kind: after.Kind, Type: after.Type, Revision: after.Revision}]
 	if !ok {
 		return false
 	}
@@ -1735,13 +1668,15 @@ func annotationOnly(before, after Artifact, context Context) bool {
 }
 
 // sameSchemaRelations compares schema metadata after excluding revisions, creation releases, payloads, canonical identifiers, and additional resources.
-func sameSchemaRelations(left, right Artifact) bool {
+func sameSchemaRelations(left, right artifactmodel.Artifact) bool {
 	left.Revision = ""
 	right.Revision = ""
 	left.CreatedUnderSchemaVersion = ""
 	right.CreatedUnderSchemaVersion = ""
 	left.Payload = artifactmodel.Descriptor{}
 	right.Payload = artifactmodel.Descriptor{}
+	left.PayloadBytes = nil
+	right.PayloadBytes = nil
 	left.CanonicalURI = ""
 	right.CanonicalURI = ""
 	left.Resources = nil
