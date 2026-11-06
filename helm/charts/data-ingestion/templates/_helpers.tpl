@@ -38,7 +38,7 @@ app.kubernetes.io/name: {{ include "data-ingestion.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{/* Image reference — prefers digest over tag when both are set. */}}
+{{/* Image reference (prefers digest over tag when both are set.) */}}
 {{- define "data-ingestion.image" -}}
 {{- if .Values.image.digest -}}
 {{ .Values.image.repository }}@{{ .Values.image.digest }}

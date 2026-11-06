@@ -4,7 +4,7 @@ replicaCount: 3
 
 image:
   repository: ghcr.io/operational-context-graph/telemetry-store
-  tag: "0.1.0"
+  tag: "0.0.1"
   digest: ""
   pullPolicy: IfNotPresent
 
@@ -44,7 +44,7 @@ env:
   HTTP_PORT: "8080"
   LOG_LEVEL: "info"
   # replication_num: 3 for production.
-  # Override to "1" in values.local.yaml for a single-BE dev cluster.
+  # Override to "1" for a single-BE dev cluster.
   DORIS_REPLICATION_NUM: "3"
   DORIS_BUCKETS: "10"
 

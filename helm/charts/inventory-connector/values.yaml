@@ -1,9 +1,11 @@
-# Default values for the inventory-connector subchart.
 enabled: true
+
+nameOverride: ""
+fullnameOverride: ""
 
 image:
   repository: ghcr.io/operational-context-graph/inventory-connector
-  tag: "0.1.0"
+  tag: "0.0.1"
   digest: ""
   pullPolicy: IfNotPresent
 
@@ -19,11 +21,12 @@ grpc:
   connectorID: "ocg-inventory-connector"
 
 connector:
-  schemaVersion: "0.1.0"
-  # artifactTypes overrides the default endpoint→artifact-type mapping.
+  schemaVersion: "0.0.1"
+  # artifactTypes overrides the default endpoint artifact-type mapping.
   # Keys are NetBox endpoint paths (e.g. "dcim/devices/"), values are type names
-  # (e.g. "netbox.Device"). Omit to use built-in defaults for all endpoints.
+  # (e.g. "netbox.Device").
   artifactTypes: {}
+  // TODO: Refactor this once the inventory connector supports dynamic endpoint discovery.
   endpoints:
     - "dcim/cable-terminations/"
     - "dcim/cables/"
@@ -92,8 +95,8 @@ connector:
 
 # tls configures mTLS for the gRPC connection.
 # Set enabled: true and provide a secretName referencing a Secret with:
-#   tls.crt  — client certificate PEM
-#   tls.key  — client private key PEM
+#   tls.crt: client certificate PEM
+#   tls.key: client private key PEM
 tls:
   enabled: false
   secretName: ""
@@ -110,6 +113,3 @@ securityContext:
   capabilities:
     drop:
       - ALL
-
-nameOverride: ""
-fullnameOverride: ""

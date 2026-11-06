@@ -1,6 +1,8 @@
-# Default values for the otelcol subchart.
 enabled: true
 replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
 
 image:
   repository: otel/opentelemetry-collector
@@ -31,6 +33,3 @@ securityContext:
 dataIngestionEndpoint: "ocg-data-ingestion:9090"
 
 resources: {}
-
-nameOverride: ""
-fullnameOverride: ""

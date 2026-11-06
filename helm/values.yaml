@@ -30,7 +30,7 @@ data-ingestion:
   replicaCount: 1
   image:
     repository: ghcr.io/operational-context-graph/data-ingestion
-    tag: "0.1.0"
+    tag: "0.0.1"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -50,12 +50,11 @@ data-ingestion:
   inventoryStore:
     baseURL: "http://ocg-inventory-store:8080"
 
-
 telemetry-store:
   enabled: true
   replicaCount: 3
   env:
-    # Set to "1" in values.local.yaml for a single-BE dev cluster.
+    # Set to "1" for a single-BE dev cluster.
     DORIS_REPLICATION_NUM: "3"
 
 doris:
@@ -122,10 +121,10 @@ inventory-connector:
   enabled: true
   image:
     repository: ghcr.io/operational-context-graph/inventory-connector
-    tag: "0.1.0"
+    tag: "0.0.1"
     pullPolicy: IfNotPresent
   netbox:
-    # Required: no default. Must be provided per environment, e.g. in values.local.yaml.
+    # Required baseUrl: no default. Must be provided per environment or templating.
     # baseURL: "http://your-netbox"
     tokenSecret:
       name: "netbox-token"
@@ -134,7 +133,7 @@ inventory-connector:
     endpoint: "ocg-data-ingestion:9090"
     connectorID: "ocg-inventory-connector"
   connector:
-    schemaVersion: "0.1.0"
+    schemaVersion: "0.0.1"
     endpoints:
       - "dcim/devices/"
 
