@@ -18,4 +18,5 @@ data:
     JAVA_OPTS_FOR_JDK_17 = "{{ .Values.feSpec.config.javaOpts }}"
     query_timeout = {{ .Values.feSpec.config.queryTimeout }}
     stream_load_default_timeout_second = {{ .Values.feSpec.config.streamLoadTimeout }}
+    enable_fqdn_mode = {{ .Values.feSpec.config.enableFqdnMode }}
 {{- end }}

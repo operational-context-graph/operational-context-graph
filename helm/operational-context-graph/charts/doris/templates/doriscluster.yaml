@@ -10,6 +10,7 @@ metadata:
 spec:
   feSpec:
     replicas: {{ .Values.feSpec.replicas }}
+    electionNumber: {{ .Values.feSpec.electionNumber }}
     image: {{ .Values.feSpec.image }}
     requests:
       cpu: {{ .Values.feSpec.requests.cpu | quote }}

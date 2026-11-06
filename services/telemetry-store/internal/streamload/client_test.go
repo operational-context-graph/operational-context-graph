@@ -120,7 +120,7 @@ func TestLoad_SetsCorrectHeaders(t *testing.T) {
 	assert.Equal(t, "json", capturedReq.Header.Get("format"))
 	assert.Equal(t, "true", capturedReq.Header.Get("read_json_by_line"))
 	assert.Equal(t, "false", capturedReq.Header.Get("strip_outer_array"))
-	assert.Empty(t, capturedReq.Header.Get("load_to_single_tablet"), "must not be set: HASH bucketing does not support it (SDD §4.2)")
+	assert.Empty(t, capturedReq.Header.Get("load_to_single_tablet"), "must not be set: HASH bucketing does not support it")
 	assert.Equal(t, "my-label", capturedReq.Header.Get("label"))
 	assert.Contains(t, capturedReq.Header.Get("Authorization"), "Basic ")
 }
