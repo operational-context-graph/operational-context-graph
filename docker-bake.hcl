@@ -34,9 +34,9 @@ variable "VERSION" {
 target "_base" {
   context = "."
   args = {
-    GO_IMAGE        = GO_IMAGE
+    GO_IMAGE         = GO_IMAGE
     DISTROLESS_IMAGE = DISTROLESS_IMAGE
-    VERSION         = VERSION
+    VERSION          = VERSION
   }
   labels = {
     "org.opencontainers.image.source" = "https://github.com/operational-context-graph/operational-context-graph"
