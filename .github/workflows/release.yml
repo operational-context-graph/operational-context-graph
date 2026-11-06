@@ -1,0 +1,325 @@
+name: Release
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_type: ${{ steps.parse.outputs.release_type }}
+      component: ${{ steps.parse.outputs.component }}
+      version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
+      slug: ${{ steps.parse.outputs.slug }}
+      has_dockerfile: ${{ steps.parse.outputs.has_dockerfile }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Parse merge source branch
+        id: parse
+        run: |
+          # Extract the source branch from the merge commit subject.
+          # Format: "Merge pull request #N from <branch>"
+          SOURCE_BRANCH=$(git log -1 --pretty=%s \
+            | sed -n 's/.*Merge pull request #[0-9]* from \([^ ]*\).*/\1/p' || true)
+          echo "SOURCE_BRANCH=$SOURCE_BRANCH"
+          scripts/parse-release-branch.sh "${SOURCE_BRANCH:-}"
+
+  # Component release
+  #
+  # Runs when a release/<slug>/<version> branch is merged.
+  # Gate: release_type == 'component'
+  # ---
+  tag-component:
+    name: Tag Component
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.release_type == 'component'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Push component tag
+        run: |
+          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+          git tag -a "${{ needs.detect.outputs.tag }}" \
+            -m "chore(release): ${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
+          git push origin "${{ needs.detect.outputs.tag }}"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.release_type == 'component'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize Go workspace
+        run: make init
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+
+      - name: Build
+        run: make build TARGET=${{ needs.detect.outputs.slug }}
+
+      - name: Test
+        run: make test TARGET=${{ needs.detect.outputs.slug }}
+
+  publish-container:
+    name: Build and Push Container
+    runs-on: ubuntu-latest
+    needs: [detect, tag-component, build]
+    if: needs.detect.outputs.release_type == 'component' && needs.detect.outputs.has_dockerfile == 'true'
+    permissions:
+      contents: read
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # TODO: set up QEMU and docker/buildx for multi-arch if needed (resolve target archs: amd64 only vs amd64+arm64)
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-packages: write
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ steps.app-token.outputs.app-slug }}
+          password: ${{ steps.app-token.outputs.token }}
+
+      - name: Build and push container image
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ${{ needs.detect.outputs.component }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}-${{ github.sha }}
+
+  attest:
+    name: Attest Build Provenance
+    runs-on: ubuntu-latest
+    needs: [detect, publish-container]
+    if: needs.detect.outputs.release_type == 'component' && needs.detect.outputs.has_dockerfile == 'true'
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}
+          subject-digest: ${{ needs.publish-container.outputs.digest }}
+          push-to-registry: true
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    needs: [detect, publish-container]
+    if: needs.detect.outputs.release_type == 'component' && needs.detect.outputs.has_dockerfile == 'true'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0.18.0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}@${{ needs.publish-container.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+          artifact-name: sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
+
+  github-release-component:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [detect, tag-component, attest, sbom]
+    if: needs.detect.outputs.release_type == 'component'
+    permissions:
+      contents: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: git-cliff@2.14.2
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          NOTES=$(git cliff \
+            --include-path "${{ needs.detect.outputs.component }}/**" \
+            --tag "${{ needs.detect.outputs.tag }}" \
+            --unreleased \
+            --strip all)
+          gh release create "${{ needs.detect.outputs.tag }}" \
+            --title "${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}" \
+            --notes "$NOTES" \
+            sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
+
+  # ── System release ───────────────────────────────────────────────────────────
+  #
+  # Runs when a release/<version> branch is merged.
+  # Gate: release_type == 'system'
+
+  tag-system:
+    name: Tag System Release
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Push system tag
+        run: |
+          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+          git tag -a "v${{ needs.detect.outputs.version }}" \
+            -m "chore(release): system v${{ needs.detect.outputs.version }}"
+          git push origin "v${{ needs.detect.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  ocm:
+    name: Update OCM Descriptor
+    runs-on: ubuntu-latest
+    needs: [detect, tag-system]
+    if: needs.detect.outputs.release_type == 'system'
+    steps:
+      # TODO: resolve OCM registry endpoint and credentials (repo secret names TBD with architects)
+      # TODO: resolve signing approach (keyless Sigstore OIDC vs managed key in Vault)
+      # TODO: build OCM component descriptor from version matrix in CHANGELOG.md
+      # TODO: sign descriptor with cosign
+      # TODO: push descriptor to OCM registry
+      - name: Update OCM descriptor
+        run: echo "TODO"
+
+  sbom-system:
+    name: Generate System SBOM
+    runs-on: ubuntu-latest
+    needs: [detect, tag-system]
+    if: needs.detect.outputs.release_type == 'system'
+    steps:
+      # TODO: aggregate per-component SPDX documents into a system-level SPDX document
+      # Per-component SBOMs are attached to each component GitHub Release
+      - name: Generate system SBOM
+        run: echo "TODO"
+
+  github-release-system:
+    name: Create System GitHub Release
+    runs-on: ubuntu-latest
+    needs: [detect, tag-system, ocm, sbom-system]
+    if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Release notes are the version matrix from CHANGELOG.md for this version
+          NOTES=$(awk '/^## \[${{ needs.detect.outputs.version }}\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
+          gh release create "v${{ needs.detect.outputs.version }}" \
+            --title "system v${{ needs.detect.outputs.version }}" \
+            --notes "$NOTES"
+          # TODO: attach system SBOM artifact from sbom-system job
