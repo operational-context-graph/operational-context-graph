@@ -24,10 +24,9 @@ dorisSecretName: telemetry-store-doris-secret
 # The Secret must be created before installing this chart.
 dorisReadSecretName: telemetry-store-doris-read-secret
 
-# Name of the pre-existing Kubernetes Secret holding the Doris root password for the migration init container.
-# The secret must provide DORIS_MIGRATE_PASSWORD — the Doris root password used by the mysql:8 init container.
-# Leave DORIS_MIGRATE_PASSWORD empty before the first BE registers; set it once the cluster is up.
-# The migration init container runs before the service container starts.
+# Name of the pre-existing Kubernetes Secret holding the Doris DSN for the
+# migration init container. The secret must provide DORIS_MIGRATE_DSN — the
+# full DSN used by the custom migration runner.
 # The Secret must be created before installing this chart.
 dorisMigratorSecretName: telemetry-store-doris-ddl-secret
 
