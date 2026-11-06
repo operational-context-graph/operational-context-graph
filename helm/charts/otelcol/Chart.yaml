@@ -1,0 +1,6 @@
+apiVersion: v2
+name: otelcol
+description: Subchart for the OpenTelemetry Collector (OTLP HTTP receiver → OTLP gRPC exporter)
+type: application
+version: 0.0.1
+appVersion: "0.115.0"
