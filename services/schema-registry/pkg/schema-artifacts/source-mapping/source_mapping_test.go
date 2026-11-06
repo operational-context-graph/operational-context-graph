@@ -183,6 +183,11 @@ func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 		name   string
 		mutate func(*artifact.Artifact, *ValidationContext)
 	}{
+		{"wrong artifact kind", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Kind = artifact.KindSchema }},
+		{"invalid artifact revision", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Revision = ".." }},
+		{"wrong descriptor media type", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Payload.MediaType = "application/json" }},
+		{"descriptor byte mismatch", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Payload.Size++ }},
+		{"descriptor identity differs", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Type = "other-mapping" }},
 		{"missing program", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Resources = nil }},
 		{"referenced non-program resource", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Resources[0].Role = "metadata" }},
 		{"duplicate program", func(mapping *artifact.Artifact, _ *ValidationContext) {
@@ -191,6 +196,14 @@ func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 		{"program name differs", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Resources[0].Name = "other.bin" }},
 		{"program bytes differ", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Resources[0].Bytes = []byte("changed") }},
 		{"source dependency differs", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Dependencies[0].Revision = "other" }},
+		{"missing target dependency", func(mapping *artifact.Artifact, _ *ValidationContext) {
+			mapping.Dependencies = mapping.Dependencies[:1]
+		}},
+		{"duplicate dependency", func(mapping *artifact.Artifact, _ *ValidationContext) {
+			mapping.Dependencies = append(mapping.Dependencies, mapping.Dependencies[0])
+		}},
+		{"invalid dependency type", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Dependencies[0].Type = "Invalid" }},
+		{"unsupported dependency kind", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.Dependencies[0].Kind = "unknown" }},
 		{"target target-version differs", func(mapping *artifact.Artifact, _ *ValidationContext) { mapping.TargetSchema = "9.0.0" }},
 		{"target is source record", func(_ *artifact.Artifact, context *ValidationContext) {
 			context.Lineage[0].Schemas[1].Class = artifact.SchemaClassSource
@@ -206,6 +219,114 @@ func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 			test.mutate(&mapping, &context)
 			_, err := Validate(mapping, context)
 			assert.Error(t, err)
+		})
+	}
+}
+
+// TestParseMetadataFailures exercises descriptor, engine, source selector, and condition validation without integrity mismatches.
+func TestParseMetadataFailures(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+		want   string
+	}{
+		{"missing schema", func(d map[string]any) { delete(d, "$schema") }, "$schema must be"},
+		{"relative schema", func(d map[string]any) { d["$schema"] = "/schema" }, "$schema must be an immutable absolute URI"},
+		{"missing id", func(d map[string]any) { delete(d, "id") }, "id must be"},
+		{"invalid id", func(d map[string]any) { d["id"] = "Invalid" }, "invalid schema reference"},
+		{"missing engine", func(d map[string]any) { delete(d, "engine") }, "engine must be an object"},
+		{"unknown engine field", func(d map[string]any) { d["engine"].(map[string]any)["unknown"] = true }, "engine fields"},
+		{"missing language", func(d map[string]any) { delete(d["engine"].(map[string]any), "language") }, "language must be"},
+		{"missing language version", func(d map[string]any) { delete(d["engine"].(map[string]any), "languageVersion") }, "languageVersion must be"},
+		{"missing profile", func(d map[string]any) { delete(d["engine"].(map[string]any), "executionProfile") }, "executionProfile must be"},
+		{"oversized language", func(d map[string]any) { d["engine"].(map[string]any)["language"] = strings.Repeat("é", 128) }, "invalid engine metadata"},
+		{"oversized profile", func(d map[string]any) {
+			d["engine"].(map[string]any)["executionProfile"] = strings.Repeat("a", schemaartifacts.MaxIdentifierBytes+1)
+		}, "invalid engine metadata"},
+		{"invalid language version", func(d map[string]any) { d["engine"].(map[string]any)["languageVersion"] = "1.0" }, "invalid engine metadata"},
+		{"unknown source field", func(d map[string]any) { d["sourceSchema"].(map[string]any)["unknown"] = true }, "sourceSchema fields"},
+		{"missing source id", func(d map[string]any) { delete(d["sourceSchema"].(map[string]any), "id") }, "sourceSchema: "},
+		{"invalid source id", func(d map[string]any) { d["sourceSchema"].(map[string]any)["id"] = "Invalid" }, "invalid schema reference"},
+		{"null revision", func(d map[string]any) { d["sourceSchema"].(map[string]any)["revision"] = nil }, "revision must be"},
+		{"null version", func(d map[string]any) { d["sourceSchema"] = map[string]any{"id": "source", "version": nil} }, "version must be"},
+		{"invalid condition", func(d map[string]any) {
+			d["programs"].(map[string]any)["condition"] = map[string]any{"programRef": "../program", "programDigest": "sha-256:" + strings.Repeat("0", 64)}
+		}, "invalid condition reference"},
+		{"missing condition digest", func(d map[string]any) {
+			d["programs"].(map[string]any)["condition"] = map[string]any{"programRef": "program.bin"}
+		}, "programDigest must be"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mapping, _ := validMapping(t, nil)
+			rewriteDescriptor(t, &mapping, test.mutate)
+			_, err := Parse(mapping.PayloadBytes)
+			require.ErrorContains(t, err, test.want)
+		})
+	}
+}
+
+// TestValidateReleaseSelectors checks containing-release agreement and source and target resolution through ancestors.
+func TestValidateReleaseSelectors(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*artifact.Artifact, *ValidationContext)
+		want   string
+	}{
+		{"invalid version", func(_ *artifact.Artifact, c *ValidationContext) { c.Version = "2.0" }, "invalid containing release context"},
+		{"missing lineage", func(_ *artifact.Artifact, c *ValidationContext) { c.Lineage = nil }, "invalid containing release context"},
+		{"wrong first release", func(_ *artifact.Artifact, c *ValidationContext) { c.Version = "1.0.0" }, "invalid containing release context"},
+		{"invalid ancestor", func(_ *artifact.Artifact, c *ValidationContext) {
+			c.Lineage = append(c.Lineage, Release{Version: "bad"})
+		}, "invalid lineage version"},
+		{"duplicate ancestor", func(_ *artifact.Artifact, c *ValidationContext) { c.Lineage = append(c.Lineage, c.Lineage[0]) }, "duplicate lineage version"},
+		{"source revision missing", func(_ *artifact.Artifact, c *ValidationContext) { c.Lineage[0].Schemas[0].Revision = "other" }, "source schema revision is not selected"},
+		{"source at current version", func(m *artifact.Artifact, _ *ValidationContext) {
+			rewriteDescriptor(t, m, func(d map[string]any) { d["sourceSchema"] = map[string]any{"id": "source", "version": "2.0.0"} })
+		}, ""},
+		{"source at ancestor", func(m *artifact.Artifact, c *ValidationContext) {
+			rewriteDescriptor(t, m, func(d map[string]any) { d["sourceSchema"] = map[string]any{"id": "source", "version": "1.0.0"} })
+			c.Lineage = append(c.Lineage, Release{Version: "1.0.0", Schemas: []Schema{c.Lineage[0].Schemas[0]}})
+		}, ""},
+		{"source absent at version", func(m *artifact.Artifact, _ *ValidationContext) {
+			rewriteDescriptor(t, m, func(d map[string]any) { d["sourceSchema"] = map[string]any{"id": "missing", "version": "2.0.0"} })
+		}, "source schema version does not select schema"},
+		{"source changed since ancestor", func(m *artifact.Artifact, c *ValidationContext) {
+			rewriteDescriptor(t, m, func(d map[string]any) { d["sourceSchema"] = map[string]any{"id": "source", "version": "1.0.0"} })
+			c.Lineage = append(c.Lineage, Release{Version: "1.0.0", Schemas: []Schema{{Type: "source", Revision: "old-source"}}})
+		}, "source schema revision differs in containing release"},
+		{"target revision differs", func(m *artifact.Artifact, _ *ValidationContext) {
+			rewriteDescriptor(t, m, func(d map[string]any) {
+				d["programs"].(map[string]any)["transformations"].([]any)[0].(map[string]any)["targetSchema"] = map[string]any{"id": "target", "revision": "old-target"}
+			})
+		}, "target revision differs at target schema version"},
+		{"target version absent", func(m *artifact.Artifact, _ *ValidationContext) {
+			m.TargetSchema = "1.0.0"
+			rewriteDescriptor(t, m, func(d map[string]any) {
+				d["programs"].(map[string]any)["transformations"].([]any)[0].(map[string]any)["targetSchema"] = map[string]any{"id": "target", "version": "1.0.0"}
+			})
+		}, "target schema version is not in lineage"},
+		{"target changed since ancestor", func(m *artifact.Artifact, c *ValidationContext) {
+			m.TargetSchema = "1.0.0"
+			rewriteDescriptor(t, m, func(d map[string]any) {
+				d["programs"].(map[string]any)["transformations"].([]any)[0].(map[string]any)["targetSchema"] = map[string]any{"id": "target", "version": "1.0.0"}
+			})
+			c.Lineage = append(c.Lineage, Release{Version: "1.0.0", Schemas: []Schema{{Type: "target", Revision: "old-target", Class: artifact.SchemaClassEntity}}})
+		}, "target schema revision differs in containing release"},
+		{"identifier output", func(_ *artifact.Artifact, c *ValidationContext) {
+			c.Lineage[0].Schemas[1].Class = artifact.SchemaClassIdentifier
+		}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mapping, context := validMapping(t, nil)
+			test.mutate(&mapping, &context)
+			result, err := Validate(mapping, context)
+			if test.want == "" {
+				require.NoError(t, err)
+				assert.Equal(t, context.Lineage[0].Schemas[0], result.Source)
+				assert.Equal(t, context.Lineage[0].Schemas[1], result.Transformations[0].Target)
+			} else {
+				require.ErrorContains(t, err, test.want)
+			}
 		})
 	}
 }

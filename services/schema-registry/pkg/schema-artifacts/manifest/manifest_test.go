@@ -184,32 +184,171 @@ func TestConformanceCorpusNamesStableValidationOutcomes(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsClosureAndImmutableReuseFailures checks missing catalog entries, changed revision metadata, creation releases, and unresolved targets.
+// TestValidateRejectsClosureAndImmutableReuseFailures checks closure failures without unrelated lineage or metadata errors.
 func TestValidateRejectsClosureAndImmutableReuseFailures(t *testing.T) {
-	data := fixture(t, "valid-initial.json")
-	current, err := Parse(data)
+	for _, test := range []struct {
+		name   string
+		mutate func(*Manifest, *Context)
+		want   string
+	}{
+		{"missing origin", func(_ *Manifest, c *Context) { c.RegistryOrigin = "" }, "registry origin is required"},
+		{"missing bytes", func(_ *Manifest, c *Context) { c.Artifacts = nil }, "bytes are unavailable"},
+		{"metadata mismatch", func(m *Manifest, _ *Context) { m.Artifacts[1].Extensions = nil }, "differs from immutable bytes"},
+		{"corrupt payload", func(m *Manifest, c *Context) {
+			key := artifact.Dependency{Kind: m.Artifacts[1].Kind, Type: m.Artifacts[1].Type, Revision: m.Artifacts[1].Revision}
+			bound := c.Artifacts[key]
+			bound.PayloadBytes = []byte("TRUE")
+			c.Artifacts[key] = bound
+		}, "descriptor digest does not match bytes"},
+		{"missing canonical URI", func(m *Manifest, _ *Context) { m.URICatalog = m.URICatalog[:2] }, "missing canonical URI catalog entry"},
+		{"unknown URI target", func(m *Manifest, _ *Context) { m.URICatalog[0].ArtifactRevision = "missing" }, "URI target is unresolved"},
+		{"unknown resource", func(m *Manifest, _ *Context) { m.URICatalog[0].Resource = "missing.txt" }, "URI resource target is unresolved"},
+		{"canonical URI target", func(m *Manifest, _ *Context) { m.URICatalog[2].ArtifactRevision = "ctx-1" }, "canonical URI must resolve to its artifact payload"},
+		{"canonical URI resource", func(m *Manifest, _ *Context) { m.URICatalog[2].Resource = "note.txt" }, "canonical URI must resolve to its artifact payload"},
+		{"binding schema", func(m *Manifest, _ *Context) { m.SchemaContextBindings[0].SchemaRevision = "ctx-1" }, "binding schema is unresolved"},
+		{"binding context", func(m *Manifest, _ *Context) { m.SchemaContextBindings[0].ContextRevisions = []string{"rev-1"} }, "binding context is unresolved"},
+		{"missing placement", func(m *Manifest, _ *Context) { m.StorageCatalog = nil }, "schema storage placement does not agree with class"},
+		{"unknown placement", func(m *Manifest, _ *Context) { m.StorageCatalog[0].ArtifactType = "missing" }, "invalid schema storage placement"},
+		{"unresolved dependency", func(m *Manifest, c *Context) {
+			changeBoundSchema(m, c, func(a *artifact.Artifact) {
+				a.Dependencies = append(a.Dependencies, artifact.Dependency{Kind: artifact.KindSchema, Type: "missing", Revision: "missing-r1"})
+			})
+		}, "unresolved dependency"},
+		{"wrong creation release", func(m *Manifest, c *Context) {
+			changeBoundSchema(m, c, func(a *artifact.Artifact) { a.CreatedUnderSchemaVersion = "0.9.0" })
+		}, "first selected revision must be created under this release"},
+		{"source record placement", func(m *Manifest, c *Context) {
+			changeBoundSchema(m, c, func(a *artifact.Artifact) { a.SchemaClass = artifact.SchemaClassSource })
+		}, "invalid schema storage placement"},
+		{"missing payload id", func(m *Manifest, c *Context) {
+			changeBoundSchema(m, c, func(a *artifact.Artifact) {
+				a.PayloadBytes = []byte(`{"$id":"https://example.test/device","type":"object"}`)
+				a.Payload = descriptor(a.PayloadBytes, artifact.SchemaMediaType, a.Payload.BundlePath)
+			})
+		}, "missing required URI catalog entry"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			current, context := populatedRelease(t)
+			require.NoError(t, current.Validate(context))
+			test.mutate(&current, &context)
+			err := current.Validate(context)
+			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorContains(t, err, test.want)
+		})
+	}
+}
+
+// populatedRelease supplies exact bytes for a manifest with contexts, resources, dependencies, and bindings.
+func populatedRelease(t *testing.T) (Manifest, Context) {
+	t.Helper()
+	document := populatedDocument(t)
+	document["previousRelease"] = nil
+	delete(document, "changes")
+	m, err := Parse(canonicalDocument(t, document))
 	require.NoError(t, err)
-	context := contextFor(current)
+	context := Context{RegistryOrigin: testOrigin, Artifacts: make(map[artifact.Dependency]artifact.Artifact)}
+	for _, selection := range m.Artifacts {
+		bound := selection.Metadata()
+		bound.PayloadBytes = []byte("true")
+		if bound.Kind == artifact.KindContext {
+			bound.PayloadBytes = []byte(`{"@context":{}}`)
+		}
+		for index := range bound.Resources {
+			bound.Resources[index].Bytes = []byte("note")
+		}
+		context.Artifacts[artifact.Dependency{Kind: bound.Kind, Type: bound.Type, Revision: bound.Revision}] = bound
+	}
+	return m, context
+}
 
-	withoutURI := current
-	withoutURI.URICatalog = nil
-	assert.Error(t, withoutURI.Validate(context))
+// changeBoundSchema updates both selected metadata and authoritative bytes to isolate semantic validation paths.
+func changeBoundSchema(m *Manifest, context *Context, mutate func(*artifact.Artifact)) {
+	key := artifact.Dependency{Kind: m.Artifacts[1].Kind, Type: m.Artifacts[1].Type, Revision: m.Artifacts[1].Revision}
+	bound := context.Artifacts[key]
+	mutate(&bound)
+	context.Artifacts[key] = bound
+	m.Artifacts[1] = bound.Metadata()
+}
 
-	changed := current
-	changed.Artifacts = append([]artifact.Artifact(nil), current.Artifacts...)
-	changed.Artifacts[0].Extensions = map[string]any{"org.example.review": "changed"}
-	context.History = []Release{{Manifest: current, Digest: digest(data)}}
-	changed.PreviousRelease = &PreviousRelease{SchemaVersion: current.SchemaVersion, ManifestDigest: digest(data)}
-	assert.Error(t, changed.Validate(context))
-
-	wrongCreatedUnder := current
-	wrongCreatedUnder.Artifacts = append([]artifact.Artifact(nil), current.Artifacts...)
-	wrongCreatedUnder.Artifacts[0].CreatedUnderSchemaVersion = "0.9.0"
-	assert.Error(t, wrongCreatedUnder.Validate(contextFor(current)))
-
-	wrongCatalogTarget := current
-	wrongCatalogTarget.URICatalog = []URIEntry{{URI: current.Artifacts[0].CanonicalURI, ArtifactRevision: "other-revision"}}
-	assert.Error(t, wrongCatalogTarget.Validate(contextFor(current)))
+// TestValidateLineageAndChanges checks predecessor binding, immutable reuse, exact differences, and required version increments.
+func TestValidateLineageAndChanges(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*Manifest, *Context)
+		want   string
+	}{
+		{"valid successor", func(_ *Manifest, _ *Context) {}, ""},
+		{"summary ignored", func(m *Manifest, _ *Context) { m.Changes.Summary = "Publisher-only notes" }, ""},
+		{"optional changes", func(m *Manifest, _ *Context) { m.Changes = nil }, ""},
+		{"missing predecessor", func(m *Manifest, _ *Context) { m.PreviousRelease = nil }, "predecessor does not bind immediate release"},
+		{"wrong predecessor digest", func(m *Manifest, _ *Context) { m.PreviousRelease.ManifestDigest = digest(nil) }, "predecessor does not bind immediate release"},
+		{"wrong predecessor version", func(m *Manifest, _ *Context) { m.PreviousRelease.SchemaVersion = "0.9.0" }, "predecessor does not bind immediate release"},
+		{"duplicate history", func(_ *Manifest, c *Context) { c.History = append(c.History, c.History[0]) }, "non-linear release lineage"},
+		{"repeated release version", func(m *Manifest, _ *Context) { m.SchemaVersion = "1.0.0" }, "schema version already exists in lineage"},
+		{"wrong increment", func(m *Manifest, _ *Context) { m.SchemaVersion = "1.2.0" }, "schema version is not the required compatibility increment"},
+		{"wrong compatibility", func(m *Manifest, _ *Context) { m.Changes.Compatibility = CompatibilityBreaking }, "changes do not equal deterministic difference"},
+		{"missing change", func(m *Manifest, _ *Context) { m.Changes.URICatalog = []URIChange{} }, "changes do not equal deterministic difference"},
+		{"no difference with changes", func(m *Manifest, c *Context) {
+			m.URICatalog = append([]URIEntry(nil), c.History[0].Manifest.URICatalog...)
+			changes, err := Diff(c.History[0].Manifest, *m, *c)
+			require.NoError(t, err)
+			m.Changes = &changes
+		}, "release has no effective difference"},
+		{"no difference without changes", func(m *Manifest, c *Context) {
+			m.URICatalog = append([]URIEntry(nil), c.History[0].Manifest.URICatalog...)
+			m.Changes = nil
+		}, "release has no effective difference"},
+		{"immutable metadata changed", func(m *Manifest, c *Context) {
+			changeBoundSchema(m, c, func(a *artifact.Artifact) { a.Extensions = map[string]any{"org.example.note": "changed"} })
+		}, "immutable revision changed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before, context := populatedRelease(t)
+			after := before
+			after.Artifacts = append([]artifact.Artifact(nil), before.Artifacts...)
+			after.SchemaVersion = "1.1.0"
+			context.History = []Release{{Manifest: before, Digest: digest(before.Raw)}}
+			after.PreviousRelease = &PreviousRelease{SchemaVersion: before.SchemaVersion, ManifestDigest: context.History[0].Digest}
+			after.URICatalog = append([]URIEntry{{URI: "https://example.test/alias", ArtifactRevision: "rev-1"}}, before.URICatalog...)
+			changes, err := Diff(before, after, context)
+			require.NoError(t, err)
+			after.Changes = &changes
+			require.NoError(t, after.Validate(context))
+			test.mutate(&after, &context)
+			err = after.Validate(context)
+			if test.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, ErrInvalid)
+				require.ErrorContains(t, err, test.want)
+			}
+		})
+	}
+	for _, test := range []struct {
+		name string
+		set  func(*Manifest)
+		want string
+	}{
+		{"initial changes", func(m *Manifest) { m.Changes = &Changes{Compatibility: CompatibilityInitial} }, ""},
+		{"initial predecessor", func(m *Manifest) {
+			m.PreviousRelease = &PreviousRelease{SchemaVersion: "0.9.0", ManifestDigest: digest(nil)}
+		}, "initial release must have null predecessor"},
+		{"initial compatibility", func(m *Manifest) { m.Changes = &Changes{Compatibility: CompatibilityAdditive} }, "invalid initial change summary"},
+		{"initial nonempty changes", func(m *Manifest) {
+			m.Changes = &Changes{Compatibility: CompatibilityInitial, Artifacts: []ArtifactChange{{Operation: OperationAdd}}}
+		}, "invalid initial change summary"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, context := populatedRelease(t)
+			test.set(&m)
+			err := m.Validate(context)
+			if test.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.want)
+			}
+		})
+	}
 }
 
 // TestRequiredURIsRetainsOversizedIdentifiers prevents length rejection from silently bypassing catalog coverage checks.
@@ -376,8 +515,18 @@ func TestDiffClassifiesContextAndSourceMappingUpdatesDirectly(t *testing.T) {
 
 // TestDiffUsesNetEndpointsAndDeterministicOrdering excludes intermediate changes and orders logical artifact differences consistently.
 func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
-	before := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}, {Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"}}}
-	after := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"}, {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
+	before := Manifest{
+		Artifacts: []artifact.Artifact{
+			{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"},
+			{Kind: artifact.KindSchema, Type: "location", Revision: "rev-2"},
+		},
+	}
+	after := Manifest{
+		Artifacts: []artifact.Artifact{
+			{Kind: artifact.KindSchema, Type: "asset", Revision: "rev-3"},
+			{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"},
+		},
+	}
 	diff, err := Diff(before, after, Context{Artifacts: map[artifact.Dependency]artifact.Artifact{}})
 	require.NoError(t, err)
 	// The result compares endpoints only. It does not include an intermediate
@@ -390,19 +539,41 @@ func TestDiffUsesNetEndpointsAndDeterministicOrdering(t *testing.T) {
 	assert.Equal(t, CompatibilityBreaking, diff.Compatibility)
 }
 
-// TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational checks the narrow operational exception when schema relations remain unchanged.
+// TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational checks recursive annotations and conservative handling of semantic changes.
 func TestDiffClassifiesAnnotationOnlySchemaUpdateAsOperational(t *testing.T) {
 	before := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}}}
 	after := Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}}
-	context := Context{Artifacts: map[artifact.Dependency]artifact.Artifact{
-		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-1", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"old"}`)},
-		{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}: {Kind: artifact.KindSchema, Type: "device", Revision: "rev-2", Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(`{"type":"object","description":"new"}`)},
-	}}
-	diff, err := Diff(before, after, context)
-	require.NoError(t, err)
-	require.Len(t, diff.Artifacts, 1)
-	assert.Equal(t, ImpactOperational, diff.Artifacts[0].Impact)
-	assert.Equal(t, CompatibilityOperational, diff.Compatibility)
+	for _, test := range []struct {
+		name, left, right string
+		want              Impact
+	}{
+		{"description", `{"type":"object","description":"old"}`, `{"type":"object","description":"new"}`, ImpactOperational},
+		{"annotations added", `{"type":"string"}`, `{"type":"string","title":"Name","$comment":"note","examples":["example"]}`, ImpactOperational},
+		{"annotations removed", `{"type":"string","title":"Name","examples":["example"]}`, `{"type":"string"}`, ImpactOperational},
+		{"nested annotations", `{"properties":{"name":{"type":"string","description":"old"}}}`, `{"properties":{"name":{"type":"string","description":"new"}}}`, ImpactOperational},
+		{"array annotations", `{"allOf":[{"type":"string","title":"old"}]}`, `{"allOf":[{"type":"string","title":"new"}]}`, ImpactOperational},
+		{"keyword changed", `{"type":"string"}`, `{"type":"integer"}`, ImpactBreaking},
+		{"keyword added", `{"type":"string"}`, `{"type":"string","minLength":1}`, ImpactBreaking},
+		{"keyword removed", `{"type":"string","minLength":1}`, `{"type":"string"}`, ImpactBreaking},
+		{"default is not ignored", `{"default":1}`, `{"default":2}`, ImpactBreaking},
+		{"object shape changed", `{}`, `true`, ImpactBreaking},
+		{"array shape changed", `{"allOf":[]}`, `{"allOf":true}`, ImpactBreaking},
+		{"array length changed", `{"allOf":[true]}`, `{"allOf":[true,true]}`, ImpactBreaking},
+		{"array order changed", `{"enum":[1,2]}`, `{"enum":[2,1]}`, ImpactBreaking},
+		{"malformed before", `{`, `{}`, ImpactBreaking},
+		{"malformed after", `{}`, `{`, ImpactBreaking},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			context := Context{Artifacts: map[artifact.Dependency]artifact.Artifact{
+				{Kind: artifact.KindSchema, Type: "device", Revision: "rev-1"}: {Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(test.left)},
+				{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}: {Payload: artifact.Descriptor{MediaType: artifact.SchemaMediaType}, PayloadBytes: []byte(test.right)},
+			}}
+			diff, err := Diff(before, after, context)
+			require.NoError(t, err)
+			require.Equal(t, []ArtifactChange{{Operation: OperationUpdate, Kind: artifact.KindSchema, ArtifactType: "device", BeforeRevision: "rev-1", AfterRevision: "rev-2", Impact: test.want}}, diff.Artifacts)
+			assert.Equal(t, Compatibility(test.want), diff.Compatibility)
+		})
+	}
 }
 
 // TestDiffOrdersEveryChangeCollection verifies canonical artifact, binding, URI, and storage change sort keys.

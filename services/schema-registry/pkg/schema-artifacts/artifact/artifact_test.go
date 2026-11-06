@@ -51,7 +51,7 @@ func TestArtifactMetadata(t *testing.T) {
 	}
 }
 
-// TestArtifactValidation checks a valid boolean schema and rejection of an unsafe revision identifier.
+// TestArtifactValidation checks identity, kind-specific metadata, dependencies, and payload integrity.
 func TestArtifactValidation(t *testing.T) {
 	payload := []byte(`true`)
 	item := Artifact{
@@ -67,8 +67,39 @@ func TestArtifactValidation(t *testing.T) {
 	require.NoError(t, item.Validate(origin))
 	require.NoError(t, item.ValidatePayloadFormat())
 
-	item.Revision = ".."
-	assert.Error(t, item.Validate(origin))
+	for _, test := range []struct {
+		name   string
+		mutate func(*Artifact)
+		want   string
+	}{
+		{"kind", func(a *Artifact) { a.Kind = "unknown" }, "invalid artifact identity"},
+		{"type", func(a *Artifact) { a.Type = "Device" }, "invalid artifact identity"},
+		{"revision", func(a *Artifact) { a.Revision = ".." }, "invalid artifact identity"},
+		{"creation version", func(a *Artifact) { a.CreatedUnderSchemaVersion = "1.0" }, "invalid artifact identity"},
+		{"schema class", func(a *Artifact) { a.SchemaClass = "unknown" }, "schema requires a class"},
+		{"schema target", func(a *Artifact) { a.TargetSchema = "1.0.0" }, "schema requires a class"},
+		{"context class", func(a *Artifact) { a.Kind = KindContext }, "context cannot declare"},
+		{"context target", func(a *Artifact) { a.Kind, a.SchemaClass, a.TargetSchema = KindContext, "", "1.0.0" }, "context cannot declare"},
+		{"mapping class", func(a *Artifact) { a.Kind, a.TargetSchema = KindSourceMapping, "1.0.0" }, "source mapping requires"},
+		{"mapping target", func(a *Artifact) { a.Kind, a.SchemaClass = KindSourceMapping, "" }, "source mapping requires"},
+		{"payload digest", func(a *Artifact) { a.Payload.Digest = descriptor([]byte(`false`), SchemaMediaType, "x").Digest }, "validate payload: descriptor digest"},
+		{"dependency kind", func(a *Artifact) { a.Dependencies = []Dependency{{Kind: "unknown", Type: "x", Revision: "r1"}} }, "invalid artifact dependency"},
+		{"dependency type", func(a *Artifact) { a.Dependencies = []Dependency{{Kind: KindSchema, Type: "X", Revision: "r1"}} }, "invalid artifact dependency"},
+		{"dependency revision", func(a *Artifact) { a.Dependencies = []Dependency{{Kind: KindSchema, Type: "x", Revision: ".."}} }, "invalid artifact dependency"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			changed := item
+			test.mutate(&changed)
+			require.ErrorContains(t, changed.Validate(origin), test.want)
+		})
+	}
+	for _, class := range []SchemaClass{SchemaClassEntity, SchemaClassIdentifier, SchemaClassEdge, SchemaClassSource} {
+		item.SchemaClass = class
+		require.NoError(t, item.Validate(origin))
+	}
+	item.Kind, item.SchemaClass = KindContext, ""
+	item.CanonicalURI = origin + "/v1/resources/context/device/rev-1"
+	require.NoError(t, item.Validate(origin))
 }
 
 // TestResourceRoleRemainsExtensible preserves well-formed ancillary roles while rejecting empty or malformed role identifiers.
@@ -98,23 +129,128 @@ func TestResourceRoleRemainsExtensible(t *testing.T) {
 	}
 }
 
-// TestDescriptorValidationRejectsMismatches checks exact byte counts and unsafe descriptor-related identifiers.
+// TestDescriptorValidationRejectsMismatches isolates metadata errors from size and digest mismatches.
 func TestDescriptorValidationRejectsMismatches(t *testing.T) {
 	data := []byte("payload")
 	valid := descriptor(data, "application/octet-stream", "resources/payload")
 	require.NoError(t, ValidateDescriptor(valid, data))
-	valid.Size++
-	assert.Error(t, ValidateDescriptor(valid, data))
-	assert.False(t, ValidBundlePath("../payload"))
-	assert.False(t, ValidResourceName("a/b"))
-	assert.False(t, ValidLogicalType("Uppercase"))
+	for _, test := range []struct {
+		name   string
+		mutate func(*Descriptor)
+		want   string
+	}{
+		{"empty media type", func(d *Descriptor) { d.MediaType = "" }, "descriptor requires"},
+		{"long media type", func(d *Descriptor) { d.MediaType = strings.Repeat("a", schemaartifacts.MaxIdentifierBytes+1) }, "descriptor requires"},
+		{"malformed media type", func(d *Descriptor) { d.MediaType = "not a media type;" }, "invalid media type"},
+		{"empty path", func(d *Descriptor) { d.BundlePath = "" }, "descriptor requires"},
+		{"unsafe path", func(d *Descriptor) { d.BundlePath = "../payload" }, "invalid byte descriptor"},
+		{"invalid digest", func(d *Descriptor) { d.Digest = "invalid" }, "invalid byte descriptor"},
+		{"negative size", func(d *Descriptor) { d.Size = -1 }, "invalid byte descriptor"},
+		{"excess size", func(d *Descriptor) { d.Size = schemaartifacts.MaxArtifactBytes + 1 }, "invalid byte descriptor"},
+		{"size mismatch", func(d *Descriptor) { d.Size++ }, "descriptor size does not match"},
+		{"digest mismatch", func(d *Descriptor) { d.Digest = descriptor([]byte("PAYLOAD"), d.MediaType, d.BundlePath).Digest }, "descriptor digest does not match"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			changed := valid
+			test.mutate(&changed)
+			require.ErrorContains(t, ValidateDescriptor(changed, data), test.want)
+		})
+	}
 }
 
 // TestValidateCanonicalURI verifies Registry-origin ownership and exact immutable path coordinates.
 func TestValidateCanonicalURI(t *testing.T) {
-	require.NoError(t, ValidateCanonicalURI(origin+"/v1/resources/schema/device/rev-1", origin, KindSchema, "device", "rev-1"))
-	assert.Error(t, ValidateCanonicalURI("https://other.example.test/v1/resources/schema/device/rev-1", origin, KindSchema, "device", "rev-1"))
-	assert.Error(t, ValidateCanonicalURI(origin+"/v1/resources/schema/device/current", origin, KindSchema, "device", "rev-1"))
+	const path = "/v1/resources/schema/device/rev-1"
+	for _, test := range []struct {
+		name, uri, origin, want string
+	}{
+		{"valid", origin + path, origin, ""},
+		{"empty", "", origin, "length"},
+		{"too long", origin + path + strings.Repeat("a", schemaartifacts.MaxURIBytes), origin, "length"},
+		{"relative", path, origin, "absolute"},
+		{"malformed", "https://example.test/%zz", origin, "absolute"},
+		{"other host", "https://other.example.test" + path, origin, "Registry origin"},
+		{"other scheme", "http://registry.example.test" + path, origin, "Registry origin"},
+		{"other port", origin + ":443" + path, origin, "Registry origin"},
+		{"relative origin", origin + path, "/registry", "Registry origin"},
+		{"malformed origin", origin + path, "https://%zz", "Registry origin"},
+		{"wrong revision", origin + "/v1/resources/schema/device/current", origin, "invalid path"},
+		{"escaped path", origin + "/v1/resources/schema/%64evice/rev-1", origin, "invalid path"},
+		{"query", origin + path + "?x=1", origin, "invalid path"},
+		{"fragment", origin + path + "#x", origin, "invalid path"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateCanonicalURI(test.uri, test.origin, KindSchema, "device", "rev-1")
+			if test.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.want)
+			}
+		})
+	}
+}
+
+// TestLexicalValidators checks accepted spellings and rejected traversal, encoding, and length boundaries.
+func TestLexicalValidators(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		validate func(string) bool
+		valid    []string
+		invalid  []string
+	}{
+		{"logical type", ValidLogicalType, []string{"0", "device-2", strings.Repeat("a", schemaartifacts.MaxIdentifierBytes)}, []string{"", "Device", "a_b", "-a", "a-", "a--b", "é", strings.Repeat("a", schemaartifacts.MaxIdentifierBytes+1)}},
+		{"revision", ValidRevision, []string{"Rev-1._~", "...", strings.Repeat("a", schemaartifacts.MaxIdentifierBytes)}, []string{"", ".", "..", "a/b", "a%20b", "é", strings.Repeat("a", schemaartifacts.MaxIdentifierBytes+1)}},
+		{"resource", ValidResourceName, []string{"program.bin", "A_~"}, []string{"", ".", "..", "a/b", `a\b`}},
+		{"version", ValidVersion, []string{"0.0.0", "10.20.30"}, []string{"", "1.0", "01.0.0", "1.0.0-beta", "1.0.0+build", "-1.0.0"}},
+		{"digest", ValidDigest, []string{"sha-256:" + strings.Repeat("a", 64)}, []string{"", "sha256:" + strings.Repeat("a", 64), "sha-256:" + strings.Repeat("A", 64), "sha-256:" + strings.Repeat("a", 63), "sha-256:" + strings.Repeat("a", 65)}},
+		{"bundle path", ValidBundlePath, []string{"payload", "a/b.json"}, []string{"", "/payload", `a\b`, "a//b", "a/./b", "a/../b", "a/"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, value := range test.valid {
+				assert.True(t, test.validate(value), "%q", value)
+			}
+			for _, value := range test.invalid {
+				assert.False(t, test.validate(value), "%q", value)
+			}
+		})
+	}
+}
+
+// TestPayloadFormats checks schema compilation, JSON-LD contexts, and strict parsing for every artifact kind.
+func TestPayloadFormats(t *testing.T) {
+	for _, test := range []struct {
+		name, payload, mediaType string
+		kind                     Kind
+		catalog                  map[string]any
+		want                     string
+	}{
+		{"boolean schema", `false`, SchemaMediaType, KindSchema, nil, ""},
+		{"local schema reference", `{"$defs":{"value":{"type":"string"}},"$ref":"#/$defs/value"}`, SchemaMediaType, KindSchema, nil, ""},
+		{"invalid schema", `{"type":"unknown"}`, SchemaMediaType, KindSchema, nil, "compile JSON Schema"},
+		{"schema media type", `true`, "application/json", KindSchema, nil, "schema payload must use"},
+		{"inline context", `{"@context":{"name":"https://example.test/name"}}`, ContextMediaType, KindContext, nil, ""},
+		{"empty context", `{"@context":{}}`, ContextMediaType, KindContext, nil, ""},
+		{"context media type", `{"@context":{}}`, "application/ld+json", KindContext, nil, "context payload must use"},
+		{"missing context", `{}`, ContextMediaType, KindContext, nil, "must contain @context"},
+		{"null context", `{"@context":null}`, ContextMediaType, KindContext, nil, "must contain @context"},
+		{"non-object context", `[]`, ContextMediaType, KindContext, nil, "must contain @context"},
+		{"invalid context", `{"@context":42}`, ContextMediaType, KindContext, nil, "validate JSON-LD context"},
+		{"uncataloged context", `{"@context":"https://example.test/context"}`, ContextMediaType, KindContext, nil, "validate JSON-LD context"},
+		{"catalog context", `{"@context":"https://example.test/context"}`, ContextMediaType, KindContext, map[string]any{"https://example.test/context": map[string]any{"@context": map[string]any{"name": "https://example.test/name"}}}, ""},
+		{"mapping JSON only", `{}`, "application/json", KindSourceMapping, nil, ""},
+		{"malformed payload", `{"a":`, SchemaMediaType, KindSchema, nil, "malformed JSON"},
+		{"duplicate context", `{"@context":{},"@context":{}}`, ContextMediaType, KindContext, nil, "duplicate JSON object member"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			item := Artifact{Kind: test.kind, CanonicalURI: origin + "/v1/resources/schema/device/rev-1", Payload: Descriptor{MediaType: test.mediaType}, PayloadBytes: []byte(test.payload)}
+			err := item.ValidatePayloadFormatWithCatalog(test.catalog)
+			if test.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.want)
+			}
+		})
+	}
 }
 
 // TestValidDocumentURI preserves syntax rules and rejects malformed or empty identifiers without fetching them.

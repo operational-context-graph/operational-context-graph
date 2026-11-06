@@ -5,7 +5,7 @@
 package strictjson
 
 import (
-	"errors"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,16 +26,30 @@ func TestParseRejectsInvalidInput(t *testing.T) {
 		{"nil", nil, ErrMalformed},
 		{"empty", []byte{}, ErrMalformed},
 		{"malformed", []byte(`{"a":`), ErrMalformed},
+		{"whitespace", []byte(" \t\r\n"), ErrMalformed},
+		{"byte order mark", append([]byte{0xef, 0xbb, 0xbf}, []byte(`{}`)...), ErrMalformed},
+		{"trailing value", []byte(`{} true`), ErrMalformed},
+		{"trailing syntax", []byte(`{} !`), ErrMalformed},
+		{"missing object close", []byte(`{"a":1`), ErrMalformed},
+		{"missing array close", []byte(`[1`), ErrMalformed},
+		{"invalid member name", []byte(`{1:2}`), ErrMalformed},
+		{"invalid array value", []byte(`[!]`), ErrMalformed},
 		{"invalid UTF-8", []byte{'{', '"', 0xff, '"', ':', '1', '}'}, ErrMalformed},
 		{"duplicate", []byte(`{"a":1,"a":2}`), ErrDuplicate},
+		{"escaped duplicate", []byte(`{"a":1,"\u0061":2}`), ErrDuplicate},
+		{"nested duplicate", []byte(`[{"a":1,"a":2}]`), ErrDuplicate},
 		{"unsafe integer", []byte(`9007199254740992`), ErrNumber},
+		{"unsafe negative integer", []byte(`-9007199254740992`), ErrNumber},
+		{"unsafe exponent integer", []byte(`9007199254740992e0`), ErrNumber},
+		{"unsafe decimal integer", []byte(`9007199254740992.0`), ErrNumber},
+		{"float overflow", []byte(`1e309`), ErrNumber},
 		{"too many members", tooManyMembers(), ErrObjectMembers},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Parse(test.input)
-			require.Error(t, err)
-			assert.True(t, errors.Is(err, test.err), err)
+			value, err := Parse(test.input)
+			require.ErrorIs(t, err, test.err)
+			assert.Nil(t, value)
 		})
 	}
 }
@@ -53,9 +67,45 @@ func tooManyMembers() []byte {
 func TestParseAcceptsBoundaries(t *testing.T) {
 	value, err := Parse([]byte(`{"integer":9007199254740991,"fraction":1.5,"array":[]}`))
 	require.NoError(t, err)
-	assert.IsType(t, map[string]any{}, value)
+	assert.Equal(t, map[string]any{"integer": json.Number("9007199254740991"), "fraction": json.Number("1.5"), "array": []any{}}, value)
 	_, err = Parse(make([]byte, schemaartifacts.MaxArtifactBytes+1))
 	assert.ErrorIs(t, err, ErrTooLarge)
+}
+
+// TestParsePreservesValues checks all JSON value types, exact number spelling, and independent object member scopes.
+func TestParsePreservesValues(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  any
+	}{
+		{`null`, nil}, {`true`, true}, {`false`, false}, {`"é\n"`, "é\n"},
+		{`-9007199254740991`, json.Number("-9007199254740991")},
+		{`-0`, json.Number("-0")}, {`1.25e-3`, json.Number("1.25e-3")},
+		{`{}`, map[string]any{}}, {`[]`, []any{}},
+		{` {"a":1,"child":{"a":2}} `, map[string]any{"a": json.Number("1"), "child": map[string]any{"a": json.Number("2")}}},
+	} {
+		t.Run(test.input, func(t *testing.T) {
+			value, err := Parse([]byte(test.input))
+			require.NoError(t, err)
+			assert.Equal(t, test.want, value)
+		})
+	}
+}
+
+// TestObject requires an object root and preserves errors from strict parsing.
+func TestObject(t *testing.T) {
+	object, err := Object([]byte(`{"value":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"value": true}, object)
+	for _, input := range []string{`[]`, `null`, `true`, `1`, `"value"`, `{`} {
+		t.Run(input, func(t *testing.T) {
+			object, parseErr := Object([]byte(input))
+			require.ErrorIs(t, parseErr, ErrMalformed)
+			assert.Nil(t, object)
+		})
+	}
+	_, err = Object([]byte(`{"a":1,"a":2}`))
+	require.ErrorIs(t, err, ErrDuplicate)
 }
 
 // TestParseStructuralLimits checks independent depth, array-entry, and decoded-string limits.
