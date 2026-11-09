@@ -12,7 +12,7 @@ The backfill-service capability implements the gRPC `BackfillService` receiving 
 
 #### Scenario: Watermark exists — returned in response
 - **WHEN** `GetWatermark` is called by an authenticated connector for a partition with a committed watermark
-- **THEN** `GetWatermarkResponse.Watermark` contains the last committed watermark and the call returns `nil`
+- **THEN** `GetWatermarkResponse.Watermark` contains the last committed watermark and the call returns no error
 
 #### Scenario: No watermark recorded — empty response
 - **WHEN** `GetWatermark` is called for a `(connector, partition)` pair with no recorded watermark
@@ -50,7 +50,7 @@ The backfill-service capability implements the gRPC `BackfillService` receiving 
 
 #### Scenario: Idempotent: gap already open — no error
 - **WHEN** `StartGap` is called for a pair where a gap is already open
-- **THEN** `BackfillService.StartGap` returns `nil` (BackfillLogic is idempotent)
+- **THEN** `BackfillService.StartGap` returns no error (BackfillLogic is idempotent)
 
 ---
 
@@ -76,7 +76,7 @@ The backfill-service capability implements the gRPC `BackfillService` receiving 
 
 #### Scenario: No-op when gap is not open — no error
 - **WHEN** `CloseGap` is called for a pair where no gap is open
-- **THEN** `BackfillService.CloseGap` returns `nil` (BackfillLogic is idempotent)
+- **THEN** `BackfillService.CloseGap` returns no error (BackfillLogic is idempotent)
 
 ---
 
