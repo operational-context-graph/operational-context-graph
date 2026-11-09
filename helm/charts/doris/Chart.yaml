@@ -4,3 +4,6 @@ description: Subchart that owns the DorisCluster CR consumed by the Doris Operat
 type: application
 version: 0.0.1
 appVersion: "4.1.4"
+maintainers:
+  - name: operational-context-graph
+    url: https://github.com/operational-context-graph/operational-context-graph
