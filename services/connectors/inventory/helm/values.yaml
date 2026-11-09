@@ -1,7 +1,0 @@
-replicaCount: 1
-
-image:
-  repository: ghcr.io/operational-context-graph/inventory-connector
-  tag: "0.1.0"
-  pullPolicy: IfNotPresent
-  digest: ""
