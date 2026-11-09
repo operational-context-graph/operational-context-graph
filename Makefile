@@ -182,8 +182,8 @@ require-targets:
 #   SIGN_KEY     - path to RSA private key PEM (default /tmp/ocg-signing-key.pem)
 #
 # RELEASE ORDER for helm dependency update:
-#   Each service chart must be updated before the top-level chart so that
-#   helm/ocg/ can resolve file:// dependencies from already-populated charts/.
+#   All subcharts live under helm/charts/. helm dependency update helm/ resolves
+#   all file:// dependencies in a single pass.
 
 .NOTPARALLEL:
 
@@ -191,7 +191,7 @@ OCM_VERSION     := 0.22.1
 SIGN_KEY        ?= /tmp/ocg-signing-key.pem
 OCM_COMPONENT   := github.com/operational-context-graph/operational-context-graph
 OCM_CTF         := ctf::./bin/ctf/
-OCM_SERVICES    := schema-registry data-ingestion telemetry-store inventory-store inventory-connector
+OCM_SERVICES    := data-ingestion telemetry-store inventory-store inventory-connector
 
 .PHONY: ocm-preflight ocm-build ocm-package ocm-inspect ocm-sign ocm-verify \
         preflight package inspect sign verify
@@ -242,16 +242,11 @@ ocm-preflight:
 	@echo "preflight: OK (VERSION=$(VERSION))"
 
 ocm-build: ocm-preflight
-	@# Service-level helm dependency updates (any order)
-	@for svc in data-ingestion inventory-store telemetry-store; do \
-	  helm dependency update services/$$svc/helm/ 2>/dev/null || true; \
-	done
-	helm dependency update services/connectors/inventory/helm/ 2>/dev/null || true
-	helm dependency update services/schema-registry/helm/ 2>/dev/null || true
-	@# Top-level chart (pulls in all subchart deps including postgresql and doris-operator)
-	helm dependency update helm/ocg/
+	@# Pull in all external chart deps (postgresql, doris-operator) and resolve
+	@# local file:// subcharts under helm/charts/ in a single pass.
+	helm dependency update helm/
 	@# Package the umbrella chart
-	helm package helm/ocg/ -d bin/ --version $(VERSION)
+	helm package helm/ -d bin/ --version $(VERSION)
 	@# Bundle manifest
 	@{ \
 	  echo "version: \"$(VERSION)\""; \

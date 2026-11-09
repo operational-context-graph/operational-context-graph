@@ -97,7 +97,7 @@ echo "    digest checks: OK"
 
 # ── 4. Helm install ───────────────────────────────────────────────────────────
 echo "==> Running helm install..."
-helm install ocg helm/ocg/ \
+helm install ocg helm/ \
   --namespace "${NAMESPACE}" \
   --create-namespace \
   --values "${IMAGE_VALUES_SUBST}"

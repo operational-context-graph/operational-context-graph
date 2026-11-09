@@ -138,7 +138,7 @@ docs/superpowers
 helm/**/charts/*.tgz
 
 # OCM
-helm/ocg/charts/
+helm/charts/*.tgz
 .ocm/ocg.key
 bin/deps/
 # ocg.pub.pem is committed; negate the global *.pem rule above

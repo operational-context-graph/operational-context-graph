@@ -4,13 +4,6 @@ components:
     provider:
       name: autonomous-operations
     resources:
-      - name: schema-registry
-        type: ociImage
-        version: ${VERSION}
-        input:
-          type: File/v1
-          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
-          path: ./bin/images/schema-registry.oci.tar
       - name: data-ingestion
         type: ociImage
         version: ${VERSION}
@@ -44,7 +37,7 @@ components:
         version: ${VERSION}
         input:
           type: Helm/v1
-          path: ./bin/ocg-${VERSION}.tgz
+          path: ./bin/operational-context-graph-${VERSION}.tgz
       - name: bundle-manifest
         type: blob
         version: ${VERSION}
