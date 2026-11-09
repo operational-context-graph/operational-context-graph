@@ -32,6 +32,16 @@ type fakeChecker struct {
 	calls  int
 }
 
+type blockingChecker struct{ fakeChecker }
+
+func (b *blockingChecker) Ready(ctx context.Context) error {
+	b.mu.Lock()
+	b.calls++
+	b.mu.Unlock()
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 func (f *fakeChecker) Ready(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -119,6 +129,19 @@ func TestReadinessFailsWhenDrainingOrUnavailable(t *testing.T) {
 	response = httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+}
+
+func TestReadinessFailsWhenQueryTimesOut(t *testing.T) {
+	cfg := testConfig()
+	cfg.Database.QueryTimeout = 20 * time.Millisecond
+	checker := &blockingChecker{}
+	server := New(cfg, checker)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+	assert.Equal(t, 1, checker.readyCalls())
 }
 
 func TestAdmissionRejectsWhenCapacityIsExhausted(t *testing.T) {
