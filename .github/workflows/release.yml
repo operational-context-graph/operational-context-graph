@@ -61,97 +61,72 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Validate that all five component service tags exist before building the bundle
+  # Pull previously published OCI images from ghcr.io as OCI layout tarballs.
+  # Verifies each image digest matches the value pinned in helm/charts/*/values.yaml.
   # ─────────────────────────────────────────────────────────────────────────────
-  validate-matrix:
-    name: Validate Component Matrix
+  pull-images:
+    name: Pull Service Images
     runs-on: ubuntu-latest
     needs: check-release-trigger
     if: needs.check-release-trigger.outputs.is_system_release == 'true'
     permissions:
       contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Verify component tags exist
-        run: |
-          SERVICES="data-ingestion inventory-store telemetry-store inventory-connector schema-registry"
-          missing=""
-          for svc in ${SERVICES}; do
-            if ! git tag -l "services/${svc}/v*" | grep -qE "^services/${svc}/v[0-9]+\.[0-9]+\.[0-9]+$"; then
-              echo "ERROR: no published tag found for services/${svc}/v*"
-              missing="${missing} ${svc}"
-            else
-              latest=$(git tag -l "services/${svc}/v*" | grep -E "^services/${svc}/v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -1)
-              echo "OK: ${svc} — ${latest}"
-            fi
-          done
-          if [ -n "${missing}" ]; then
-            echo "Untagged components:${missing}"
-            exit 1
-          fi
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Build OCI image tarballs for each service
-  # ─────────────────────────────────────────────────────────────────────────────
-  build-images:
-    name: Build Service Images
-    runs-on: ubuntu-latest
-    needs: validate-matrix
-    permissions:
-      contents: read
+      packages: read
     strategy:
       matrix:
         service:
-          - name: data-ingestion
-            dockerfile: services/data-ingestion/Dockerfile
-          - name: inventory-store
-            dockerfile: services/inventory-store/Dockerfile
-          - name: telemetry-store
-            dockerfile: services/telemetry-store/Dockerfile
-          - name: inventory-connector
-            dockerfile: services/connectors/inventory/Dockerfile
-          - name: schema-registry
-            dockerfile: ""  # placeholder — no Dockerfile yet
+          - data-ingestion
+          - inventory-store
+          - telemetry-store
+          - inventory-connector
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Build and export OCI tarball
+      - name: Install skopeo
+        run: sudo apt-get install -y skopeo
+
+      - name: Read pinned version and digest
+        id: pin
         run: |
+          values="helm/charts/${{ matrix.service }}/values.yaml"
+          tag=$(yq '.image.tag' "$values")
+          digest=$(yq '.image.digest' "$values")
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pull OCI image as OCI layout tarball
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.pin.outputs.tag }}
+          DIGEST: ${{ steps.pin.outputs.digest }}
+        run: |
+          REGISTRY="ghcr.io/operational-context-graph"
           mkdir -p bin/images
-          if [ -z "${{ matrix.service.dockerfile }}" ] || [ ! -f "${{ matrix.service.dockerfile }}" ]; then
-            # Placeholder: use hello-world OCI layout tarball for schema-registry
-            docker pull hello-world:latest
-            docker image save --format oci-layout hello-world:latest | \
-              docker buildx imagetools inspect --raw > /dev/null || true
-            docker save hello-world:latest -o /tmp/schema-registry-tmp.tar
-            # Convert to OCI layout format with a single manifest entry
-            mkdir -p /tmp/oci-schema-registry
-            docker buildx build --platform linux/amd64 \
-              --output type=oci,dest=bin/images/${{ matrix.service.name }}.oci.tar \
-              --file /dev/stdin . <<'EOF'
-          FROM hello-world:latest
-          EOF
-          else
-            docker buildx build \
-              --platform linux/amd64 \
-              --output type=oci,dest=bin/images/${{ matrix.service.name }}.oci.tar \
-              --file ${{ matrix.service.dockerfile }} \
-              .
+          skopeo copy \
+            --src-creds "${GHCR_TOKEN}:${GHCR_TOKEN}" \
+            "docker://${REGISTRY}/${{ matrix.service }}:${TAG}" \
+            "oci-archive:bin/images/${{ matrix.service }}.oci.tar"
+
+      - name: Verify pulled digest matches pinned value
+        env:
+          DIGEST: ${{ steps.pin.outputs.digest }}
+        run: |
+          actual=$(tar -xOf bin/images/${{ matrix.service }}.oci.tar index.json \
+            | python3 -c 'import sys,json; m=json.load(sys.stdin)["manifests"][0]; print(m["digest"])')
+          if [ "$actual" != "${DIGEST}" ]; then
+            echo "::error::Digest mismatch for ${{ matrix.service }}: pinned=${DIGEST} pulled=${actual}"
+            exit 1
           fi
+          echo "Digest verified: ${actual}"
 
       - name: Upload OCI tarball artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oci-${{ matrix.service.name }}
-          path: bin/images/${{ matrix.service.name }}.oci.tar
+          name: oci-${{ matrix.service }}
+          path: bin/images/${{ matrix.service }}.oci.tar
           retention-days: 1
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -162,8 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - check-release-trigger
-      - validate-matrix
-      - build-images
+      - pull-images
     if: needs.check-release-trigger.outputs.is_system_release == 'true'
     permissions:
       contents: write  # to create GitHub Release and upload assets
