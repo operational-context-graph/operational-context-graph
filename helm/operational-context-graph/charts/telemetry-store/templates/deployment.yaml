@@ -17,36 +17,21 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsNonRoot: true
-      # This migration approach (mysql:8 init container + raw SQL) is a temporary
-      # workaround until a proper Doris migration solution is in place.
       initContainers:
         - name: migrate
-          image: mysql:8
-          imagePullPolicy: IfNotPresent
-          securityContext:
-            runAsNonRoot: false
-            runAsUser: 0
-          command:
-            - sh
-            - -c
-            - |
-              MYSQL_PASS_ARG=""
-              if [ -n "${DORIS_MIGRATE_PASSWORD}" ]; then
-                MYSQL_PASS_ARG="-p${DORIS_MIGRATE_PASSWORD}"
-              fi
-              until mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} -e "SHOW FRONTENDS;" 2>/dev/null; do
-                echo "waiting for Doris FE..."; sleep 5;
-              done
-              mysql -h ocg-doris-fe-service -P 9030 -u root ${MYSQL_PASS_ARG} < /migrations/migrations.sql
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/migrate"]
           env:
-            - name: DORIS_MIGRATE_PASSWORD
+            - name: DORIS_REPLICATION_NUM
+              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
+            - name: DORIS_BUCKETS
+              value: {{ .Values.env.DORIS_BUCKETS | quote }}
+            - name: DORIS_MIGRATE_DSN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.dorisMigratorSecretName }}
-                  key: DORIS_MIGRATE_PASSWORD
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
+                  key: DORIS_MIGRATE_DSN
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -75,7 +60,3 @@ spec:
               value: {{ .Values.env.LOG_LEVEL | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      volumes:
-        - name: migrations
-          configMap:
-            name: {{ include "telemetry-store.fullname" . }}-migrations
