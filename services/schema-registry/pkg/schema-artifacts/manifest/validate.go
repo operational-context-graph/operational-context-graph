@@ -585,10 +585,16 @@ func (m Manifest) validateOrder() error {
 		}
 	}
 	if m.Changes != nil {
-		changes := *m.Changes
-		sortedChanges := changes
-		sortChanges(&sortedChanges)
-		if !reflect.DeepEqual(changes, sortedChanges) {
+		changes := m.Changes
+		if !sorted(changes.Artifacts, func(a, b ArtifactChange) int {
+			return compareMany(string(a.Kind), a.ArtifactType, string(a.Operation), string(b.Kind), b.ArtifactType, string(b.Operation))
+		}) || !sorted(changes.SchemaContextBindings, func(a, b BindingChange) int {
+			return compareMany(a.SchemaRevision, a.ContextRevision, string(a.Operation), b.SchemaRevision, b.ContextRevision, string(b.Operation))
+		}) || !sorted(changes.URICatalog, func(a, b URIChange) int {
+			return compareMany(a.URI, string(a.Operation), b.URI, string(b.Operation))
+		}) || !sorted(changes.StorageCatalog, func(a, b StorageChange) int {
+			return compareMany(string(a.Kind), a.ArtifactType, string(a.Store), string(a.Operation), string(b.Kind), b.ArtifactType, string(b.Store), string(b.Operation))
+		}) {
 			return invalid("change arrays are not ordered")
 		}
 	}

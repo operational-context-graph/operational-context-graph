@@ -5,13 +5,15 @@
 package benchmark
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared"
 )
 
 func BenchmarkParseCanonicalManifest(b *testing.B) {
-	data := readFixture(b, "valid-initial.json")
+	data := bytes.TrimSuffix(shared.ReadFixture(b, "valid-initial.json"), []byte("\n"))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(data)))
 	for b.Loop() {

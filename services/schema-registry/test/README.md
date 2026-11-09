@@ -8,6 +8,7 @@ This directory contains test assets that cross package boundaries.
 ## Directory structure
 
 - `fixtures/` contains repository-owned test data, organized by bounded context.
+- `shared/` contains shared test functionality (e.g. test fixture loaders for test data provided in `fixtures`).
 - `integration/` contains black-box service boundary tests.
 - `benchmark/` contains black-box benchmarks that use supported package APIs.
 

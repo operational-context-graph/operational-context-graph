@@ -13,11 +13,12 @@ import (
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared"
 )
 
 // FuzzManifestParse verifies canonical manifest acceptance without changing submitted bytes.
 func FuzzManifestParse(f *testing.F) {
-	initial := readFixture(f, "valid-initial.json")
+	initial := bytes.TrimSuffix(shared.ReadFixture(f, "valid-initial.json"), []byte("\n"))
 	f.Add(initial)
 	for _, seed := range jsonWorkloads() {
 		f.Add(seed.Input)
@@ -58,7 +59,7 @@ func FuzzManifestParse(f *testing.F) {
 // FuzzCanonicalize exercises JCS only after the production strict parsing gate.
 // Arbitrary program-shaped metadata remains JSON data, not executable programs.
 func FuzzCanonicalize(f *testing.F) {
-	f.Add(readFixture(f, "valid-initial.json"))
+	f.Add(bytes.TrimSuffix(shared.ReadFixture(f, "valid-initial.json"), []byte("\n")))
 	for _, seed := range jsonWorkloads() {
 		f.Add(seed.Input)
 	}
@@ -101,7 +102,7 @@ func BenchmarkCanonicalizeProfile(b *testing.B) {
 
 // BenchmarkParseManifestProfile measures the complete authoritative manifest parser.
 func BenchmarkParseManifestProfile(b *testing.B) {
-	input := readFixture(b, "valid-initial.json")
+	input := bytes.TrimSuffix(shared.ReadFixture(b, "valid-initial.json"), []byte("\n"))
 	benchmarkJSONAllocations(b, input, 128, 8, func() {
 		if _, err := manifest.Parse(input); err != nil {
 			b.Fatal(err)
