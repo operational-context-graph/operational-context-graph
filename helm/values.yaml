@@ -141,3 +141,10 @@ otelcol:
   enabled: true
   fullnameOverride: otelcol
   dataIngestionEndpoint: "ocg-data-ingestion:9090"
+
+schema-registry:
+  enabled: true
+  image:
+    repository: ghcr.io/operational-context-graph/schema-registry
+    tag: "0.0.1"
+    pullPolicy: IfNotPresent
