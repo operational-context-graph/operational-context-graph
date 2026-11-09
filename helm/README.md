@@ -35,8 +35,6 @@ kubectl annotate clusterrolebinding/doris-operator-rolebinding \
   meta.helm.sh/release-name=ocg --overwrite
 ```
 
----
-
 ## Namespace setup (per environment)
 
 ### 1. Create secrets
