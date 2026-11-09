@@ -28,12 +28,13 @@ import (
 
 const fixtureOrigin = "https://registry.example.test"
 
-// registryFixture is a complete fixture release.
+// registryFixture is a complete fixture release with optional schema-context bindings.
 type registryFixture struct {
 	name      string
 	version   string
 	previous  *manifest.Release
 	artifacts []artifact.Artifact
+	bindings  []manifest.Binding
 }
 
 func TestFixtureLoadSuite(t *testing.T) {
@@ -241,6 +242,9 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 		"source":    map[string]any{"repository": "https://git.example.test/schema-model", "commit": strings.Repeat("a", 40)},
 		"artifacts": entries, "schemaContextBindings": []any{}, "uriCatalog": uris, "storageCatalog": storage,
 	}
+	for _, binding := range fixture.bindings {
+		root["schemaContextBindings"] = append(root["schemaContextBindings"].([]any), map[string]any{"schemaRevision": binding.SchemaRevision, "contextRevisions": binding.ContextRevisions})
+	}
 	history := make([]manifest.Release, 0)
 	if fixture.previous == nil {
 		root["previousRelease"] = nil
@@ -364,6 +368,14 @@ ON CONFLICT (artifact_revision, name) DO NOTHING`, item.Revision, resource.Name,
 		for ordinal, transformation := range descriptor.Programs.Transformations {
 			_, err = tx.ExecContext(ctx, `INSERT INTO schema_registry.source_mapping_transformations (schema_version,mapping_revision,ordinal,target_artifact_type,target_revision,cardinality,program_name,program_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, fixture.version, item.Revision, ordinal, transformation.TargetSchema.ID, transformation.TargetSchema.Revision, transformation.Cardinality, transformation.ProgramRef, transformation.ProgramDigest)
 			if err != nil {
+				return manifest.Manifest{}, err
+			}
+		}
+	}
+	// Complete the binding projection before recording commitments for later read-side verification.
+	for _, binding := range parsed.SchemaContextBindings {
+		for _, revision := range binding.ContextRevisions {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO schema_registry.schema_context_bindings (schema_version, schema_revision, context_revision) VALUES ($1, $2, $3)`, fixture.version, binding.SchemaRevision, revision); err != nil {
 				return manifest.Manifest{}, err
 			}
 		}
