@@ -61,6 +61,12 @@ ignore-packages:
   # pnpm/action-setup licensed under MIT
   - pnpm/action-setup
 
+  # azure/setup-helm licensed under MIT
+  - azure/setup-helm
+
+  # helm/chart-testing-action licensed under Apache-2.0
+  - helm/chart-testing-action
+
   # pnpm and @pnpm/exe.* are licensed under MIT (https://github.com/pnpm/pnpm/blob/main/LICENSE);
   # @pnpm/exe.* are platform-specific binary distributions that lack SPDX metadata in the SBOM
   - pnpm
