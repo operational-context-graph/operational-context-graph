@@ -104,13 +104,14 @@ func TestShutdownCancelsBlockedPoolAcquisition(t *testing.T) {
 	go func() { done <- server.RunListener(shutdownCtx, listener) }()
 
 	client := &http.Client{Timeout: time.Second}
-	requestDone := make(chan error, 1)
+	requestDone := make(chan struct{})
 	go func() {
-		response, requestErr := client.Get("http://" + listener.Addr().String() + "/v1/registry")
+		defer close(requestDone)
+		// Shutdown can complete an error response or close the transport; only completion matters here.
+		response, _ := client.Get("http://" + listener.Addr().String() + "/v1/registry")
 		if response != nil {
 			_ = response.Body.Close()
 		}
-		requestDone <- requestErr
 	}()
 	select {
 	case <-reader.started:

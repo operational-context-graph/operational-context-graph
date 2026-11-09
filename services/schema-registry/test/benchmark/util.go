@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// readFixture loads a canonical benchmark input from the shared fixture tree.
-func readFixture(b *testing.B, name string) []byte {
-	b.Helper()
+// readFixture loads a canonical benchmark or fuzz input from the shared fixture tree.
+func readFixture(tb testing.TB, name string) []byte {
+	tb.Helper()
 	// #nosec G304 -- name selects a repository-controlled fixture.
 	data, err := os.ReadFile(filepath.Join("..", "fixtures", "manifest", name))
-	require.NoError(b, err)
+	require.NoError(tb, err)
 	return bytes.TrimSuffix(data, []byte("\n"))
 }

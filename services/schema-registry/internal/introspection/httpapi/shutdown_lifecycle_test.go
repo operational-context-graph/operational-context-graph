@@ -118,13 +118,14 @@ func TestSIGTERMShutdownCancelsInFlightReads(t *testing.T) {
 			request, err := http.NewRequest(http.MethodGet, "http://"+listener.Addr().String()+test.path, nil)
 			require.NoError(t, err)
 			request.Header.Set("Accept-Encoding", "gzip")
-			requestDone := make(chan error, 1)
+			requestDone := make(chan struct{})
 			go func() {
-				response, requestErr := client.Do(request)
+				defer close(requestDone)
+				// Shutdown can complete an error response or close the transport; only completion matters here.
+				response, _ := client.Do(request)
 				if response != nil {
 					_ = response.Body.Close()
 				}
-				requestDone <- requestErr
 			}()
 			<-blocking.started
 			sigterm()

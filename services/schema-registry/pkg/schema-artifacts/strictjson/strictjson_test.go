@@ -161,13 +161,3 @@ func TestRejectUnknownFields(t *testing.T) {
 	require.NoError(t, RejectUnknownFields(map[string]any{"id": "value"}, "id"))
 	assert.Error(t, RejectUnknownFields(map[string]any{"other": "value"}, "id"))
 }
-
-// FuzzParse exercises parser robustness across valid seeds and arbitrary malformed byte input.
-func FuzzParse(f *testing.F) {
-	for _, input := range [][]byte{[]byte(`{}`), []byte(`[]`), []byte(`{"id":"value"}`), []byte{0xff}} {
-		f.Add(input)
-	}
-	f.Fuzz(func(t *testing.T, input []byte) {
-		_, _ = Parse(input)
-	})
-}

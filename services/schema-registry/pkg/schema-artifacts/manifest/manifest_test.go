@@ -623,12 +623,10 @@ func TestValidateIsRaceSafe(t *testing.T) {
 	errors := make(chan error, workers)
 	var group sync.WaitGroup
 	for range workers {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			_, err := Validate(data, context)
 			errors <- err
-		}()
+		})
 	}
 	group.Wait()
 	close(errors)
@@ -657,16 +655,6 @@ func TestParseRequiresExactJCSBytes(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// FuzzParse exercises manifest parsing with canonical fixtures, invalid encoding, duplicate members, and arbitrary mutations.
-func FuzzParse(f *testing.F) {
-	f.Add(fixtureForFuzz("valid-initial.json"))
-	f.Add([]byte(`{"$schema":"\xff"}`))
-	f.Add([]byte(`{"$schema":"x","$schema":"x"}`))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = Parse(data)
-	})
-}
-
 // fixture loads a repository fixture and removes one optional final newline before canonical parsing.
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()
@@ -681,16 +669,6 @@ func fixtureRaw(t *testing.T, name string) []byte {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", name))
 	require.NoError(t, err)
 	return data
-}
-
-// fixtureForFuzz loads newline-trimmed seed bytes and panics if a required repository fixture is unavailable.
-func fixtureForFuzz(name string) []byte {
-	// #nosec G304 -- name selects a repository-controlled fixture.
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", name))
-	if err != nil {
-		panic(err)
-	}
-	return []byte(strings.TrimSuffix(string(data), "\n"))
 }
 
 // contextFor supplies the fixed device-schema byte closure used by initial-release fixtures.
