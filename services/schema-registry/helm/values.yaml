@@ -1,0 +1,7 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/operational-context-graph/schema-registry
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  digest: ""

@@ -1,0 +1,23 @@
+apiVersion: v2
+name: ocg
+description: Operational Context Graph — OCM umbrella chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+dependencies:
+  - name: data-ingestion
+    version: ">=0.0.0-0"
+    repository: "file://../../services/data-ingestion/helm"
+  - name: inventory-store
+    version: ">=0.0.0-0"
+    repository: "file://../../services/inventory-store/helm"
+  - name: telemetry-store
+    version: ">=0.0.0-0"
+    repository: "file://../../services/telemetry-store/helm"
+  - name: inventory-connector
+    version: ">=0.0.0-0"
+    repository: "file://../../services/connectors/inventory/helm"
+  - name: schema-registry
+    version: ">=0.0.0-0"
+    repository: "file://../../services/schema-registry/helm"

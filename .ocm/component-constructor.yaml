@@ -1,0 +1,61 @@
+components:
+  - name: github.com/operational-context-graph/operational-context-graph
+    version: ${VERSION}
+    provider:
+      name: autonomous-operations
+    resources:
+      - name: schema-registry
+        type: ociImage
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
+          path: ./bin/images/schema-registry.oci.tar
+      - name: data-ingestion
+        type: ociImage
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
+          path: ./bin/images/data-ingestion.oci.tar
+      - name: telemetry-store
+        type: ociImage
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
+          path: ./bin/images/telemetry-store.oci.tar
+      - name: inventory-store
+        type: ociImage
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
+          path: ./bin/images/inventory-store.oci.tar
+      - name: inventory-connector
+        type: ociImage
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/vnd.ocm.software.oci.layout.v1+tar
+          path: ./bin/images/inventory-connector.oci.tar
+      - name: chart
+        type: helmChart
+        version: ${VERSION}
+        input:
+          type: Helm/v1
+          path: ./bin/ocg-${VERSION}.tgz
+      - name: bundle-manifest
+        type: blob
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/yaml
+          path: ./bin/bundle-manifest.yaml
+      - name: image-values
+        type: blob
+        version: ${VERSION}
+        input:
+          type: File/v1
+          mediaType: application/yaml
+          path: ./bin/image-values.yaml
