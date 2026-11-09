@@ -50,21 +50,22 @@ func newStore(t *testing.T) *store.DB {
 
 func insertLog(t *testing.T, ts time.Time, iri, hostName, severity, body string) {
 	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES ('%s', '%s', '%s', '%s', '%s')`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body,
-	)
-	_, err := testDB.Exec(q)
+	const q = `INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body)
 	require.NoError(t, err)
 }
 
 func insertMetric(t *testing.T, ts time.Time, iri, hostName, metricName string, value float64) {
 	t.Helper()
-	q := fmt.Sprintf(
-		`INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES ('%s', '%s', '%s', '%s', %f)`,
-		ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value,
-	)
-	_, err := testDB.Exec(q)
+	const q = `INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value)
+	require.NoError(t, err)
+}
+
+func insertSpan(t *testing.T, ts time.Time, iri, traceID, spanID, spanName string) {
+	t.Helper()
+	const q = `INSERT INTO ocg.traces (timestamp, iri, trace_id, span_id, span_name) VALUES (?, ?, ?, ?, ?)`
+	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, traceID, spanID, spanName)
 	require.NoError(t, err)
 }
 
@@ -178,6 +179,36 @@ func TestUniqueKeyDedup_Logs(t *testing.T) {
 		}
 	}
 	assert.LessOrEqual(t, count, 1, "UNIQUE KEY must deduplicate same (timestamp, iri) to at most one row")
+}
+
+func TestQueryTrace_ByTraceID(t *testing.T) {
+	ctx := context.Background()
+	db := newStore(t)
+
+	ts := time.Now().UTC().Truncate(time.Millisecond)
+	traceID := "4bf92f3577b34da6" + fmt.Sprintf("%016x", ts.UnixNano())
+	iri := "urn:ocg:span:test:qt-" + ts.Format("150405000")
+	insertSpan(t, ts, iri, traceID, "00f067aa0ba902b7", "GET /health")
+
+	spans, err := db.QueryTrace(ctx, store.TraceQuery{TraceID: traceID, Limit: 100})
+	require.NoError(t, err)
+
+	var found bool
+	for _, s := range spans {
+		if s.IRI == iri {
+			found = true
+		}
+	}
+	assert.True(t, found, "inserted span must be returned by QueryTrace")
+}
+
+func TestQueryTrace_UnknownTraceID_ReturnsEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := newStore(t)
+
+	spans, err := db.QueryTrace(ctx, store.TraceQuery{TraceID: "00000000000000000000000000000000", Limit: 100})
+	require.NoError(t, err)
+	assert.Empty(t, spans)
 }
 
 func TestUniqueKeyDedup_Metrics(t *testing.T) {

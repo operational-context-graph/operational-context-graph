@@ -10,9 +10,9 @@
   - changed-files:
       - any-glob-to-any-file: "services/telemetry-store/**"
 
-"connectors":
+"inventory-connector":
   - changed-files:
-      - any-glob-to-any-file: "services/connectors/**"
+      - any-glob-to-any-file: "services/connectors/inventory/**"
 
 "proto":
   - changed-files:

@@ -1,0 +1,86 @@
+# Detects newly added component manifests in pull requests targeting main.
+#
+# When a new go.mod, pyproject.toml, or package.json appears, posts a
+# checklist comment via the ocg-repository-ops GitHub App.
+---
+name: Detect New Component
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**/go.mod"
+      - "**/pyproject.toml"
+      - "**/package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect New Component
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect new component manifests
+        id: detect
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          new_components=$(scripts/detect-new-components.sh "origin/${BASE_REF}")
+
+          if [ -z "$new_components" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+          list=""
+          while IFS= read -r component; do
+            list="${list}- \`${component}\`"$'\n'
+          done <<< "$new_components"
+
+          echo "components<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s' "$list" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post checklist comment
+        if: steps.detect.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          COMPONENTS: ${{ steps.detect.outputs.components }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          body="## Possible new component detected
+
+          The following component manifest(s) appear to be newly added in this PR:
+
+          ${COMPONENTS}
+          If this is a new releasable component, make sure the following are addressed before merging:
+
+          - [ ] Add a \`CHANGELOG.md\` with the \`<!-- git-cliff: end of header -->\` marker to the component directory
+          - [ ] Add the component to \`scripts/resolve-component-versions.sh\`
+          - [ ] Add a version override input for the component to \`.github/workflows/create-release-pr.yml\`
+          - [ ] Add the component to the \`Validate version overrides\` step in \`.github/workflows/create-release-pr.yml\`
+          - [ ] Add a label entry for the component to \`.github/labeler.yml\`
+          - [ ] Add a scope for the component to \`.github/workflows/semantic-pull-requests.yml\` if one does not already exist
+          - [ ] Add a target for the component to \`docker-bake.hcl\` and add it to the \`default\` group
+
+          If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
+
+          gh pr comment "$PR_NUMBER" --body "$body"
