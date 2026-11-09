@@ -84,6 +84,8 @@ jobs:
       - name: Run tests
         run: make test-all
 
+  # Lints all subcharts using chart-testing (ct lint). ct discovers each subchart via its ci/
+  # directory and passes every ci/*.yaml file as --values to helm lint. See helm/README.md.
   helm-lint:
     name: Helm Lint
     runs-on: ubuntu-latest
