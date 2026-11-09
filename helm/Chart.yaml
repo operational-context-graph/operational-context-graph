@@ -33,10 +33,6 @@ dependencies:
     version: 0.0.1
     repository: file://charts/doris
     condition: doris.enabled
-  - name: schema-registry
-    version: 0.0.1
-    repository: file://charts/schema-registry
-    condition: schema-registry.enabled
   - name: otelcol
     version: 0.0.1
     repository: file://charts/otelcol
