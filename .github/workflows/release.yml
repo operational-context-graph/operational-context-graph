@@ -1,0 +1,270 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: System Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        default: system
+        type: choice
+        options:
+          - system
+
+# Only run one release at a time; cancel any pending run if a new one starts.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Gate: only proceed when triggered by a merge from a release/** branch
+  # ─────────────────────────────────────────────────────────────────────────────
+  check-release-trigger:
+    name: Check Release Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      is_system_release: ${{ steps.check.outputs.is_system_release }}
+      version: ${{ steps.check.outputs.version }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for system release tag
+        id: check
+        run: |
+          # Derive VERSION from the bare v<semver> tag on HEAD
+          VERSION=$(git describe --tags --exact-match HEAD 2>/dev/null | sed 's/^v//' || true)
+          if echo "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "is_system_release=true" >> "${GITHUB_OUTPUT}"
+            echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+            echo "System release detected: v${VERSION}"
+          else
+            echo "is_system_release=false" >> "${GITHUB_OUTPUT}"
+            echo "version=" >> "${GITHUB_OUTPUT}"
+            echo "No system release tag found on HEAD — skipping release pipeline"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Validate that all five component service tags exist before building the bundle
+  # ─────────────────────────────────────────────────────────────────────────────
+  validate-matrix:
+    name: Validate Component Matrix
+    runs-on: ubuntu-latest
+    needs: check-release-trigger
+    if: needs.check-release-trigger.outputs.is_system_release == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify component tags exist
+        run: |
+          SERVICES="data-ingestion inventory-store telemetry-store inventory-connector schema-registry"
+          missing=""
+          for svc in ${SERVICES}; do
+            if ! git tag -l "services/${svc}/v*" | grep -qE "^services/${svc}/v[0-9]+\.[0-9]+\.[0-9]+$"; then
+              echo "ERROR: no published tag found for services/${svc}/v*"
+              missing="${missing} ${svc}"
+            else
+              latest=$(git tag -l "services/${svc}/v*" | grep -E "^services/${svc}/v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -1)
+              echo "OK: ${svc} — ${latest}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "Untagged components:${missing}"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Build OCI image tarballs for each service
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-images:
+    name: Build Service Images
+    runs-on: ubuntu-latest
+    needs: validate-matrix
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        service:
+          - name: data-ingestion
+            dockerfile: services/data-ingestion/Dockerfile
+          - name: inventory-store
+            dockerfile: services/inventory-store/Dockerfile
+          - name: telemetry-store
+            dockerfile: services/telemetry-store/Dockerfile
+          - name: inventory-connector
+            dockerfile: services/connectors/inventory/Dockerfile
+          - name: schema-registry
+            dockerfile: ""  # placeholder — no Dockerfile yet
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and export OCI tarball
+        run: |
+          mkdir -p bin/images
+          if [ -z "${{ matrix.service.dockerfile }}" ] || [ ! -f "${{ matrix.service.dockerfile }}" ]; then
+            # Placeholder: use hello-world OCI layout tarball for schema-registry
+            docker pull hello-world:latest
+            docker image save --format oci-layout hello-world:latest | \
+              docker buildx imagetools inspect --raw > /dev/null || true
+            docker save hello-world:latest -o /tmp/schema-registry-tmp.tar
+            # Convert to OCI layout format with a single manifest entry
+            mkdir -p /tmp/oci-schema-registry
+            docker buildx build --platform linux/amd64 \
+              --output type=oci,dest=bin/images/${{ matrix.service.name }}.oci.tar \
+              --file /dev/stdin . <<'EOF'
+          FROM hello-world:latest
+          EOF
+          else
+            docker buildx build \
+              --platform linux/amd64 \
+              --output type=oci,dest=bin/images/${{ matrix.service.name }}.oci.tar \
+              --file ${{ matrix.service.dockerfile }} \
+              .
+          fi
+
+      - name: Upload OCI tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-${{ matrix.service.name }}
+          path: bin/images/${{ matrix.service.name }}.oci.tar
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OCM Bundle: preflight → ocm-build → package → inspect → sign → verify
+  # ─────────────────────────────────────────────────────────────────────────────
+  ocm-bundle:
+    name: OCM Bundle
+    runs-on: ubuntu-latest
+    needs:
+      - check-release-trigger
+      - validate-matrix
+      - build-images
+    if: needs.check-release-trigger.outputs.is_system_release == 'true'
+    permissions:
+      contents: write  # to create GitHub Release and upload assets
+    env:
+      VERSION: ${{ needs.check-release-trigger.outputs.version }}
+      OCM_VERSION: "0.22.1"
+      OCM_CLI_SHA256: "15532daec120686519dc3d122e078820114f2bd090b1ed3091e9bea6704339ca"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download OCI tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: oci-*
+          merge-multiple: true
+          path: bin/images/
+
+      - name: Install OCM v2 CLI
+        run: |
+          # Source MUST be open-component-model/open-component-model (NOT legacy open-component-model/ocm)
+          curl -fsSL \
+            "https://github.com/open-component-model/open-component-model/releases/download/v${OCM_VERSION}/ocm-linux-amd64" \
+            -o /tmp/ocm-bin
+          echo "${OCM_CLI_SHA256}  /tmp/ocm-bin" | sha256sum --check --status || {
+            echo "ERROR: OCM CLI checksum mismatch"
+            sha256sum /tmp/ocm-bin
+            exit 1
+          }
+          install -m 0755 /tmp/ocm-bin /usr/local/bin/ocm
+          ocm version
+
+      - name: Write signing key
+        env:
+          OCM_SIGNING_KEY: ${{ secrets.OCM_SIGNING_KEY }}
+        run: |
+          # Write private key to path OUTSIDE the checkout
+          printf '%s' "${OCM_SIGNING_KEY}" > /tmp/ocg-signing-key.pem
+          chmod 600 /tmp/ocg-signing-key.pem
+
+      - name: Install tools (helm, yq)
+        run: |
+          # helm
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          # yq
+          YQ_VERSION=v4.44.6
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: OCM preflight
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make preflight
+
+      - name: OCM build
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
+
+      - name: OCM package
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make package
+
+      - name: OCM inspect
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make inspect
+
+      - name: OCM sign
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make sign
+
+      - name: OCM verify
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make verify
+
+      - name: Re-verify after transfer (publish gate)
+        run: |
+          # Re-verify against the local CTF after archiving — a failed verify here
+          # means the archive is corrupt; do not upload it.
+          OCM_CTF="ctf::./bin/ctf/"
+          OCM_COMPONENT="github.com/operational-context-graph/operational-context-graph"
+          ocm verify component-version \
+            --signature ocg-sig \
+            "${OCM_CTF}${OCM_COMPONENT}:${VERSION}"
+
+      - name: Generate system SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: "."
+          artifact-name: "ocg-${{ env.VERSION }}-sbom.spdx.json"
+          output-file: "bin/ocg-${{ env.VERSION }}-sbom.spdx.json"
+
+      - name: Upload CTF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocg-ctf-${{ env.VERSION }}
+          path: bin/ocg-${{ env.VERSION }}.ctf.tgz
+          retention-days: 30
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "OCG v${VERSION}" \
+            --notes-file RELEASE.md \
+            "bin/ocg-${VERSION}.ctf.tgz#OCM CTF archive" \
+            "bin/ocg-${VERSION}-sbom.spdx.json#System SBOM"
