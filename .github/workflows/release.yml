@@ -84,7 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [detect, tag-component]
     if: needs.detect.outputs.release_type == 'component' && needs.detect.outputs.has_dockerfile == 'true'
-    permissions: write-all
+    permissions:
+      contents: read
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
@@ -98,6 +99,7 @@ jobs:
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
           permission-packages: write
       # TODO: set up QEMU and docker/buildx for multi-arch if needed (resolve target archs: amd64 only vs amd64+arm64)
       - name: Set up Docker Buildx
