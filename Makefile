@@ -15,6 +15,7 @@ TARGET_DIR = services/$(TARGET)
         vet vet-all test test-all lint lint-all tidy tidy-all tidy-check-all mocks \
         go-modules-json workspace-sync-check \
         proto-lint proto-format proto-generate \
+        docker-build docker-build-all \
         require-target require-targets
 
 # =============================================================================
@@ -97,6 +98,14 @@ tidy-all: require-targets
 # Regenerate mocks for data-ingestion (requires mockery).
 mocks:
 	$(MAKE) -C services/data-ingestion mocks
+
+# Build one service image. Requires TARGET=<bake-target>, e.g. make docker-build TARGET=data-ingestion
+docker-build: require-target
+	docker buildx bake --progress=plain $(TARGET)
+
+# Build all service images.
+docker-build-all:
+	docker buildx bake --progress=plain
 
 # =============================================================================
 # CI

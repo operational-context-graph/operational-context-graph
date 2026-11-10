@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "data-ingestion.fullname" . }}
+  labels:
+    {{- include "data-ingestion.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "data-ingestion.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "data-ingestion.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - {{ include "data-ingestion.name" . }}
+                topologyKey: "kubernetes.io/hostname"
+      initContainers:
+        - name: migrate
+          image: {{ include "data-ingestion.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["/usr/local/bin/goose", "up"]
+          env:
+            - name: GOOSE_DRIVER
+              value: "postgres"
+            - name: GOOSE_MIGRATION_DIR
+              value: "/migrations"
+            - name: GOOSE_TABLE
+              value: "goose_db_version_data_ingestion"
+            - name: DB_HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: GOOSE_DBSTRING
+              value: "host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) user=$(DB_USER) password=$(DB_PASSWORD) sslmode=$(DB_SSLMODE)"
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "data-ingestion.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.grpcContainerPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metricsPort }}
+              protocol: TCP
+          env:
+            - name: OCG_DI_DATABASE__HOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: OCG_DI_DATABASE__PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OCG_DI_DATABASE__NAME
+              value: {{ .Values.database.name | quote }}
+            - name: OCG_DI_DATABASE__USER
+              value: {{ .Values.database.user | quote }}
+            - name: OCG_DI_DATABASE__SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: OCG_DI_DATABASE__MAXCONNS
+              value: {{ .Values.database.maxconns | quote }}
+            - name: OCG_DI_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "data-ingestion.database.passwordSecret.name is required" .Values.database.passwordSecret.name | quote }}
+                  key: {{ .Values.database.passwordSecret.key | quote }}
+            - name: OCG_DI_TELEMETRY_STORE__BASE_URL
+              value: {{ .Values.telemetryStore.baseURL | quote }}
+            - name: OCG_DI_INVENTORY_STORE__BASE_URL
+              value: {{ .Values.inventoryStore.baseURL | quote }}
+            {{- if .Values.tls.enabled }}
+            - name: OCG_DI_GRPC__TLS__CERT_FILE
+              value: {{ .Values.tls.mountPath }}/tls.crt
+            - name: OCG_DI_GRPC__TLS__KEY_FILE
+              value: {{ .Values.tls.mountPath }}/tls.key
+            - name: OCG_DI_GRPC__TLS__CA_FILE
+              value: {{ .Values.tls.mountPath }}/ca.crt
+            {{- end }}
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+      {{- end }}

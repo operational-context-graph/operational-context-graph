@@ -1,0 +1,39 @@
+apiVersion: v2
+name: operational-context-graph
+description: Umbrella chart for the Operational Context Graph platform
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
+dependencies:
+  - name: data-ingestion
+    version: 0.0.1
+    repository: file://charts/data-ingestion
+    condition: data-ingestion.enabled
+  - name: postgresql
+    version: 18.12.18
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+  - name: pgadmin
+    version: 0.0.1
+    repository: file://charts/pgadmin
+    condition: pgadmin.enabled
+  - name: inventory-store
+    version: 0.0.1
+    repository: file://charts/inventory-store
+    condition: inventory-store.enabled
+  - name: telemetry-store
+    version: 0.0.1
+    repository: file://charts/telemetry-store
+    condition: telemetry-store.enabled
+  - name: inventory-connector
+    version: 0.0.1
+    repository: file://charts/inventory-connector
+    condition: inventory-connector.enabled
+  - name: doris
+    version: 0.0.1
+    repository: file://charts/doris
+    condition: doris.enabled
+  - name: otelcol
+    version: 0.0.1
+    repository: file://charts/otelcol
+    condition: otelcol.enabled
