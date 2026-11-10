@@ -132,6 +132,7 @@ jobs:
     #   (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
     #   github.ref == 'refs/heads/fix/ci-publish-container-permission'
     permissions:
+      packages: write
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
