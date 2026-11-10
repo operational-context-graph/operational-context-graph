@@ -1,6 +1,7 @@
 SHELL       := /usr/bin/env bash
 BIN_DIR     := bin
 COVERAGE_DIR := $(CURDIR)/coverage
+COVERAGE_THRESHOLD := 25
 
 # Go modules discovery. Connectors carry the subdirectory prefix.
 # TARGET_DIR = services/$(TARGET) resolves correctly for every target.
@@ -41,10 +42,12 @@ build: require-target
 
 # Build every service and connector.
 build-all: require-targets
-	@for s in $(TARGETS); do \
+	@failed=0; \
+	for s in $(TARGETS); do \
 		echo "==> build $$s"; \
-		$(MAKE) --no-print-directory build TARGET=$$s; \
-	done
+		$(MAKE) --no-print-directory build TARGET=$$s || failed=1; \
+	done; \
+	exit $$failed
 
 # Run one service locally. Requires TARGET=<name>.
 run: require-target
@@ -56,21 +59,25 @@ vet: require-target
 
 # Vet every service and connector.
 vet-all: require-targets
-	@for s in $(TARGETS); do \
+	@failed=0; \
+	for s in $(TARGETS); do \
 		echo "==> vet $$s"; \
-		$(MAKE) --no-print-directory vet TARGET=$$s; \
-	done
+		$(MAKE) --no-print-directory vet TARGET=$$s || failed=1; \
+	done; \
+	exit $$failed
 
 # Test one service. Requires TARGET=<name>.
 test: require-target
-	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) test
+	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) COVERAGE_THRESHOLD=$(COVERAGE_THRESHOLD) test
 
 # Test every service and connector. Coverage profiles land in $(COVERAGE_DIR).
 test-all: require-targets
-	@for s in $(TARGETS); do \
+	@failed=0; \
+	for s in $(TARGETS); do \
 		echo "==> test $$s"; \
-		$(MAKE) --no-print-directory test TARGET=$$s; \
-	done
+		$(MAKE) --no-print-directory test TARGET=$$s || failed=1; \
+	done; \
+	exit $$failed
 
 # Lint one service. Requires TARGET=<name>.
 lint: require-target
@@ -78,10 +85,12 @@ lint: require-target
 
 # Lint every service and connector.
 lint-all: require-targets
-	@for s in $(TARGETS); do \
+	@failed=0; \
+	for s in $(TARGETS); do \
 		echo "==> lint $$s"; \
-		$(MAKE) --no-print-directory lint TARGET=$$s; \
-	done
+		$(MAKE) --no-print-directory lint TARGET=$$s || failed=1; \
+	done; \
+	exit $$failed
 
 # Tidy go.mod for one service. Requires TARGET=<name>.
 tidy: require-target
