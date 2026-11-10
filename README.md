@@ -73,6 +73,22 @@ make test-all
 make test TARGET=data-ingestion
 ```
 
+### Building container images
+
+Container images are built with [Docker Bake](https://docs.docker.com/build/bake/), which reads `docker-bake.hcl` in the repository root. Bake treats the repo root as the build context for all services, which is required for the Go workspace to resolve shared modules under `gen/go/`.
+
+To build all service images:
+
+```sh
+make docker-build-all
+```
+
+To build a single service image:
+
+```sh
+make docker-build TARGET=data-ingestion
+```
+
 ## Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/operational-context-graph/operational-context-graph/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/operational-context-graph/.github/blob/main/CONTRIBUTING.md).

@@ -83,6 +83,27 @@ jobs:
       - name: Run tests
         run: make test-all
 
+  # Lints all subcharts using chart-testing (ct lint). ct discovers each subchart via its ci/
+  # directory and passes every ci/*.yaml file as --values to helm lint. See helm/README.md.
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1 — PIN: resolve SHA from github.com
+        with:
+          version: latest
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510 # v2.9.0 — PIN: resolve SHA from github.com
+      - name: Run chart-testing (lint)
+        run: ct lint --all --chart-dirs helm/charts
+
   workspace-sync:
     name: Workspace Sync
     runs-on: ubuntu-latest
