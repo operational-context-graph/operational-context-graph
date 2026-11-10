@@ -1,8 +1,17 @@
+# Triggered after CI passes on main. Handles component releases (versioned image, SBOM,
+# GitHub Release) and system releases (Helm chart packaging, GitHub Release).
+---
 name: Release
 
 on:
-  push:
-    branches: ["main"]
+  # Uses workflow_run instead of push so release jobs only start after CI succeeds.
+  # workflow_run runs with base-branch permissions regardless of the triggering workflow's
+  # origin. Safe here because all jobs are gated on detect.outputs.release_type, which is
+  # only non-empty for release/** merges (impossible to bypass via a fork PR).
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    types: [completed]
+    branches: ["main"] # zizmor: ignore[dangerous-triggers]
 
 permissions:
   contents: read
@@ -11,6 +20,7 @@ jobs:
   detect:
     name: Detect Release
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
     outputs:
@@ -39,7 +49,6 @@ jobs:
   # Component release
   #
   # Runs when a release/<slug>/<version> branch is merged.
-  # Gate: release_type == 'component'
   # ---
   tag-component:
     name: Tag Component
@@ -53,7 +62,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -61,7 +69,6 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
-
       - name: Push component tag
         run: |
           APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
@@ -72,39 +79,10 @@ jobs:
           git push origin "${{ needs.detect.outputs.tag }}"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
-  build:
-    name: Build and Test
-    runs-on: ubuntu-latest
-    needs: detect
-    if: needs.detect.outputs.release_type == 'component'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Initialize Go workspace
-        run: make init
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      - name: Build
-        run: make build TARGET=${{ needs.detect.outputs.slug }}
-
-      - name: Test
-        run: make test TARGET=${{ needs.detect.outputs.slug }}
-
   publish-container:
     name: Build and Push Container
     runs-on: ubuntu-latest
-    needs: [detect, tag-component, build]
+    needs: [detect, tag-component]
     if: needs.detect.outputs.release_type == 'component' && needs.detect.outputs.has_dockerfile == 'true'
     permissions:
       contents: read
@@ -115,9 +93,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # TODO: set up QEMU and docker/buildx for multi-arch if needed (resolve target archs: amd64 only vs amd64+arm64)
-
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -125,17 +100,15 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-packages: write
-
+      # TODO: set up QEMU and docker/buildx for multi-arch if needed (resolve target archs: amd64 only vs amd64+arm64)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-
       - name: Log in to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
           username: ${{ steps.app-token.outputs.app-slug }}
           password: ${{ steps.app-token.outputs.token }}
-
       - name: Build and push container image
         id: push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
@@ -146,7 +119,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}-${{ github.sha }}
-
   attest:
     name: Attest Build Provenance
     runs-on: ubuntu-latest
@@ -163,7 +135,6 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}
           subject-digest: ${{ needs.publish-container.outputs.digest }}
           push-to-registry: true
-
   sbom:
     name: Generate SBOM
     runs-on: ubuntu-latest
@@ -181,7 +152,6 @@ jobs:
           output-file: sbom.spdx.json
           upload-artifact: true
           artifact-name: sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
-
   github-release-component:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -197,43 +167,38 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-
-      - name: Install git-cliff
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
-        with:
-          tool: git-cliff@2.14.2
-
       - name: Download SBOM artifact
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
           name: sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
-
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          HAS_DOCKERFILE: ${{ needs.detect.outputs.has_dockerfile }}
         run: |
-          NOTES=$(git cliff \
-            --include-path "${{ needs.detect.outputs.component }}/**" \
-            --tag "${{ needs.detect.outputs.tag }}" \
-            --unreleased \
-            --strip all)
+          # The component release PR already committed the changelog; extract the top section
+          # (everything between the first ## heading and the second one).
+          CHANGELOG=$(awk '/^## /{if(found) exit; found=1; next} found{print}' \
+            "${{ needs.detect.outputs.component }}/CHANGELOG.md")
+          if [[ "${HAS_DOCKERFILE}" == "true" ]]; then
+            IMAGE_URL="https://ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}"
+            NOTES=$(printf '%s\n\n## Container image\n\n%s\n' "${CHANGELOG}" "${IMAGE_URL}")
+          else
+            NOTES="${CHANGELOG}"
+          fi
           gh release create "${{ needs.detect.outputs.tag }}" \
             --title "${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}" \
             --notes "$NOTES" \
             sbom-${{ needs.detect.outputs.slug }}-${{ needs.detect.outputs.version }}.spdx.json
-
-  # ── System release ───────────────────────────────────────────────────────────
+  # System release
   #
   # Runs when a release/<version> branch is merged.
-  # Gate: release_type == 'system'
-
+  # ---
   tag-system:
     name: Tag System Release
     runs-on: ubuntu-latest
@@ -246,7 +211,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -254,7 +218,6 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
-
       - name: Push system tag
         run: |
           APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
@@ -265,36 +228,107 @@ jobs:
           git push origin "v${{ needs.detect.outputs.version }}"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
-  ocm:
-    name: Update OCM Descriptor
+  # Package the umbrella Helm chart with component image tags baked into each subchart's
+  # values.yaml. Component images were already published during their respective component
+  # releases; this job only reads those versions from CHANGELOG.md and pins them in the chart.
+  # Uploads the .tgz as a workflow artifact for github-release-system to attach.
+  package-helm-chart:
+    name: Package Helm Chart
     runs-on: ubuntu-latest
     needs: [detect, tag-system]
     if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: read
     steps:
-      # TODO: resolve OCM registry endpoint and credentials (repo secret names TBD with architects)
-      # TODO: resolve signing approach (keyless Sigstore OIDC vs managed key in Vault)
-      # TODO: build OCM component descriptor from version matrix in CHANGELOG.md
-      # TODO: sign descriptor with cosign
-      # TODO: push descriptor to OCM registry
-      - name: Update OCM descriptor
-        run: echo "TODO"
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve component versions from CHANGELOG.md
+        id: versions
+        run: |
+          # The version matrix written by create-release-pr.yml has this format:
+          #   | `services/data-ingestion` | [services/data-ingestion/v1.2.3](...) |
+          # Extract the version from the link text in the second column.
+          extract_version() {
+            local path="$1"
+            grep -m1 "^\| \`${path}\`" CHANGELOG.md \
+              | grep -oP '\['"${path}"'/v\K[^\]]+' \
+              || { echo "::error::Could not resolve version for ${path} from CHANGELOG.md" >&2; exit 1; }
+          }
 
-  sbom-system:
-    name: Generate System SBOM
-    runs-on: ubuntu-latest
-    needs: [detect, tag-system]
-    if: needs.detect.outputs.release_type == 'system'
-    steps:
-      # TODO: aggregate per-component SPDX documents into a system-level SPDX document
-      # Per-component SBOMs are attached to each component GitHub Release
-      - name: Generate system SBOM
-        run: echo "TODO"
+          di=$(extract_version "services/data-ingestion")
+          is=$(extract_version "services/inventory-store")
+          ts=$(extract_version "services/telemetry-store")
+          ci=$(extract_version "services/connectors/inventory")
 
+          echo "data_ingestion_version=${di}"           >> "$GITHUB_OUTPUT"
+          echo "inventory_store_version=${is}"          >> "$GITHUB_OUTPUT"
+          echo "telemetry_store_version=${ts}"          >> "$GITHUB_OUTPUT"
+          echo "inventory_connector_version=${ci}"      >> "$GITHUB_OUTPUT"
+
+          echo "Resolved versions: data-ingestion=${di} inventory-store=${is} telemetry-store=${ts} inventory-connector=${ci}"
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - name: Patch subchart image tags
+        env:
+          DATA_INGESTION_VERSION: ${{ steps.versions.outputs.data_ingestion_version }}
+          INVENTORY_STORE_VERSION: ${{ steps.versions.outputs.inventory_store_version }}
+          TELEMETRY_STORE_VERSION: ${{ steps.versions.outputs.telemetry_store_version }}
+          INVENTORY_CONNECTOR_VERSION: ${{ steps.versions.outputs.inventory_connector_version }}
+        run: |
+          # Note: yq is available on ubuntu-latest runners.
+          yq -i '.image.tag = strenv(DATA_INGESTION_VERSION)'      helm/charts/data-ingestion/values.yaml
+          yq -i '.image.tag = strenv(INVENTORY_STORE_VERSION)'     helm/charts/inventory-store/values.yaml
+          yq -i '.image.tag = strenv(TELEMETRY_STORE_VERSION)'     helm/charts/telemetry-store/values.yaml
+          yq -i '.image.tag = strenv(INVENTORY_CONNECTOR_VERSION)' helm/charts/inventory-connector/values.yaml
+      - name: Update Helm dependencies
+        run: helm dependency update helm/
+      - name: Package Helm chart
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          helm package helm/ \
+            --version "${VERSION}" \
+            --app-version "${VERSION}" \
+            --destination .
+      - name: Upload Helm chart artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-chart-${{ needs.detect.outputs.version }}
+          path: operational-context-graph-${{ needs.detect.outputs.version }}.tgz
+          retention-days: 1
+  # TODO: implement OCM bundling and release.
+  # This job is a placeholder that produces a stub descriptor so the GitHub Release
+  # attachment wiring is already in place when OCM support is added.
+  # ocm:
+  #   name: Bundle OCM Component
+  #   runs-on: ubuntu-latest
+  #   needs: [detect, tag-system]
+  #   if: needs.detect.outputs.release_type == 'system'
+  #   permissions:
+  #     contents: read
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #       with:
+  #         persist-credentials: false
+  #         fetch-depth: 0
+  #     - name: Build and push OCM component
+  #       env:
+  #         VERSION: ${{ needs.detect.outputs.version }}
+  #       run: echo "TODO"
+  #     - name: Upload OCM bundle artifact
+  #       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  #       with:
+  #         name: ocm-bundle-${{ needs.detect.outputs.version }}
+  #         path: ocm-component-${{ needs.detect.outputs.version }}.ctf
+  #         retention-days: 1
   github-release-system:
     name: Create System GitHub Release
     runs-on: ubuntu-latest
-    needs: [detect, tag-system, ocm, sbom-system]
+    needs: [detect, tag-system, package-helm-chart]
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: write
@@ -306,20 +340,23 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-
+      - name: Download Helm chart artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: helm-chart-${{ needs.detect.outputs.version }}
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
         run: |
-          # Release notes are the version matrix from CHANGELOG.md for this version
-          NOTES=$(awk '/^## \[${{ needs.detect.outputs.version }}\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
-          gh release create "v${{ needs.detect.outputs.version }}" \
-            --title "system v${{ needs.detect.outputs.version }}" \
-            --notes "$NOTES"
-          # TODO: attach system SBOM artifact from sbom-system job
+          NOTES=$(awk '/^## \['"${VERSION}"'\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
+          gh release create "v${VERSION}" \
+            --title "system v${VERSION}" \
+            --notes "${NOTES}" \
+            "operational-context-graph-${VERSION}.tgz#Helm chart"
+          # TODO: attach OCM bundle once the ocm job above is implemented
