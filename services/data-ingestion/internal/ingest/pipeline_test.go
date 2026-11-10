@@ -75,7 +75,7 @@ func TestPipeline_Ingest_AllAccepted(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming(), conforming(), conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:3, RejectedCount: 0, Accepted: []bool{true, true, true}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 3, RejectedCount: 0, Accepted: []bool{true, true, true}}, res)
 }
 
 func TestPipeline_Ingest_MixedBatch(t *testing.T) {

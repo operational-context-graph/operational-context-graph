@@ -29,7 +29,6 @@ type PostgresBackfiller struct {
 	db pgxQuerier
 }
 
-
 // NewPostgresBackfiller constructs a PostgresBackfiller. Returns a non-nil
 // error when pool is nil so wiring mistakes surface at startup.
 func NewPostgresBackfiller(pool *pgxpool.Pool) (*PostgresBackfiller, error) {
