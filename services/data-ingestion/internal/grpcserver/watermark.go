@@ -10,9 +10,9 @@ import (
 // scanning batch in reverse. numPartitions is the number of distinct partitions
 // in the batch; when > 0 the scan stops early once all partitions are found.
 // Pass 0 when the count is unknown — the full batch is scanned.
-func lastAcceptedWatermarks(batch []ingest.IngestRecord, accepted []bool, numPartitions int, connectorID string) map[string]map[string]any {
+func lastAcceptedWatermarks(batch []ingest.IngestRecord, accepted []bool, numPartitions int, connectorID string, log *slog.Logger) map[string]map[string]any {
 	if len(accepted) != len(batch) {
-		slog.Error("lastAcceptedWatermarks: accepted length mismatch", "batch", len(batch), "accepted", len(accepted), "connector_id", connectorID)
+		log.Error("lastAcceptedWatermarks: accepted length mismatch", "batch", len(batch), "accepted", len(accepted), "connector_id", connectorID)
 		return nil
 	}
 	result := make(map[string]map[string]any)

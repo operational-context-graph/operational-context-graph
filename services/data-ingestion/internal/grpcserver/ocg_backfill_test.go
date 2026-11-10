@@ -448,7 +448,7 @@ func TestNewServer_BackfillServiceRegistered(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		_ = <-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -521,7 +521,7 @@ func TestBackfillCloseGap_Concurrent_WithIngest(t *testing.T) {
 	}
 	for range goroutines * 2 {
 		// any error is acceptable (race between close and advance); no panic is the assertion
-		_ = <-errs
+		<-errs //nolint:errcheck // any error is acceptable in this concurrent race test
 	}
 }
 
@@ -541,7 +541,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 
 	const goroutines = 10
 	errs := make(chan error, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 				Messages: []*ingestionv1.MessageEnvelope{
@@ -551,7 +551,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 			errs <- err
 		}()
 	}
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		assert.NoError(t, <-errs)
 	}
 }

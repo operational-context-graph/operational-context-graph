@@ -353,7 +353,7 @@ func TestMTLSValidClientAccepted(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -382,7 +382,7 @@ func TestMTLSNoClientCertRejected(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -412,7 +412,7 @@ func TestMTLSWrongCARejected(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -440,7 +440,7 @@ func TestMTLSExpiredClientCertRejected(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -537,7 +537,7 @@ func TestPlaintextModeStarts(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -680,7 +680,7 @@ func TestMaxRecvMsgSizeRejectsOversized(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
@@ -742,7 +742,7 @@ func TestServer_WithOTLPHandler(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 

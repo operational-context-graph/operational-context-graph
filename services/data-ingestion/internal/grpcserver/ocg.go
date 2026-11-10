@@ -118,7 +118,7 @@ func (recv *OCGReceiver) Ingest(ctx context.Context, req *ingestionv1.IngestRequ
 	}
 
 	// Collect last accepted watermark per partition (message order = last wins).
-	lastWM := lastAcceptedWatermarks(batch, result.Accepted, len(partitions), connectorID)
+	lastWM := lastAcceptedWatermarks(batch, result.Accepted, len(partitions), connectorID, recv.handler.log)
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceLive(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
@@ -158,18 +158,18 @@ func (h *OCGHandler) mapIngestError(err error) error {
 // unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
 // Both OCGHandler and OCGBackfillHandler delegate to this shared function so
 // retry-delay policy stays in one place.
-func unavailableWithRetry(msg string, retry *config.RetryConfig) error {
+func unavailableWithRetry(msg string, retry *config.RetryConfig, log *slog.Logger) error {
 	base := status.New(codes.Unavailable, msg)
 	withRetry, err := base.WithDetails(&errdetails.RetryInfo{
 		RetryDelay: durationpb.New(retry.RetryDelay),
 	})
 	if err != nil {
-		slog.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
+		log.Error("failed to attach RetryInfo to UNAVAILABLE status", "err", err)
 		return base.Err()
 	}
 	return withRetry.Err()
 }
 
 func (s *OCGHandler) unavailableWithRetry(msg string) error {
-	return unavailableWithRetry(msg, s.retry)
+	return unavailableWithRetry(msg, s.retry, s.log)
 }
