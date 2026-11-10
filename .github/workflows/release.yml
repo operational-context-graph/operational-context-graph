@@ -12,7 +12,10 @@ on:
     workflows: ["Continuous Integration"]
     types: [completed]
     branches: ["main"] # zizmor: ignore[dangerous-triggers]
-  workflow_dispatch: ~ # TODO: just for debugging, delete before merge
+  # TODO: just for debugging, delete before merge
+  workflow_dispatch: ~
+  pull_request:
+    branches: ["main"]
 
 permissions:
   contents: read
