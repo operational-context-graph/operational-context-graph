@@ -2,7 +2,8 @@
 
 Task 2.2 covers strict parsing and JSON Canonicalization Scheme (JCS) robustness.
 These tests change no runtime limits or format semantics.
-Fuzz targets, allocation benchmarks, and their shared helpers live in `test/benchmark`.
+Allocation benchmarks live in `test/benchmark`; fuzz targets live in `test/fuzz`.
+Both suites use workload constructors from `test/shared/jsonworkloads`.
 They exercise the exported strict JSON and manifest packages as black-box tests.
 
 ## Input profile
@@ -49,13 +50,15 @@ The canonicalization fuzz target applies strict parsing before calling the JCS d
 Run from `services/schema-registry`:
 
 ```sh
-make test TEST_PACKAGES='./pkg/schema-artifacts/strictjson ./pkg/schema-artifacts/manifest ./test/benchmark'
+make test TEST_PACKAGES='./pkg/schema-artifacts/strictjson ./pkg/schema-artifacts/manifest ./test/benchmark ./test/fuzz ./test/shared/...'
 make test-benchmark TEST_ARGS='-run=^$$ -bench=Profile -benchtime=1x -race'
-make test TEST_PACKAGES='./test/benchmark' TEST_ARGS='-run=^$$ -fuzz=^FuzzStrictJSONParse$$ -fuzztime=10s -parallel=2'
-make test TEST_PACKAGES='./test/benchmark' TEST_ARGS='-run=^$$ -fuzz=^FuzzManifestParse$$ -fuzztime=10s -parallel=2'
-make test TEST_PACKAGES='./test/benchmark' TEST_ARGS='-run=^$$ -fuzz=^FuzzCanonicalize$$ -fuzztime=10s -parallel=2'
+make test TEST_PACKAGES='./test/fuzz' TEST_ARGS='-run=^$$ -fuzz=^FuzzStrictJSONParse$$ -fuzztime=10s -parallel=2'
+make test TEST_PACKAGES='./test/fuzz' TEST_ARGS='-run=^$$ -fuzz=^FuzzManifestParse$$ -fuzztime=10s -parallel=2'
+make test TEST_PACKAGES='./test/fuzz' TEST_ARGS='-run=^$$ -fuzz=^FuzzCanonicalize$$ -fuzztime=10s -parallel=2'
 ```
 
 Increase fuzz duration for scheduled testing.
 Keep fuzz workers bounded; each worker can process serviceability-boundary documents.
+Ordinary test runs execute fuzz seeds; generated fuzzing requires selecting one target per invocation.
+Checked-in fuzz regression inputs belong in `test/fuzz/testdata/fuzz/<FuzzFunctionName>/`.
 Double dollar signs preserve regular-expression anchors through Make expansion.

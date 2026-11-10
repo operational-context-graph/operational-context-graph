@@ -22,15 +22,15 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/corpus"
 	"github.com/stretchr/testify/require"
 )
 
 // buildCorpusRelease resolves complete snapshots and computes integrity metadata from the checked-in exact bytes.
 // It neither populates storage nor performs release activation.
-func buildCorpusRelease(t testing.TB, set shared.Corpus, name string) (manifest.Manifest, manifest.Context) {
+func buildCorpusRelease(t testing.TB, set corpus.Corpus, name string) (manifest.Manifest, manifest.Context) {
 	t.Helper()
-	var recipe *shared.Release
+	var recipe *corpus.Release
 	for i := range set.Releases {
 		if set.Releases[i].Name == name {
 			recipe = &set.Releases[i]
@@ -57,7 +57,7 @@ func buildCorpusRelease(t testing.TB, set shared.Corpus, name string) (manifest.
 			PayloadBytes: []byte(definition.Payload), Resources: []artifact.Resource{}, Dependencies: []artifact.Dependency{},
 		}
 		if definition.PayloadFile != "" {
-			item.PayloadBytes = shared.ReadFixture(t, definition.PayloadFile)
+			item.PayloadBytes = corpus.ReadFixture(t, definition.PayloadFile)
 		}
 		mediaType := artifact.SchemaMediaType
 		switch item.Kind {
@@ -186,7 +186,7 @@ func corpusDocument(m manifest.Manifest) map[string]any {
 
 // TestReleaseCorpusValidSnapshots exercises complete fixtures, candidate coexistence, and conservative compatibility without executing programs.
 func TestReleaseCorpusValidSnapshots(t *testing.T) {
-	set := shared.LoadCorpus(t)
+	set := corpus.LoadCorpus(t)
 	for _, recipe := range set.Releases {
 		t.Run(recipe.Name, func(t *testing.T) {
 			m, c := buildCorpusRelease(t, set, recipe.Name)
@@ -310,10 +310,10 @@ func corpusClassification(err error) string {
 
 // TestReleaseCorpusFailures requires the declared phase, sentinel classification, and repeatable diagnostic for every invalid recipe.
 func TestReleaseCorpusFailures(t *testing.T) {
-	set := shared.LoadCorpus(t)
-	cases := shared.LoadFailures(t)
+	set := corpus.LoadCorpus(t)
+	cases := corpus.LoadFailures(t)
 	rules := map[string]bool{}
-	for _, line := range strings.Split(string(shared.ReadFixture(t, "README.md")), "\n") {
+	for _, line := range strings.Split(string(corpus.ReadFixture(t, "README.md")), "\n") {
 		if !strings.HasPrefix(line, "| `") {
 			continue
 		}
@@ -351,7 +351,7 @@ func TestReleaseCorpusFailures(t *testing.T) {
 	require.Equal(t, rules, covered, "every normative rejection rule MUST have an invalid fixture")
 }
 
-func mutateCorpus(t testing.TB, m manifest.Manifest, c manifest.Context, test shared.FailureCase) []byte {
+func mutateCorpus(t testing.TB, m manifest.Manifest, c manifest.Context, test corpus.FailureCase) []byte {
 	t.Helper()
 	name := test.Artifact
 	if name == "" {

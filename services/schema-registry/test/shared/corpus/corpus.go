@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package shared loads checked-in Schema Registry test corpora without depending on production packages.
-package shared
+// Package corpus loads checked-in Schema Registry test corpora without depending on production packages.
+package corpus
 
 import (
 	"encoding/json"
@@ -97,7 +97,7 @@ func readFixture(name string) ([]byte, error) {
 		return nil, fmt.Errorf("cannot locate corpus loader source")
 	}
 	// #nosec G304 -- the name is local to the checked-in fixture directory.
-	return os.ReadFile(filepath.Join(filepath.Dir(file), "..", "fixtures", "manifest", name))
+	return os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "fixtures", "manifest", name))
 }
 
 // readJSON decodes corpus metadata without applying production format or release validation.

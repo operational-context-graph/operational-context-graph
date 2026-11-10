@@ -2,28 +2,25 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+// Package jsonworkloads constructs JSON inputs for black-box benchmarks and fuzz targets.
+package jsonworkloads
 
 import (
-	"runtime"
 	"strings"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 )
 
-// jsonWorkload defines a named JSON input and its expected parsing outcome.
-type jsonWorkload struct {
+// Workload defines a named JSON input and its expected parsing outcome.
+type Workload struct {
 	Name  string
 	Input []byte
 	Valid bool
 }
 
-// jsonWorkloads returns adversarial inputs and structural boundary cases.
+// Workloads returns fresh adversarial inputs and structural boundary cases.
 // Program-shaped values exercise JSON structure, never program interpretation.
-func jsonWorkloads() []jsonWorkload {
+func Workloads() []Workload {
 	const transformation = `{"cardinality":"one","programDigest":"sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","programRef":"shared.bin","targetSchema":{"id":"device","revision":"target-1"}}`
 	transformations := func(count int) string {
 		return `{"programs":{"transformations":[` + strings.Repeat(transformation+",", count-1) + transformation + `]}}`
@@ -36,7 +33,7 @@ func jsonWorkloads() []jsonWorkload {
 		}
 		return "{" + strings.Join(members, ",") + "}"
 	}
-	return []jsonWorkload{
+	return []Workload{
 		{"empty", nil, false},
 		{"empty-object", []byte(`{}`), true},
 		{"empty-array", []byte(`[]`), true},
@@ -67,9 +64,9 @@ func jsonWorkloads() []jsonWorkload {
 	}
 }
 
-// jsonBenchmarkWorkloads adds full-document byte boundaries to the shared workloads.
-func jsonBenchmarkWorkloads() []jsonWorkload {
-	workloads := jsonWorkloads()
+// BenchmarkWorkloads adds full-document byte boundaries to fresh shared workloads.
+func BenchmarkWorkloads() []Workload {
+	workloads := Workloads()
 	const count = 16
 	// Account for brackets, commas, and quotes before distributing string bytes.
 	contentBytes := schemaartifacts.MaxArtifactBytes - (3*count + 1)
@@ -83,37 +80,7 @@ func jsonBenchmarkWorkloads() []jsonWorkload {
 	}
 	document := "[" + strings.Join(items, ",") + "]"
 	return append(workloads,
-		jsonWorkload{"document-limit", []byte(document), true},
-		jsonWorkload{"document-overflow", []byte(document + " "), false},
+		Workload{"document-limit", []byte(document), true},
+		Workload{"document-overflow", []byte(document + " "), false},
 	)
-}
-
-// benchmarkJSONAllocations measures an operation and enforces allocation budgets.
-// Setup and input construction stay outside the measured operation.
-func benchmarkJSONAllocations(b *testing.B, input []byte, byteFactor, allocFactor uint64, operation func()) {
-	b.Helper()
-	iterations := b.N
-	if iterations <= 0 {
-		b.Fatal("benchmark iteration count must be positive")
-		return
-	}
-	iterationCount := uint64(iterations)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(input)))
-	b.StopTimer()
-	b.ResetTimer()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	b.StartTimer()
-	for range iterations {
-		operation()
-	}
-	b.StopTimer()
-	runtime.ReadMemStats(&after)
-	// Process-wide counters include runtime noise. Fixed headroom avoids brittle
-	// platform-specific thresholds; these are regression budgets, not heap limits.
-	byteBudget := uint64(1<<20) + byteFactor*uint64(len(input))
-	allocBudget := uint64(4096) + allocFactor*uint64(len(input))
-	require.LessOrEqual(b, (after.TotalAlloc-before.TotalAlloc)/iterationCount, byteBudget, "bytes/op budget")
-	require.LessOrEqual(b, (after.Mallocs-before.Mallocs)/iterationCount, allocBudget, "allocs/op budget")
 }

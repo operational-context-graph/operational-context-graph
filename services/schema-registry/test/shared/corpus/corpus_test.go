@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package shared
+package corpus
 
 import (
 	"os"
@@ -61,7 +61,7 @@ func TestReadFixturePreservesBytesOutsidePackageDirectory(t *testing.T) {
 	expected := map[string][]byte{}
 	for _, name := range []string{"invalid-canonical-bom.json", "invalid-canonical-trailing-newline.json", "mapping-a.json"} {
 		// #nosec G304 -- name selects a repository-controlled fixture.
-		data, err := os.ReadFile(filepath.Join("..", "fixtures", "manifest", name))
+		data, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "manifest", name))
 		require.NoError(t, err)
 		expected[name] = data
 	}

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+package fuzz
 
 import (
 	"bytes"
@@ -13,11 +13,12 @@ import (
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/jsonworkloads"
 )
 
 // FuzzStrictJSONParse checks no-panic parsing, input ownership, and exact value round trips.
 func FuzzStrictJSONParse(f *testing.F) {
-	for _, seed := range jsonWorkloads() {
+	for _, seed := range jsonworkloads.Workloads() {
 		_, err := strictjson.Parse(seed.Input)
 		require.Equal(f, seed.Valid, err == nil, seed.Name)
 		f.Add(seed.Input)
@@ -40,20 +41,4 @@ func FuzzStrictJSONParse(f *testing.F) {
 		require.NoError(t, err)
 		require.Equal(t, value, roundTrip)
 	})
-}
-
-// BenchmarkParseProfile checks allocation growth for accepted and rejected documents.
-func BenchmarkParseProfile(b *testing.B) {
-	for _, workload := range jsonBenchmarkWorkloads() {
-		b.Run(workload.Name, func(b *testing.B) {
-			_, err := strictjson.Parse(workload.Input)
-			require.Equal(b, workload.Valid, err == nil)
-			benchmarkJSONAllocations(b, workload.Input, 64, 4, func() {
-				_, err := strictjson.Parse(workload.Input)
-				if (err == nil) != workload.Valid {
-					b.Fatal("parser result changed during benchmark")
-				}
-			})
-		})
-	}
 }

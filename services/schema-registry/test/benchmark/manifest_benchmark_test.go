@@ -9,17 +9,15 @@ import (
 	"testing"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/corpus"
 )
 
-func BenchmarkParseCanonicalManifest(b *testing.B) {
-	data := bytes.TrimSuffix(shared.ReadFixture(b, "valid-initial.json"), []byte("\n"))
-	b.ReportAllocs()
-	b.SetBytes(int64(len(data)))
-	for b.Loop() {
-		_, err := manifest.Parse(data)
-		if err != nil {
+// BenchmarkParseManifestProfile measures the complete authoritative manifest parser.
+func BenchmarkParseManifestProfile(b *testing.B) {
+	input := bytes.TrimSuffix(corpus.ReadFixture(b, "valid-initial.json"), []byte("\n"))
+	benchmarkJSONAllocations(b, input, 128, 8, func() {
+		if _, err := manifest.Parse(input); err != nil {
 			b.Fatal(err)
 		}
-	}
+	})
 }
