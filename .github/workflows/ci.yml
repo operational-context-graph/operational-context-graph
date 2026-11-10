@@ -128,9 +128,9 @@ jobs:
     name: Publish Dev Images
     runs-on: ubuntu-latest
     needs: [test, workspace-sync]
-    if: >
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      github.ref == 'refs/heads/fix/ci-publish-container-permission'
+    # if: >
+    #   (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+    #   github.ref == 'refs/heads/fix/ci-publish-container-permission'
     permissions:
       contents: read
     outputs:
