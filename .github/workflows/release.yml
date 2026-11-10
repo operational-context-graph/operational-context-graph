@@ -99,7 +99,7 @@ jobs:
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-packages: write
+          permission-packages: write-all
       # TODO: set up QEMU and docker/buildx for multi-arch if needed (resolve target archs: amd64 only vs amd64+arm64)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
