@@ -1,4 +1,9 @@
-[![Continuous Integration](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml) [![CodeQL Advanced](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml/badge.svg)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml) [![Vulnerability Scan](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml) [![OSS Compliance Validation](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/operational-context-graph/operational-context-graph/badge)](https://scorecard.dev/viewer/?uri=github.com/operational-context-graph/operational-context-graph) [![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/operational-context-graph)](https://api.reuse.software/info/github.com/operational-context-graph/operational-context-graph)
+[![Continuous Integration](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/ci.yml)
+[![CodeQL Advanced](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml/badge.svg)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/codeql.yml)
+[![Vulnerability Scan](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/vulnerability-scan.yml)
+[![OSS Compliance Validation](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml/badge.svg?branch=main)](https://github.com/operational-context-graph/operational-context-graph/actions/workflows/oss-compliance.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/operational-context-graph/operational-context-graph/badge)](https://scorecard.dev/viewer/?uri=github.com/operational-context-graph/operational-context-graph)
+[![REUSE status](https://api.reuse.software/badge/github.com/operational-context-graph/operational-context-graph)](https://api.reuse.software/info/github.com/operational-context-graph/operational-context-graph)
 
 # Operational Context Graph
 
@@ -12,7 +17,77 @@ This is a polyglot monorepo. Sub-components live under `services/` (long-running
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+### Prerequisites
+
+The following tools need to be installed to build and run all components locally:
+
+- [Go](https://go.dev/) 1.27
+- [golangci-lint](https://golangci-lint.run/docs/welcome/install/local/) for linting all Go source files
+- [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for reporting known vulnerabilities that
+  affect Go code
+- [Syft](https://github.com/anchore/syft) for generating a Software Bill of Materials (SBOM)
+- [Grype](https://github.com/anchore/grype) for vulnerability scanning of container images and SBOMs
+- [Grant](https://github.com/anchore/grant) for license compliance evaluation of all dependencies
+- [Goose](https://github.com/pressly/goose) CLI for running database migrations
+- [Docker](https://www.docker.com/) (or a Docker-API compatible container runtime) for building container images
+  and running [Testcontainers](https://golang.testcontainers.org/system_requirements/docker/) in the test suites
+
+### Building the project
+
+To build all components of the project, run:
+
+```sh
+make build-all
+```
+
+To build a specific component, run:
+
+```sh
+make build TARGET=data-ingestion
+```
+
+The `TARGET` must contain the directory name in the `services` directory of the component to build.
+
+### Linting and Static Analysis
+
+To lint all source files, run:
+
+```sh
+make lint-all
+make lint TARGET=data-ingestion
+```
+
+To examines Go source code for suspicious constructs, run:
+
+```sh
+make vet-all
+make vet TARGET=data-ingestion
+```
+
+### Testing
+
+To run the full test suite, including unit tests and integration tests, run:
+
+```sh
+make test-all
+make test TARGET=data-ingestion
+```
+
+### Building container images
+
+Container images are built with [Docker Bake](https://docs.docker.com/build/bake/), which reads `docker-bake.hcl` in the repository root. Bake treats the repo root as the build context for all services, which is required for the Go workspace to resolve shared modules under `gen/go/`.
+
+To build all service images:
+
+```sh
+make docker-build-all
+```
+
+To build a single service image:
+
+```sh
+make docker-build TARGET=data-ingestion
+```
 
 ## Support, Feedback, Contributing
 

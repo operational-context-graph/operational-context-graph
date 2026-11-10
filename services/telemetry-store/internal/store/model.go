@@ -52,6 +52,28 @@ type MetricQuery struct {
 	AfterIRI   *string
 }
 
+// Span is one row from ocg.traces.
+type Span struct {
+	Timestamp          time.Time
+	IRI                string
+	ObservedTimestamp  *time.Time
+	HostName           *string
+	TraceID            *string
+	SpanID             *string
+	ParentSpanID       *string
+	SpanName           *string
+	DurationNanos      *int64
+	StatusCode         *string
+	ResourceAttributes *string
+	Attributes         *string
+}
+
+// TraceQuery parameters for GET /v1/telemetry/traces/:trace_id.
+type TraceQuery struct {
+	TraceID string
+	Limit   int
+}
+
 // clampLimit enforces a valid limit: zero/negative → 1000, above 10 000 → 1000.
 func clampLimit(n int) int {
 	if n <= 0 || n > 10000 {
@@ -60,7 +82,7 @@ func clampLimit(n int) int {
 	return n
 }
 
-// Cursor encodes the keyset pagination position as (timestamp, iri) per SDD §5.2.
+// Cursor encodes the keyset pagination position as (timestamp, iri).
 type Cursor struct {
 	TS  time.Time `json:"t"`
 	IRI string    `json:"i"`
