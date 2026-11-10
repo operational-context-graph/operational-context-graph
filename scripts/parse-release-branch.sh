@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-BRANCH="${1:?branch name required}"
+BRANCH="${1:-}"
 OUTPUT="${GITHUB_OUTPUT:-/dev/stdout}"
 
 emit() {

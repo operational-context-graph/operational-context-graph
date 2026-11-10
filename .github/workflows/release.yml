@@ -23,6 +23,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       release_type: ${{ steps.parse.outputs.release_type }}
       component: ${{ steps.parse.outputs.component }}
@@ -38,13 +39,16 @@ jobs:
           fetch-depth: 0
       - name: Parse merge source branch
         id: parse
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Extract the source branch from the merge commit subject.
-          # Format: "Merge pull request #N from <branch>"
-          SOURCE_BRANCH=$(git log -1 --pretty=%s \
-            | sed -n 's/.*Merge pull request #[0-9]* from \([^ ]*\).*/\1/p' || true)
-          echo "SOURCE_BRANCH=$SOURCE_BRANCH"
-          scripts/parse-release-branch.sh "${SOURCE_BRANCH:-}"
+          # Resolve the source branch via the GitHub API.
+          # Subject is the PR title, not a merge commit message).
+          SOURCE_BRANCH=$(gh api \
+            "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+            --jq '.[0].head.ref // ""')
+          echo "SOURCE_BRANCH=${SOURCE_BRANCH}"
+          scripts/parse-release-branch.sh "${SOURCE_BRANCH}"
 
   # Component release
   #
