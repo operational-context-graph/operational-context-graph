@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }} # TODO: Change to ${{ github.event.workflow_run.head_sha }}
         run: |
           # Resolve the source branch via the GitHub API.
           # Subject is the PR title, not a merge commit message).
