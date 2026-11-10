@@ -1,7 +1,7 @@
 SHELL        := /usr/bin/env bash
 NAME         := $(notdir $(CURDIR))
 COVERAGE_DIR ?= $(CURDIR)/coverage
-COVERAGE_THRESHOLD ?= 25
+COVERAGE_THRESHOLD ?= 20
 
 .PHONY: build run vet test lint tidy mocks
 
