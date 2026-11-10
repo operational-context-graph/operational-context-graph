@@ -129,7 +129,7 @@ jobs:
         id: version
         run: |
           date=$(date -u +%Y%m%d)
-          version="dev.${{ github.run_number }}-${date}-${GITHUB_SHA:0:7}"
+          version="dev.${date}-${GITHUB_SHA:0:7}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved dev tag: ${version}"
       - name: Set up Docker Buildx
