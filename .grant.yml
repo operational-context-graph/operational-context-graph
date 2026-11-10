@@ -30,6 +30,7 @@ allow:
 
 ignore-packages:
   # Note: Syft's SBOM does currently not contain license information for GitHub Actions
+  - actions/* # MIT
   - github/codeql-action/* # MIT
   - amannn/action-semantic-pull-request # MIT
   - fsfe/reuse-action # CC0-1.0
@@ -40,6 +41,8 @@ ignore-packages:
   - anchore/sbom-action # Apache-2.0
   - anchore/scan-action # MIT
   - pnpm/action-setup # MIT
+  - azure/setup-helm # MIT
+  - helm/chart-testing-action # Apache-2.0
   - zizmorcore/zizmor-action # MIT
   - bufbuild/buf-action # Apache-2.0
 
