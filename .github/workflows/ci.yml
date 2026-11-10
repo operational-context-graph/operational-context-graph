@@ -1,7 +1,7 @@
 # Runs CI checks on every push and pull request targeting main.
 # On pushes to main, also builds and publishes dev images to GHCR after all checks pass.
 ---
-name: Continuous Integration and Dev Image Publishing
+name: Continuous Integration
 
 on:
   push:
