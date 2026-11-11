@@ -45,6 +45,9 @@ ignore-packages:
   - helm/chart-testing-action # Apache-2.0
   - zizmorcore/zizmor-action # MIT
   - bufbuild/buf-action # Apache-2.0
+  - docker/bake-action # Apache-2.0
+  - docker/login-action # Apache-2.0
+  - docker/setup-buildx-action # Apache-2.0
 
   # Go packages that have known permissive licenses but Syft also emits a LicenseRef-* hash
   # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
@@ -58,10 +61,6 @@ ignore-packages:
   # Node.js package manager
   - pnpm # MIT
   - "@pnpm/exe.*" # platform-specific binary distributions that lack SPDX metadata in the SBOM
-
-  - docker/bake-action # Apache-2.0
-  - docker/login-action # Apache-2.0
-  - docker/setup-buildx-action # Apache-2.0
 
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
