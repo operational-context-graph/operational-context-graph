@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Operational Context Graph contributors
-//
-// SPDX-License-Identifier: Apache-2.0
-
 // Package pagination provides unsigned stateless keyset cursors.
 //
 // Pagination cursors are opaque, unsigned, unpadded Base64url-encoded JSON. They do not expire and
