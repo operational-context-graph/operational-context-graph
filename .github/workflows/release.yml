@@ -202,9 +202,13 @@ jobs:
         run: |
           if [[ "${HAS_DOCKERFILE}" == "true" ]]; then
             ARTIFACT_NAME="sbom-${SLUG}-${VERSION}.spdx.json"
-            printf 'artifacts<<%s\n%s\n%s\n' "EOF" "${ARTIFACT_NAME}:${ARTIFACT_NAME}" "EOF" >> "$GITHUB_OUTPUT"
+            {
+              echo "artifacts<<EOF"
+              echo "${ARTIFACT_NAME}:${ARTIFACT_NAME}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           else
-            printf 'artifacts=\n' >> "$GITHUB_OUTPUT"
+            echo "artifacts=" >> "$GITHUB_OUTPUT"
           fi
   github-release-component:
     name: Create GitHub Release
