@@ -3,6 +3,7 @@ package manifest
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 
@@ -15,6 +16,18 @@ import (
 
 // extensionPattern requires dot-separated namespace labels for publisher extension keys.
 var extensionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`)
+
+// ParseFromFile reads a version 1 manifest from the given file path.
+// The file MUST contain JCS canonical JSON, without a byte order mark or trailing newline.
+// Callers MUST restrict untrusted paths when filesystem access requires a boundary.
+func ParseFromFile(path string) (Manifest, error) {
+	// #nosec G304 -- this file-loading API intentionally reads the caller-selected path.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("read manifest: %w", err)
+	}
+	return Parse(data)
+}
 
 // Parse strictly decodes a version 1 manifest and requires submitted bytes to be JCS.
 // It checks structure, lexical forms, and ordering, but does not resolve bytes or predecessor-dependent changes.

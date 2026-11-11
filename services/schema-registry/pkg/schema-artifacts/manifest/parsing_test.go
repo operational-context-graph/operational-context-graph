@@ -2,6 +2,8 @@ package manifest
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -250,4 +252,57 @@ func TestParseRejectsInvalidMetadata(t *testing.T) {
 		_, err := Parse(canonicalDocument(t, document))
 		require.ErrorContains(t, err, "artifact removal must be breaking")
 	})
+}
+
+// TestParseFromFile verifies file parsing preserves the results and errors returned by Parse.
+func TestParseFromFile(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		data []byte
+	}{
+		{"valid manifest", canonicalDocument(t, populatedDocument(t))},
+		{"invalid structure", fixture(t, "invalid-structural-unknown-field.json")},
+		{"trailing newline", fixtureRaw(t, "invalid-canonical-trailing-newline.json")},
+		{"noncanonical JSON", append([]byte(" "), fixture(t, "valid-initial.json")...)},
+		{"malformed JSON", []byte(`{"schemaVersion":`)},
+		{"empty file", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "manifest.json")
+			require.NoError(t, os.WriteFile(path, test.data, 0600))
+			want, wantErr := Parse(test.data)
+
+			got, err := ParseFromFile(path)
+			if wantErr != nil {
+				require.EqualError(t, err, wantErr.Error())
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+// TestParseFromFileReadErrors verifies filesystem errors remain inspectable and return no partial manifest.
+func TestParseFromFileReadErrors(t *testing.T) {
+	directory := t.TempDir()
+	for _, test := range []struct {
+		name string
+		path string
+	}{
+		{"missing file", filepath.Join(directory, "missing.json")},
+		{"directory", directory},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseFromFile(test.path)
+			require.ErrorContains(t, err, "read manifest")
+			var pathErr *os.PathError
+			require.ErrorAs(t, err, &pathErr)
+			assert.Equal(t, test.path, pathErr.Path)
+			if test.name == "missing file" {
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			}
+			assert.Equal(t, Manifest{}, parsed)
+		})
+	}
 }
