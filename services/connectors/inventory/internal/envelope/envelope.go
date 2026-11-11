@@ -24,12 +24,21 @@ func Build(raw json.RawMessage, endpoint, logicalArtifactType, schemaVersion str
 		return Message{}, fmt.Errorf("envelope: extract last_updated from %s record: %w", endpoint, err)
 	}
 
-	return Message{
+	msg := Message{
 		LogicalArtifactId: logicalArtifactType,
 		SchemaVersion:     schemaVersion,
 		Payload:           raw,
 		Partition:         map[string]any{"endpoint": endpoint},
-		Watermark:         map[string]any{"last_updated": rec.LastUpdated},
 		ContentType:       "application/json",
-	}, nil
+	}
+
+	// Only carry a watermark when the record actually has a timestamp. Emitting
+	// {"last_updated": ""} would let the server advance the partition watermark to an
+	// empty value, resetting the next run to a full scan. A record with no timestamp
+	// rides along with no watermark instead.
+	if rec.LastUpdated != "" {
+		msg.Watermark = map[string]any{"last_updated": rec.LastUpdated}
+	}
+
+	return msg, nil
 }

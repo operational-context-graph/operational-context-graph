@@ -126,7 +126,7 @@ func TestRun_WatermarkPresent_QueriesPartitionAndPublishes(t *testing.T) {
 	assert.Equal(t, 1, result.Published)
 	require.Len(t, stub.Partitions, 1)
 	assert.Equal(t, map[string]any{"endpoint": "dcim/devices/"}, stub.Partitions[0])
-	assert.Equal(t, "2026-07-10T07:47:31Z", nb.lastParams.Get("last_updated__gt"))
+	assert.Equal(t, "2026-07-10T07:47:31Z", nb.lastParams.Get("last_updated__gte"))
 	assert.Equal(t, "last_updated", nb.lastParams.Get("ordering"))
 }
 

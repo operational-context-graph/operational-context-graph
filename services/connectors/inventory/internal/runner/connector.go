@@ -65,8 +65,11 @@ func (connector *Connector) Run(ctx context.Context) (Result, error) {
 	return totals, nil
 }
 
-// deltaParams returns last_updated__gt + ordering filter when a watermark exists,
-// nil for a full scan (bootstrap or on error).
+// deltaParams returns last_updated__gte + ordering filter when a watermark exists,
+// nil for a full scan (bootstrap or on error). The filter is __gte, not __gt, so a
+// record sharing the watermark's exact timestamp is never skipped; re-delivering it is
+// safe because the Inventory Store upserts by natural key and a matching
+// last_updated_at_source produces no new row.
 func (connector *Connector) deltaParams(ctx context.Context, endpoint string) url.Values {
 	watermark, err := connector.watermarks.GetWatermark(ctx, map[string]any{"endpoint": endpoint})
 	if err != nil {
@@ -80,7 +83,7 @@ func (connector *Connector) deltaParams(ctx context.Context, endpoint string) ur
 	}
 	slog.Info("delta fetch", "endpoint", endpoint, "last_updated", lastUpdated)
 	params := url.Values{}
-	params.Set("last_updated__gt", lastUpdated)
+	params.Set("last_updated__gte", lastUpdated)
 	params.Set("ordering", "last_updated")
 	return params
 }

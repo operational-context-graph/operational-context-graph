@@ -50,5 +50,5 @@ func TestBuild_PayloadIsRaw(t *testing.T) {
 func TestBuild_MissingLastUpdated(t *testing.T) {
 	msg, err := Build(json.RawMessage(`{"name": "no-ts"}`), "dcim/devices/", "netbox.Device", "0.1.0")
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"last_updated": ""}, msg.Watermark)
+	assert.Nil(t, msg.Watermark, "a record with no last_updated must carry no watermark")
 }
