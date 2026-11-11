@@ -9,6 +9,7 @@ THRESHOLD="${2:?usage: coverage-comment.sh <coverage-dir> <threshold>}"
 
 any_fail=0
 
+echo "<!-- coverage-report -->"
 echo "## Coverage Report"
 echo ""
 echo "| Service | Coverage | Threshold | Status |"
