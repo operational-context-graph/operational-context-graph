@@ -18,6 +18,7 @@ on:
       - "**/*-lock.*"
       - "**/*.lock"
       - "**/*lock.toml"
+      - ".github/workflows/*.yml"
   workflow_dispatch: ~
 
 jobs:
