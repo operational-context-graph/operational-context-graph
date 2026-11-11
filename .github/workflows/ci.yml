@@ -155,6 +155,7 @@ jobs:
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push all images
         uses: docker/bake-action@37816e747588cb137173af99ab33873600c46ea8 # v6.8.0
