@@ -66,6 +66,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ARTIFACTS: ${{ inputs.artifacts }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           # Each line: <artifact-name>:<file-path>#<label>
           # gh run download puts each artifact into a subdirectory named after the artifact.
@@ -76,13 +77,16 @@ jobs:
             # Strip the artifact-name prefix to get <file-path>#<label>; drop the label to get the bare path.
             file_with_label="${line#*:}"
             file_path="${file_with_label%%#*}"
-            gh run download "${{ github.run_id }}" --name "${artifact_name}" --dir "${artifact_name}/"
+            gh run download "${RUN_ID}" --name "${artifact_name}" --dir "${artifact_name}/"
             mv "${artifact_name}/${file_path}" .
           done <<< "${ARTIFACTS}"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ARTIFACTS: ${{ inputs.artifacts }}
+          TAG: ${{ inputs.tag }}
+          TITLE: ${{ inputs.title }}
+          NOTES: ${{ inputs.notes }}
         run: |
           # Build the file attachment list.
           # Each line: <artifact-name>:<file-path>#<label> — strip the artifact-name prefix,
@@ -95,7 +99,7 @@ jobs:
             done <<< "${ARTIFACTS}"
           fi
 
-          gh release create "${{ inputs.tag }}" \
-            --title "${{ inputs.title }}" \
-            --notes "${{ inputs.notes }}" \
+          gh release create "${TAG}" \
+            --title "${TITLE}" \
+            --notes "${NOTES}" \
             "${attach_args[@]}"

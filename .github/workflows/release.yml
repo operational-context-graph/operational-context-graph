@@ -52,13 +52,20 @@ jobs:
           echo "SOURCE_BRANCH=${SOURCE_BRANCH}"
           scripts/parse-release-branch.sh "${SOURCE_BRANCH}"
       - name: Log detected release
+        env:
+          RELEASE_TYPE: ${{ steps.parse.outputs.release_type }}
+          COMPONENT: ${{ steps.parse.outputs.component }}
+          SLUG: ${{ steps.parse.outputs.slug }}
+          VERSION: ${{ steps.parse.outputs.version }}
+          TAG: ${{ steps.parse.outputs.tag }}
+          HAS_DOCKERFILE: ${{ steps.parse.outputs.has_dockerfile }}
         run: |
-          echo "release_type=${{ steps.parse.outputs.release_type }}"
-          echo "component=${{ steps.parse.outputs.component }}"
-          echo "slug=${{ steps.parse.outputs.slug }}"
-          echo "version=${{ steps.parse.outputs.version }}"
-          echo "tag=${{ steps.parse.outputs.tag }}"
-          echo "has_dockerfile=${{ steps.parse.outputs.has_dockerfile }}"
+          echo "release_type=${RELEASE_TYPE}"
+          echo "component=${COMPONENT}"
+          echo "slug=${SLUG}"
+          echo "version=${VERSION}"
+          echo "tag=${TAG}"
+          echo "has_dockerfile=${HAS_DOCKERFILE}"
 
   # Component release
   #
@@ -172,11 +179,15 @@ jobs:
         id: notes
         env:
           HAS_DOCKERFILE: ${{ needs.detect.outputs.has_dockerfile }}
+          COMPONENT: ${{ needs.detect.outputs.component }}
+          SLUG: ${{ needs.detect.outputs.slug }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           CHANGELOG=$(awk '/^## /{if(found) exit; found=1; next} found{print}' \
-            "${{ needs.detect.outputs.component }}/CHANGELOG.md")
+            "${COMPONENT}/CHANGELOG.md")
           if [[ "${HAS_DOCKERFILE}" == "true" ]]; then
-            IMAGE_URL="https://ghcr.io/${{ github.repository_owner }}/${{ needs.detect.outputs.slug }}:${{ needs.detect.outputs.version }}"
+            IMAGE_URL="https://ghcr.io/${REPO_OWNER}/${SLUG}:${VERSION}"
             NOTES=$(printf '%s\n\n## Container image\n\n%s\n' "${CHANGELOG}" "${IMAGE_URL}")
           else
             NOTES="${CHANGELOG}"

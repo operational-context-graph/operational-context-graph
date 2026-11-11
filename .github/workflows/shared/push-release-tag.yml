@@ -48,9 +48,11 @@ jobs:
       - name: Push tag
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          TAG: ${{ inputs.tag }}
+          MESSAGE: ${{ inputs.message }}
         run: |
-          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
           APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
           scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
-          git tag -a "${{ inputs.tag }}" -m "${{ inputs.message }}"
-          git push origin "${{ inputs.tag }}"
+          git tag -a "${TAG}" -m "${MESSAGE}"
+          git push origin "${TAG}"
