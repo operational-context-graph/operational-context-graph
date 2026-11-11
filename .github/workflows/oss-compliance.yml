@@ -10,6 +10,8 @@ on:
       - "**/*-lock.*"
       - "**/*.lock"
       - "**/*lock.toml"
+      - ".github/workflows/*.yml"
+      - ".grant.yml"
   pull_request:
     branches: ["main"]
     paths:
@@ -18,6 +20,8 @@ on:
       - "**/*-lock.*"
       - "**/*.lock"
       - "**/*lock.toml"
+      - ".github/workflows/*.yml"
+      - ".grant.yml"
   workflow_dispatch: ~
 
 jobs:
