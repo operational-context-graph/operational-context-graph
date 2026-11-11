@@ -55,29 +55,21 @@ jobs:
           client-id: ${{ inputs.client_id }}
           private-key: ${{ secrets.private_key }}
           permission-contents: write
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Download and attach artifacts
+      - name: Download artifacts
+        if: inputs.artifacts != ''
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+      - name: Stage artifacts
         if: inputs.artifacts != ''
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ARTIFACTS: ${{ inputs.artifacts }}
-          RUN_ID: ${{ github.run_id }}
         run: |
-          # Each line: <artifact-name>:<file-path>#<label>
-          # gh run download puts each artifact into a subdirectory named after the artifact.
-          # Move each file to the working directory so gh release create can find it by path.
+          # actions/download-artifact places each artifact into a subdirectory named after it.
+          # Move each file to the working directory so gh release create can reference it by path.
           while IFS= read -r line; do
             [[ -z "${line}" ]] && continue
             artifact_name="${line%%:*}"
-            # Strip the artifact-name prefix to get <file-path>#<label>; drop the label to get the bare path.
             file_with_label="${line#*:}"
             file_path="${file_with_label%%#*}"
-            gh run download "${RUN_ID}" --name "${artifact_name}" --dir "${artifact_name}/"
             mv "${artifact_name}/${file_path}" .
           done <<< "${ARTIFACTS}"
       - name: Create GitHub Release
@@ -89,7 +81,7 @@ jobs:
           NOTES: ${{ inputs.notes }}
         run: |
           # Build the file attachment list.
-          # Each line: <artifact-name>:<file-path>#<label> — strip the artifact-name prefix,
+          # Each line: <artifact-name>:<file-path>#<label>,strip the artifact-name prefix,
           # pass <file-path>#<label> as a positional argument to gh release create.
           attach_args=()
           if [[ -n "${ARTIFACTS}" ]]; then
