@@ -52,24 +52,36 @@ target "inventory-connector" {
   inherits   = ["_base"]
   dockerfile = "services/connectors/inventory/Dockerfile"
   tags       = ["${REGISTRY}/inventory-connector:${VERSION}"]
+  labels = {
+    "org.opencontainers.image.description" = "Ingests asset and topology data from external inventory systems into the OCG Infrastructure Knowledge Base"
+  }
 }
 
 target "inventory-store" {
   inherits   = ["_base"]
   dockerfile = "services/inventory-store/Dockerfile"
   tags       = ["${REGISTRY}/inventory-store:${VERSION}"]
+  labels = {
+    "org.opencontainers.image.description" = "Stores data center inventory, configuration baselines, and operational knowledge for the OCG"
+  }
 }
 
 target "telemetry-store" {
   inherits   = ["_base"]
   dockerfile = "services/telemetry-store/Dockerfile"
   tags       = ["${REGISTRY}/telemetry-store:${VERSION}"]
+  labels = {
+    "org.opencontainers.image.description" = "Ingests, deduplicates, and serves time-series operational telemetry for the OCG Analysis Engine"
+  }
 }
 
 target "data-ingestion" {
   inherits   = ["_base"]
   dockerfile = "services/data-ingestion/Dockerfile"
   tags       = ["${REGISTRY}/data-ingestion:${VERSION}"]
+  labels = {
+    "org.opencontainers.image.description" = "Validates, normalizes, and routes connector data to the correct OCG store"
+  }
 }
 
 # ---------------------------------------------------------------------------
