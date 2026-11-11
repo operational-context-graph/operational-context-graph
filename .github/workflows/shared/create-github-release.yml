@@ -1,0 +1,101 @@
+# Creates a GitHub Release using a GitHub App token.
+# Optionally downloads and attaches workflow artifacts.
+---
+name: Create GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag name for the release (must already exist)
+        required: true
+        type: string
+      title:
+        description: Release title
+        required: true
+        type: string
+      notes:
+        description: Release notes body (markdown)
+        required: true
+        type: string
+      artifacts:
+        description: |
+          Newline-delimited list of artifacts to download and attach.
+          Each line has the format: <artifact-name>:<file-path>#<label>
+          The label suffix is optional. Leave empty to create a release with no attachments.
+          Example:
+            ocg-helm-1.2.3:operational-context-graph-1.2.3.tgz#Helm chart
+            ocg-ocm-1.2.3:ocm-component-1.2.3.ctf#OCM bundle
+        required: false
+        default: ""
+        type: string
+      client_id:
+        description: GitHub App client ID
+        required: true
+        type: string
+    secrets:
+      private_key:
+        description: GitHub App private key
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.private_key }}
+          permission-contents: write
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Download and attach artifacts
+        if: inputs.artifacts != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ARTIFACTS: ${{ inputs.artifacts }}
+        run: |
+          # Each line: <artifact-name>:<file-path>#<label>
+          # gh run download puts each artifact into a subdirectory named after the artifact.
+          # Move each file to the working directory so gh release create can find it by path.
+          while IFS= read -r line; do
+            [[ -z "${line}" ]] && continue
+            artifact_name="${line%%:*}"
+            # Strip the artifact-name prefix to get <file-path>#<label>; drop the label to get the bare path.
+            file_with_label="${line#*:}"
+            file_path="${file_with_label%%#*}"
+            gh run download "${{ github.run_id }}" --name "${artifact_name}" --dir "${artifact_name}/"
+            mv "${artifact_name}/${file_path}" .
+          done <<< "${ARTIFACTS}"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ARTIFACTS: ${{ inputs.artifacts }}
+        run: |
+          # Build the file attachment list.
+          # Each line: <artifact-name>:<file-path>#<label> — strip the artifact-name prefix,
+          # pass <file-path>#<label> as a positional argument to gh release create.
+          attach_args=()
+          if [[ -n "${ARTIFACTS}" ]]; then
+            while IFS= read -r line; do
+              [[ -z "${line}" ]] && continue
+              attach_args+=("${line#*:}")
+            done <<< "${ARTIFACTS}"
+          fi
+
+          gh release create "${{ inputs.tag }}" \
+            --title "${{ inputs.title }}" \
+            --notes "${{ inputs.notes }}" \
+            "${attach_args[@]}"

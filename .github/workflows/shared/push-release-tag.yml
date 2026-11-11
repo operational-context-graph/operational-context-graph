@@ -1,0 +1,56 @@
+# Pushes an annotated git tag using a GitHub App token.
+# Called by tag-component and tag-system in release.yml.
+---
+name: Push Release Tag
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Annotated tag name to create (e.g. services/data-ingestion/v1.2.3)
+        required: true
+        type: string
+      message:
+        description: Annotation message for the tag
+        required: true
+        type: string
+      client_id:
+        description: GitHub App client ID
+        required: true
+        type: string
+    secrets:
+      private_key:
+        description: GitHub App private key
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  push-tag:
+    name: Push Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.private_key }}
+          permission-contents: write
+      - name: Push tag
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          APP_SLUG="${{ steps.app-token.outputs.app-slug }}"
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+          git tag -a "${{ inputs.tag }}" -m "${{ inputs.message }}"
+          git push origin "${{ inputs.tag }}"
