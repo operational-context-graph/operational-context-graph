@@ -22,11 +22,20 @@ grpc:
 
 connector:
   schemaVersion: "0.0.1"
+  # schedule is the cron expression for the recurring run. The connector stays a
+  # stateless one-shot: each fire reads its watermark and performs a delta fetch.
+  schedule: "0 */6 * * *"
+  # concurrencyPolicy: Forbid keeps a single writer per watermark partition. A new
+  # fire is skipped while the previous run is still active.
+  concurrencyPolicy: Forbid
+  ttlSecondsAfterFinished: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
   # artifactTypes overrides the default endpoint artifact-type mapping.
   # Keys are NetBox endpoint paths (e.g. "dcim/devices/"), values are type names
   # (e.g. "netbox.Device").
   artifactTypes: {}
-  // TODO: Refactor this once the inventory connector supports dynamic endpoint discovery.
+  # TODO: Refactor this once the inventory connector supports dynamic endpoint discovery.
   endpoints:
     - "dcim/cable-terminations/"
     - "dcim/cables/"
