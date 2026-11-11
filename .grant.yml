@@ -59,5 +59,9 @@ ignore-packages:
   - pnpm # MIT
   - "@pnpm/exe.*" # platform-specific binary distributions that lack SPDX metadata in the SBOM
 
+  - docker/bake-action # Apache-2.0
+  - docker/login-action # Apache-2.0
+  - docker/setup-buildx-action # Apache-2.0
+
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
