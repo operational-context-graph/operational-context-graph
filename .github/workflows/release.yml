@@ -75,7 +75,7 @@ jobs:
     name: Tag Component
     needs: detect
     if: needs.detect.outputs.release_type == 'component'
-    uses: ./.github/workflows/shared/push-release-tag.yml
+    uses: $/.github/workflows/shared/push-release-tag.yml
     with:
       tag: ${{ needs.detect.outputs.tag }}
       message: "chore(release): ${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
@@ -213,7 +213,7 @@ jobs:
       always()
       && needs.detect.outputs.release_type == 'component'
       && needs.generate-component-release-notes.result == 'success'
-    uses: ./.github/workflows/shared/create-github-release.yml
+    uses: $/.github/workflows/shared/create-github-release.yml
     with:
       tag: ${{ needs.detect.outputs.tag }}
       title: "${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
@@ -230,7 +230,7 @@ jobs:
     name: Tag System Release
     needs: detect
     if: needs.detect.outputs.release_type == 'system'
-    uses: ./.github/workflows/shared/push-release-tag.yml
+    uses: $/.github/workflows/shared/push-release-tag.yml
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       message: "chore(release): system v${{ needs.detect.outputs.version }}"
@@ -360,7 +360,7 @@ jobs:
     name: Create System GitHub Release
     needs: [detect, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
-    uses: ./.github/workflows/shared/create-github-release.yml
+    uses: $/.github/workflows/shared/create-github-release.yml
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       title: "system v${{ needs.detect.outputs.version }}"
