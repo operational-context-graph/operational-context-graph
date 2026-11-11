@@ -115,7 +115,8 @@ func runEndpoint(t *testing.T, ctx context.Context, nb netbox.Client, stub *publ
 		msgs = append(msgs, msg)
 	}
 
-	require.NoError(t, stub.Publish(ctx, msgs))
+	_, err = stub.Publish(ctx, msgs)
+	require.NoError(t, err)
 
 	assert.GreaterOrEqual(t, len(msgs), wantMin,
 		"endpoint %s: got %d records, want at least %d", path, len(msgs), wantMin)

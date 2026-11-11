@@ -18,6 +18,7 @@ import (
 type Result struct {
 	Published int
 	Skipped   int
+	Rejected  int
 }
 
 // watermarkReader reads the last committed backfill watermark for a partition.
@@ -59,6 +60,7 @@ func (connector *Connector) Run(ctx context.Context) (Result, error) {
 		}
 		totals.Published += result.Published
 		totals.Skipped += result.Skipped
+		totals.Rejected += result.Rejected
 	}
 	return totals, nil
 }
@@ -103,10 +105,23 @@ func (connector *Connector) ProcessEndpoint(ctx context.Context, endpoint string
 
 	messages := connector.buildEnvelopes(endpoint, records)
 
-	if err = connector.publisher.Publish(ctx, messages); err != nil {
+	pub, err := connector.publisher.Publish(ctx, messages)
+	if err != nil {
 		return Result{}, err
 	}
-	return Result{Published: len(messages)}, nil
+	// Data ingestion rejects records whose type has no schema, normalizer, or
+	// target store. Only netbox.Device passes all three today, so every other
+	// endpoint is fully rejected. Count accepted records as published and log the
+	// rejected count loudly so a run of an unsupported type does not look like success.
+	if pub.Rejected > 0 {
+		slog.Warn("records rejected by data ingestion",
+			"endpoint", endpoint, "rejected", pub.Rejected, "sent", len(messages))
+	}
+	accepted := len(messages) - pub.Rejected
+	if accepted < 0 {
+		accepted = 0
+	}
+	return Result{Published: accepted, Rejected: pub.Rejected}, nil
 }
 
 func (connector *Connector) buildEnvelopes(endpoint string, records []json.RawMessage) []envelope.Message {

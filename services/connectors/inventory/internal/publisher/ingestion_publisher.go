@@ -37,19 +37,23 @@ func (publisher *GRPCPublisher) Conn() *grpc.ClientConn {
 	return publisher.conn
 }
 
-func (p *GRPCPublisher) Publish(ctx context.Context, msgs []envelope.Message) error {
+func (p *GRPCPublisher) Publish(ctx context.Context, msgs []envelope.Message) (PublishResult, error) {
+	var result PublishResult
 	for _, batch := range chunk(msgs) {
 		envelopes, err := toProtos(batch)
 		if err != nil {
-			return err
+			return result, err
 		}
-		_, err = p.client.Ingest(grpcclient.OutCtx(ctx, p.connectorID), &pb.IngestRequest{Messages: envelopes})
+		resp, err := p.client.Ingest(grpcclient.OutCtx(ctx, p.connectorID), &pb.IngestRequest{Messages: envelopes})
 		if err != nil {
 			if status.Code(err) == codes.Unavailable {
-				return errors.New("publisher: back-pressure — data ingestion unavailable")
+				return result, errors.New("publisher: back-pressure — data ingestion unavailable")
 			}
-			return err
+			return result, err
 		}
+		// partial_success is always set on an OK response. GetPartialSuccess and
+		// GetRejectedMessages are nil-safe, so a zero means every record was accepted.
+		result.Rejected += int(resp.GetPartialSuccess().GetRejectedMessages())
 	}
-	return nil
+	return result, nil
 }
