@@ -78,6 +78,10 @@ ignore-packages:
   # bufbuild/buf-action licensed under Apache-2.0
   - bufbuild/buf-action
 
+  - docker/bake-action # Apache-2.0
+  - docker/login-action # Apache-2.0
+  - docker/setup-buildx-action # Apache-2.0
+
   # Exclude github.com/operational-context-graph/* due to being our own packages
   - github.com/operational-context-graph/*
 
