@@ -1,7 +1,7 @@
 SHELL       := /usr/bin/env bash
 BIN_DIR     := bin
 COVERAGE_DIR := $(CURDIR)/coverage
-COVERAGE_THRESHOLD := 20
+COVERAGE_THRESHOLD := 50
 
 # Go modules discovery. Connectors carry the subdirectory prefix.
 # TARGET_DIR = services/$(TARGET) resolves correctly for every target.
