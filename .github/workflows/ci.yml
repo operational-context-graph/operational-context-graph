@@ -94,9 +94,15 @@ jobs:
         run: |
           threshold=$(grep -oP 'COVERAGE_THRESHOLD\s*:=\s*\K[0-9]+' Makefile)
           body=$(bash scripts/coverage-comment.sh coverage "${threshold:-20}")
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --body "$body" --edit-last 2>/dev/null \
-          || gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+          pr="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+          comment_id=$(gh api "repos/${repo}/issues/${pr}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- coverage-report -->"))] | last | .id // empty')
+          if [ -n "$comment_id" ]; then
+            gh api "repos/${repo}/issues/comments/${comment_id}" -X PATCH -f body="$body"
+          else
+            gh pr comment "$pr" --body "$body"
+          fi
       - name: Fail if coverage failed
         if: steps.coverage.outcome == 'failure'
         run: exit 1
