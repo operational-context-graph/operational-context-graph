@@ -13,7 +13,7 @@ TARGETS    := $(SERVICES) $(CONNECTORS)
 TARGET_DIR = services/$(TARGET)
 
 .PHONY: init build build-all run \
-        vet vet-all test test-all lint lint-all tidy tidy-all tidy-check-all mocks \
+        vet vet-all test test-all test-coverage test-coverage-all lint lint-all tidy tidy-all tidy-check-all mocks \
         go-modules-json workspace-sync-check \
         proto-lint proto-format proto-generate \
         docker-build docker-build-all \
@@ -76,6 +76,19 @@ test-all: require-targets
 	for s in $(TARGETS); do \
 		echo "==> test $$s"; \
 		$(MAKE) --no-print-directory test TARGET=$$s || failed=1; \
+	done; \
+	exit $$failed
+
+# Check coverage threshold for one service. Requires TARGET=<name>.
+test-coverage: require-target
+	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) COVERAGE_THRESHOLD=$(COVERAGE_THRESHOLD) test-coverage
+
+# Check coverage threshold for every service and connector.
+test-coverage-all: require-targets
+	@failed=0; \
+	for s in $(TARGETS); do \
+		echo "==> test-coverage $$s"; \
+		$(MAKE) --no-print-directory test-coverage TARGET=$$s || failed=1; \
 	done; \
 	exit $$failed
 
