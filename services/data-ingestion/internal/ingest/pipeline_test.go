@@ -75,7 +75,7 @@ func TestPipeline_Ingest_AllAccepted(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming(), conforming(), conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:3, RejectedCount: 0, Accepted: []bool{true, true, true}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 3, RejectedCount: 0, Accepted: []bool{true, true, true}}, res)
 }
 
 func TestPipeline_Ingest_MixedBatch(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPipeline_Ingest_MixedBatch(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming(), nonconforming(), conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:2, RejectedCount: 1, Accepted: []bool{true, false, true}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 2, RejectedCount: 1, Accepted: []bool{true, false, true}}, res)
 }
 
 func TestPipeline_Ingest_AllRejected(t *testing.T) {
@@ -104,7 +104,7 @@ func TestPipeline_Ingest_AllRejected(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming(), conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 2, Accepted: []bool{false, false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 2, Accepted: []bool{false, false}}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
 
@@ -149,7 +149,7 @@ func TestPipeline_Ingest_SingleConformingRecord(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:1, RejectedCount: 0, Accepted: []bool{true}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 1, RejectedCount: 0, Accepted: []bool{true}}, res)
 }
 
 func TestPipeline_Ingest_SingleRejectedRecord(t *testing.T) {
@@ -162,7 +162,7 @@ func TestPipeline_Ingest_SingleRejectedRecord(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{nonconforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 1, Accepted: []bool{false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1, Accepted: []bool{false}}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
 
@@ -177,7 +177,7 @@ func TestPipeline_Ingest_EmptyPayload(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{rec})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 1, Accepted: []bool{false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1, Accepted: []bool{false}}, res)
 }
 
 // --- Group 11: error paths --------------------------------------------------
@@ -199,7 +199,7 @@ func TestPipeline_Ingest_UnregisteredSchemaType(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{bad, conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:1, RejectedCount: 1, Accepted: []bool{false, true}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 1, RejectedCount: 1, Accepted: []bool{false, true}}, res)
 }
 
 func TestPipeline_Ingest_SchemaRegistryUnavailable(t *testing.T) {
@@ -231,7 +231,7 @@ func TestPipeline_Ingest_SourceMappingsNotFound(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 1, Accepted: []bool{false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1, Accepted: []bool{false}}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
 
@@ -265,7 +265,7 @@ func TestPipeline_Ingest_NormalizationError(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 1, Accepted: []bool{false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1, Accepted: []bool{false}}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
 
@@ -282,7 +282,7 @@ func TestPipeline_Ingest_TargetStoreNotFound(t *testing.T) {
 	res, err := p.Ingest(context.Background(), []ingest.IngestRecord{conforming()})
 
 	require.NoError(t, err)
-	assert.Equal(t, ingest.IngestResult{AcceptedCount:0, RejectedCount: 1, Accepted: []bool{false}}, res)
+	assert.Equal(t, ingest.IngestResult{AcceptedCount: 0, RejectedCount: 1, Accepted: []bool{false}}, res)
 	out.AssertNotCalled(t, "Write", mock.Anything, mock.Anything)
 }
 

@@ -150,7 +150,7 @@ func newOTLPBufconn(t *testing.T, ingestor ingest.Ingestor, schemaClient grpcser
 	return clients, func() {
 		_ = conn.Close()
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}
 }
 

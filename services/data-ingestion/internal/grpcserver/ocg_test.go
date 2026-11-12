@@ -209,7 +209,7 @@ func TestOverloadedAlwaysReturnsUnavailable(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).Return(ingest.IngestResult{}, ingest.ErrOverloaded)
 	srv := newServer(t, m, defaultLimits(), defaultRetry())
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 			Messages: []*ingestionv1.MessageEnvelope{envelope([]byte("x"))},
 		})
@@ -264,7 +264,7 @@ func TestPartialRejectionReturnsOK(t *testing.T) {
 	m.EXPECT().Ingest(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, batch []ingest.IngestRecord) (ingest.IngestResult, error) {
 		// First (len-rejected) records accepted, last rejected ones not.
 		outcomes := make([]bool, len(batch))
-		for i := 0; i < len(batch)-rejected; i++ {
+		for i := range len(batch) - rejected {
 			outcomes[i] = true
 		}
 		return ingest.IngestResult{AcceptedCount: len(batch) - rejected, RejectedCount: rejected, Accepted: outcomes}, nil
