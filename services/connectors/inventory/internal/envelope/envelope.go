@@ -14,22 +14,31 @@ type Message struct {
 	ContentType       string
 }
 
-type idRecord struct {
-	ID int `json:"id"`
+type tsRecord struct {
+	LastUpdated string `json:"last_updated"`
 }
 
 func Build(raw json.RawMessage, endpoint, logicalArtifactType, schemaVersion string) (Message, error) {
-	var rec idRecord
+	var rec tsRecord
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return Message{}, fmt.Errorf("envelope: extract id from %s record: %w", endpoint, err)
+		return Message{}, fmt.Errorf("envelope: extract last_updated from %s record: %w", endpoint, err)
 	}
 
-	return Message{
+	msg := Message{
 		LogicalArtifactId: logicalArtifactType,
 		SchemaVersion:     schemaVersion,
 		Payload:           raw,
 		Partition:         map[string]any{"endpoint": endpoint},
-		Watermark:         map[string]any{"last_id": rec.ID},
 		ContentType:       "application/json",
-	}, nil
+	}
+
+	// Only carry a watermark when the record actually has a timestamp. Emitting
+	// {"last_updated": ""} would let the server advance the partition watermark to an
+	// empty value, resetting the next run to a full scan. A record with no timestamp
+	// rides along with no watermark instead.
+	if rec.LastUpdated != "" {
+		msg.Watermark = map[string]any{"last_updated": rec.LastUpdated}
+	}
+
+	return msg, nil
 }
