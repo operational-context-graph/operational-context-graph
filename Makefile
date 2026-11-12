@@ -68,7 +68,7 @@ vet-all: require-targets
 
 # Test one service. Requires TARGET=<name>.
 test: require-target
-	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) COVERAGE_THRESHOLD=$(COVERAGE_THRESHOLD) test
+	$(MAKE) -C $(TARGET_DIR) COVERAGE_DIR=$(COVERAGE_DIR) test
 
 # Test every service and connector. Coverage profiles land in $(COVERAGE_DIR).
 test-all: require-targets

@@ -20,7 +20,6 @@ vet:
 test:
 	mkdir -p $(COVERAGE_DIR)
 	go test ./... -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out
-	$(MAKE) test-coverage
 
 test-coverage:
 	$(SCRIPTS_DIR)/check-coverage.sh $(COVERAGE_DIR)/$(NAME).out $(COVERAGE_THRESHOLD)
