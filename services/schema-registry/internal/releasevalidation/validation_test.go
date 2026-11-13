@@ -355,6 +355,11 @@ func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 }
 
 func updateArtifact(value *manifest.Manifest, context manifest.Context, item artifact.Artifact) {
+	for i := range item.Resources {
+		if item.Resources[i].BundlePath == "resources/"+item.Resources[i].Name {
+			item.Resources[i].BundlePath = "resources/" + item.Type + "/" + item.Resources[i].Name
+		}
+	}
 	sort.Slice(item.Resources, func(i, j int) bool {
 		left, right := item.Resources[i], item.Resources[j]
 		if left.Role == right.Role {

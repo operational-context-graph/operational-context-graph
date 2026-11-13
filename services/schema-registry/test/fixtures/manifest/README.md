@@ -9,11 +9,13 @@ validation. Tests read only these checked-in fixtures.
 - `release-set.json` defines complete byte-backed release snapshots and predecessor relationships.
 - `mapping-*.json` contains complete descriptor payloads. Their exact bytes include their final newline.
 - `release-failures.json` defines isolated invalid fixtures as mutations of valid release snapshots.
+- `schema-changes.json` supplies persistent compatibility vectors with explicit rule identifiers and expected artifact impacts.
+- `document-references.json` supplies valid and invalid named-resource and JSON-pointer resolution vectors.
 
 Resource `content` uses padded Base64. Empty content represents zero bytes, not missing bytes.
 
-The fixture builder  computes descriptor sizes, digests, bundle paths, and canonical manifests from these sources.
-It resolves inherited  selections into complete snapshots before validation. It performs no storage writes or
+The fixture builder computes descriptor sizes, digests, bundle paths, and canonical manifests from these sources.
+It resolves inherited selections into complete snapshots before validation. It performs no storage writes or
 activation. Publisher-declared program digests remain independent constants in each descriptor, so incorrect bindings
 fail validation.
 
@@ -31,8 +33,10 @@ For example, descriptor JSON is checked during release closure validation, after
 Every invalid release recipe records a stable ID, rule, phase, sentinel classification, and diagnostic substring.
 The test runner first verifies the unmodified snapshot passes every boundary. It requires failure at the declared
 boundary and checks the error sentinel chain. It repeats validation and requires the complete diagnostic to remain
-identical. Unknown mutation operations and unclassified errors fail tests. Large boundary fixtures expand
-deterministically in memory rather than adding large binary files to Git.
+identical. Bounded failure recipes also run concurrently and preserve their input bytes and artifact context.
+Byte and count stress recipes exercise limits separately to bound test resource usage. Unknown mutation operations
+and unclassified errors fail tests. Large boundary fixtures expand deterministically in memory rather than adding
+large binary files to Git.
 
 ## Rule traceability
 

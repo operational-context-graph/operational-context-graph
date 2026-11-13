@@ -247,14 +247,14 @@ func TestMappingRevisionReuseExcludesPackagingButPreservesPrograms(t *testing.T)
 	selection.Payload.BundlePath = "repacked/descriptor.json"
 	selection.Resources = append([]artifactmodel.Resource(nil), selection.Resources...)
 	selection.Resources[0].BundlePath = "repacked/program.bin"
-	require.NoError(t, immutableReuse(selection, history))
+	require.NoError(t, indexHistory(history).validateReuse(selection))
 
 	selection.Resources[0].Digest = digest([]byte("different"))
-	require.Error(t, immutableReuse(selection, history))
+	require.Error(t, indexHistory(history).validateReuse(selection))
 
 	retired := m
 	retired.Artifacts = m.Artifacts[:3]
-	require.Error(t, immutableReuse(m.Artifacts[3], append(history, Release{Manifest: retired})))
+	require.Error(t, indexHistory(append(history, Release{Manifest: retired})).validateReuse(m.Artifacts[3]))
 }
 
 // TestSharedArtifactBytesDoNotAffectMetadataComparisons preserves revision reuse and annotation-only comparison semantics.
@@ -262,7 +262,7 @@ func TestSharedArtifactBytesDoNotAffectMetadataComparisons(t *testing.T) {
 	m, context := mappingClosure(t)
 	selection := m.Artifacts[3]
 	bound := context.Artifacts[artifactmodel.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}]
-	require.NoError(t, immutableReuse(bound, []Release{{Manifest: m}}))
+	require.NoError(t, indexHistory([]Release{{Manifest: m}}).validateReuse(bound))
 	assert.Equal(t, revisionBoundSelection(selection), revisionBoundSelection(bound))
 	assert.Equal(t, bound.PayloadBytes, context.Artifacts[artifactmodel.Dependency{Kind: bound.Kind, Type: bound.Type, Revision: bound.Revision}].PayloadBytes)
 	assert.Equal(t, []byte{0, 255}, bound.Resources[0].Bytes)
@@ -271,9 +271,9 @@ func TestSharedArtifactBytesDoNotAffectMetadataComparisons(t *testing.T) {
 	left := m.Artifacts[0]
 	right := left
 	left.PayloadBytes, right.PayloadBytes = []byte("true"), []byte("false")
-	assert.True(t, sameSchemaRelations(left, right))
+	assert.True(t, sameArtifactRelations(left, right))
 	right.SchemaClass = artifactmodel.SchemaClassEntity
-	assert.False(t, sameSchemaRelations(left, right))
+	assert.False(t, sameArtifactRelations(left, right))
 }
 
 // TestManifestFormatAcceptsOversizedMultiProgramPackage separates individual

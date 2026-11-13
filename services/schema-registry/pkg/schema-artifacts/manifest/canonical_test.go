@@ -3,6 +3,7 @@ package manifest
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -60,6 +61,12 @@ func TestCanonicalizeEveryArray(t *testing.T) {
 				a[test.key], b[test.key] = test.low, test.high
 				if test.field == "resources" {
 					a["bundlePath"] = "resources/a.txt"
+				}
+				if test.field == "artifacts" && test.path == "" {
+					payload := map[string]any{}
+					maps.Copy(payload, a["payload"].(map[string]any))
+					payload["bundlePath"] = "contexts/alpha.json"
+					a["payload"] = payload
 				}
 				low, high = a, b
 			}

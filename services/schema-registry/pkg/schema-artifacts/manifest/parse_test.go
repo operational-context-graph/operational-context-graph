@@ -13,7 +13,84 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
+
+// TestRegistryAcceptanceProfile checks Registry naming and URI restrictions independently of the
+// general I-JSON numeric range.
+func TestRegistryAcceptanceProfile(t *testing.T) {
+	for _, size := range []int{255, 256} {
+		assert.Equal(t, size == 255, artifact.ValidResourceName(strings.Repeat("a", size)))
+	}
+	for _, name := range []string{"", ".", "..", "folder/name", "percent%name"} {
+		assert.False(t, artifact.ValidResourceName(name), name)
+	}
+	for _, uri := range []string{"https://example.test/repo?name=model", "https://example.test/repo#ref"} {
+		assert.False(t, artifact.ValidDocumentURI(uri))
+	}
+	assert.NoError(t, artifact.ValidateCanonicalURI(testOrigin+"/v1/resources/schema/device/r1", testOrigin, "schema", "device", "r1"))
+	assert.Error(t, artifact.ValidateCanonicalURI("https://other.test/resources/device/r1", testOrigin, "schema", "device", "r1"))
+	// The general I-JSON range is independent of the smaller Registry byte profile.
+	_, err := strictjson.Parse([]byte(`{"size":9007199254740991}`))
+	require.NoError(t, err)
+	_, err = strictjson.Parse([]byte(`{"size":9007199254740992}`))
+	require.Error(t, err)
+}
+
+// TestParseRequiresPredecessorAndUniqueBundlePaths distinguishes explicit null from omission and
+// rejects release-wide bundle-path collisions.
+func TestParseRequiresPredecessorAndUniqueBundlePaths(t *testing.T) {
+	doc := populatedDocument(t)
+	doc["previousRelease"] = nil
+	delete(doc, "changes")
+	_, err := Parse(canonicalDocument(t, doc))
+	require.NoError(t, err)
+	delete(doc, "previousRelease")
+	_, err = Parse(canonicalDocument(t, doc))
+	require.ErrorContains(t, err, "previousRelease is required")
+	for _, collision := range []string{"payload", "owned resource", "cross-artifact resource"} {
+		t.Run(collision, func(t *testing.T) {
+			doc := populatedDocument(t)
+			items := doc["artifacts"].([]any)
+			left, right := items[0].(map[string]any), items[1].(map[string]any)
+			switch collision {
+			case "payload":
+				left["payload"].(map[string]any)["bundlePath"] = right["payload"].(map[string]any)["bundlePath"]
+			case "owned resource":
+				right["resources"].([]any)[0].(map[string]any)["bundlePath"] = right["payload"].(map[string]any)["bundlePath"]
+			case "cross-artifact resource":
+				left["resources"] = right["resources"]
+			}
+			_, err := Parse(canonicalDocument(t, doc))
+			require.ErrorContains(t, err, "duplicate bundle path")
+		})
+	}
+}
+
+// TestParseURIChangeCoordinates accepts resource-only updates within a revision and rejects
+// unchanged or contradictory target coordinates.
+func TestParseURIChangeCoordinates(t *testing.T) {
+	for _, test := range []struct{ before, after string }{{"a.json", "b.json"}, {"", "b.json"}, {"a.json", ""}} {
+		doc := populatedDocument(t)
+		change := map[string]any{"operation": "update", "uri": "https://example.test/resource", "beforeRevision": "rev-1", "afterRevision": "rev-1", "impact": "breaking"}
+		if test.before != "" {
+			change["beforeResource"] = test.before
+		}
+		if test.after != "" {
+			change["afterResource"] = test.after
+		}
+		doc["changes"].(map[string]any)["uriCatalog"] = []any{change}
+		parsed, err := Parse(canonicalDocument(t, doc))
+		require.NoError(t, err)
+		require.Equal(t, test.before, parsed.Changes.URICatalog[0].BeforeResource)
+		require.Equal(t, test.after, parsed.Changes.URICatalog[0].AfterResource)
+		change["beforeResource"], change["afterResource"] = "same.json", "same.json"
+		_, err = Parse(canonicalDocument(t, doc))
+		require.ErrorContains(t, err, "invalid URI change")
+	}
+	assert.False(t, validURIChangeShape(URIChange{Operation: OperationAdd, BeforeResource: "unexpected", AfterRevision: "r1"}))
+	assert.False(t, validURIChangeShape(URIChange{Operation: OperationRemove, BeforeRevision: "r1", AfterResource: "unexpected"}))
+}
 
 // populatedDocument exercises optional metadata and every nested manifest collection through the public parser.
 func populatedDocument(t *testing.T) map[string]any {

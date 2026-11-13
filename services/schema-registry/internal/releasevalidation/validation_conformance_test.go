@@ -342,6 +342,34 @@ func TestReleaseCorpusFailures(t *testing.T) {
 			repeatedPhase, repeated := corpusFailure(data, c)
 			require.Equal(t, phase, repeatedPhase)
 			require.EqualError(t, repeated, err.Error())
+			// Check bounded recipes concurrently; byte and count stress cases exercise limits separately.
+			if test.Target != "profile" && test.Target != "large-package" && test.Operation != "repeat" {
+				snapshot := func() []byte {
+					values := make(map[string]artifact.Artifact, len(c.Artifacts))
+					for key, bound := range c.Artifacts {
+						values[fmt.Sprintf("%s/%s/%s", key.Kind, key.Type, key.Revision)] = bound
+					}
+					return corpusJSON(t, values)
+				}
+				originalContext, originalBytes := snapshot(), slices.Clone(data)
+				type outcome struct {
+					phase string
+					err   error
+				}
+				results := make(chan outcome, 8)
+				var group sync.WaitGroup
+				for range 8 {
+					group.Go(func() { foundPhase, foundError := corpusFailure(data, c); results <- outcome{foundPhase, foundError} })
+				}
+				group.Wait()
+				close(results)
+				for result := range results {
+					require.Equal(t, test.Phase, result.phase)
+					require.EqualError(t, result.err, err.Error())
+				}
+				require.Equal(t, originalBytes, data)
+				require.Equal(t, originalContext, snapshot())
+			}
 		})
 	}
 	require.Equal(t, rules, covered, "every normative rejection rule MUST have an invalid fixture")

@@ -1,21 +1,25 @@
 package manifest
 
 import (
+	"reflect"
 	"sort"
+	"strings"
 
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
 // Diff returns the deterministic conservative change summary for two manifests.
 //
 // The before and after manifests MUST be validated endpoints; Diff does not validate them or require adjacent releases.
 //
-// The [context.Artifacts] supplies both endpoint revisions when proving annotation-only schema updates. It also
-// supplies added mapping descriptors when proving their source schema is newly introduced. Missing or unusable proof
-// bytes produce a breaking impact rather than an error. [Context.RegistryOrigin] and [Context.History] are unused;
-// an empty difference is operational, not initial. The result has sorted, non-nil change collections and an empty
-// [Changes.Summary].
+// [Context.Artifacts] supplies exact bytes for schema, source mapping metadata, and added-alias proofs. Added source
+// mapping descriptors also prove whether their source schema is newly introduced. Missing or unusable proof bytes
+// produce a breaking impact rather than an error. [Context.RegistryOrigin] and [Context.History] are unused. An empty
+// difference is operational, not initial.
+//
+// The result contains sorted, non-nil change collections and an empty [Changes.Summary].
 func Diff(before, after Manifest, context Context) (Changes, error) {
 	changes := Changes{Artifacts: make([]ArtifactChange, 0)}
 	beforeArtifacts, afterArtifacts := artifactMap(before), artifactMap(after)
@@ -47,9 +51,11 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 			}
 			changes.Artifacts = append(changes.Artifacts, artifactChange)
 		case left.Revision != right.Revision:
-			// Default to breaking unless exact schema bytes prove the supported annotation-only exception.
+			// Non-breaking impacts require deterministic proof, never a publisher-supplied impact assertion.
 			impact := ImpactBreaking
-			if left.Kind == artifactmodel.KindSchema && annotationOnly(left, right, context) {
+			if left.Kind == artifactmodel.KindSchema {
+				impact = schemaImpact(left, right, context)
+			} else if left.Kind == artifactmodel.KindSourceMapping && equivalentSourceMapping(left, right, context) {
 				impact = ImpactOperational
 			}
 			artifactChange := ArtifactChange{
@@ -64,7 +70,7 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 		}
 	}
 	changes.SchemaContextBindings = diffBindings(before, after)
-	changes.URICatalog = diffURIs(before, after)
+	changes.URICatalog = diffURIs(before, after, context)
 	changes.StorageCatalog = diffStorage(before, after)
 	if changes.SchemaContextBindings == nil {
 		changes.SchemaContextBindings = []BindingChange{}
@@ -96,6 +102,18 @@ func addedMappingImpact(before Manifest, added artifactmodel.Artifact, context C
 	return ImpactAdditive
 }
 
+// sameArtifactRelations compares metadata and resources independently of revision identity
+// and packaging. It excludes primary payload descriptors, canonical URIs, creation versions, revisions,
+// and bundle paths. Callers classify primary payload content separately; resource descriptors matter.
+func sameArtifactRelations(left, right artifactmodel.Artifact) bool {
+	left, right = revisionBoundSelection(left), revisionBoundSelection(right)
+	left.Revision, right.Revision = "", ""
+	left.CreatedUnderSchemaVersion, right.CreatedUnderSchemaVersion = "", ""
+	left.Payload, right.Payload = artifactmodel.Descriptor{}, artifactmodel.Descriptor{}
+	left.CanonicalURI, right.CanonicalURI = "", ""
+	return reflect.DeepEqual(left, right)
+}
+
 // artifactMap indexes selected artifacts by kind and logical type using an unambiguous separator.
 func artifactMap(manifest Manifest) map[string]artifactmodel.Artifact {
 	result := make(map[string]artifactmodel.Artifact, len(manifest.Artifacts))
@@ -122,7 +140,7 @@ func unionKeys(left, right map[string]artifactmodel.Artifact) []string {
 	return values
 }
 
-// diffBindings expands changed schema-context pairs into additive additions and breaking removals.
+// diffBindings expands pairs and conservatively classifies additions affecting existing schemas.
 func diffBindings(before, after Manifest) []BindingChange {
 	left, right := bindingPairs(before), bindingPairs(after)
 	result := make([]BindingChange, 0)
@@ -139,11 +157,15 @@ func diffBindings(before, after Manifest) []BindingChange {
 	}
 	for key := range right {
 		if _, ok := left[key]; !ok {
+			impact := ImpactBreaking
+			if newRevisionIdentity(before, after, right[key][0]) {
+				impact = ImpactAdditive
+			}
 			bindingChange := BindingChange{
 				Operation:       OperationAdd,
 				SchemaRevision:  right[key][0],
 				ContextRevision: right[key][1],
-				Impact:          ImpactAdditive,
+				Impact:          impact,
 			}
 			result = append(result, bindingChange)
 		}
@@ -163,7 +185,15 @@ func bindingPairs(manifest Manifest) map[string][2]string {
 }
 
 // diffURIs identifies catalog additions, removals, and changed artifact or resource targets without following intermediate releases.
-func diffURIs(before, after Manifest) []URIChange {
+func diffURIs(before, after Manifest, context Context) []URIChange {
+	unused := uriAdditionProof(before, context)
+	introduced := make(map[string]string)
+	previousArtifacts := artifactMap(before)
+	for _, a := range after.Artifacts {
+		if _, exists := previousArtifacts[string(a.Kind)+"\x00"+a.Type]; !exists {
+			introduced[a.CanonicalURI] = a.Revision
+		}
+	}
 	left, right := map[string]URIEntry{}, map[string]URIEntry{}
 	for _, entry := range before.URICatalog {
 		left[entry.URI] = entry
@@ -198,12 +228,18 @@ func diffURIs(before, after Manifest) []URIChange {
 	}
 	for uri, entry := range right {
 		if _, ok := left[uri]; !ok {
+			impact := ImpactBreaking
+			// New canonical coordinates expose new logical artifacts, not requested aliases.
+			// Every other addition needs safety proof independently of its target's identity.
+			if (entry.Resource == "" && introduced[uri] == entry.ArtifactRevision) || unused(uri) {
+				impact = ImpactAdditive
+			}
 			uriChange := URIChange{
 				Operation:     OperationAdd,
 				URI:           uri,
 				AfterRevision: entry.ArtifactRevision,
 				AfterResource: entry.Resource,
-				Impact:        ImpactAdditive,
+				Impact:        impact,
 			}
 			result = append(result, uriChange)
 		}
@@ -211,7 +247,7 @@ func diffURIs(before, after Manifest) []URIChange {
 	return result
 }
 
-// diffStorage expands changed schema-store pairs into additive additions and breaking removals.
+// diffStorage expands pairs and marks changed existing destinations as breaking.
 func diffStorage(before, after Manifest) []StorageChange {
 	left, right := storagePairs(before), storagePairs(after)
 	result := make([]StorageChange, 0)
@@ -229,17 +265,126 @@ func diffStorage(before, after Manifest) []StorageChange {
 	}
 	for key, item := range right {
 		if _, ok := left[key]; !ok {
+			impact := ImpactBreaking
+			if _, exists := findSelected(before.Artifacts, item.Kind, item.ArtifactType); !exists {
+				if _, selected := findSelected(after.Artifacts, item.Kind, item.ArtifactType); selected {
+					impact = ImpactAdditive
+				}
+			}
 			storageChange := StorageChange{
 				Operation:    OperationAdd,
 				Kind:         item.Kind,
 				ArtifactType: item.ArtifactType,
 				Store:        item.Store,
-				Impact:       ImpactAdditive,
+				Impact:       impact,
 			}
 			result = append(result, storageChange)
 		}
 	}
 	return result
+}
+
+// newRevisionIdentity reports whether revision belongs to a logical artifact absent from before.
+// A new revision of an existing logical artifact does not count as a new identity.
+func newRevisionIdentity(before, after Manifest, revision string) bool {
+	for _, a := range after.Artifacts {
+		if a.Revision == revision {
+			_, exists := findSelected(before.Artifacts, a.Kind, a.Type)
+			return !exists
+		}
+	}
+	return false
+}
+
+// uriAdditionProof returns a predicate checking that an added URI cannot affect existing identifiers.
+// It inspects existing documents once. Programs, unavailable bytes, or prefix overlap prevent proof.
+// False means unsafe or unproven, not necessarily changed behavior.
+//
+// Callers MUST keep before and context immutable for the predicate's lifetime.
+// The predicate memoizes its first inspection and MUST NOT be shared across concurrent callers.
+func uriAdditionProof(before Manifest, context Context) func(string) bool {
+	attempted, complete := false, false
+	var prefixes []string
+	return func(uri string) bool {
+		if !attempted {
+			prefixes, complete = existingURIPrefixes(before, context)
+			attempted = true
+		}
+		if !complete {
+			return false
+		}
+		// Prefixes are sorted and prefix-free, so only the closest preceding value can match.
+		index := sort.SearchStrings(prefixes, uri)
+		if index < len(prefixes) && prefixes[index] == uri {
+			return false
+		}
+		return index == 0 || !strings.HasPrefix(uri, prefixes[index-1])
+	}
+}
+
+// existingURIPrefixes returns sorted, prefix-free identifiers and whether before is fully inspected.
+// False indicates missing bytes, invalid JSON, or opaque programs.
+// Callers MUST treat incomplete inspection as unproven compatibility.
+func existingURIPrefixes(before Manifest, context Context) ([]string, bool) {
+	identifiers := make(map[string]bool)
+	for _, a := range before.Artifacts {
+		bound, exists := context.Artifacts[artifactmodel.Dependency{Kind: a.Kind, Type: a.Type, Revision: a.Revision}]
+		if !exists || a.Kind == artifactmodel.KindSourceMapping {
+			return nil, false
+		}
+		value, err := strictjson.Parse(bound.PayloadBytes)
+		if err != nil {
+			return nil, false
+		}
+		collectURIs(value, identifiers)
+		for _, resource := range bound.Resources {
+			if resource.Role == artifactmodel.ResourceRoleProgram {
+				return nil, false
+			}
+			if !jsonMediaType(resource.MediaType) {
+				continue
+			}
+			value, err := strictjson.Parse(resource.Bytes)
+			if err != nil {
+				return nil, false
+			}
+			collectURIs(value, identifiers)
+		}
+	}
+	prefixes := make([]string, 0, len(identifiers))
+	for uri := range identifiers {
+		prefixes = append(prefixes, uri)
+	}
+	sort.Strings(prefixes)
+	compact := prefixes[:0]
+	for _, prefix := range prefixes {
+		if len(compact) == 0 || !strings.HasPrefix(prefix, compact[len(compact)-1]) {
+			compact = append(compact, prefix)
+		}
+	}
+	return compact, true
+}
+
+// collectURIs adds profile-valid absolute URIs from JSON strings and member names to identifiers.
+// The destination map MUST be initialized.
+// Vocabulary bases are retained as prefixes for conservative alias checks.
+func collectURIs(value any, identifiers map[string]bool) {
+	switch v := value.(type) {
+	case string:
+		// A longer string cannot prefix any profile-accepted catalog key.
+		if artifactmodel.ValidDocumentURI(v) {
+			identifiers[v] = true
+		}
+	case map[string]any:
+		for key, child := range v {
+			collectURIs(key, identifiers)
+			collectURIs(child, identifiers)
+		}
+	case []any:
+		for _, child := range v {
+			collectURIs(child, identifiers)
+		}
+	}
 }
 
 // storagePairs indexes each logical artifact and store association independently of its enclosing storage entry.

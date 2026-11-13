@@ -431,8 +431,8 @@ func TestDiffClassifiesChangesAndRequiredVersionIncrement(t *testing.T) {
 	newBound.PayloadBytes = []byte(`{"description":"new","type":"object"}`)
 	newBound.Payload = descriptor(newBound.PayloadBytes, artifact.SchemaMediaType, "schemas/device-2.json")
 	context.Artifacts[artifact.Dependency{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}] = newBound
-	assert.True(t, sameSchemaRelations(before.Artifacts[0], after.Artifacts[0]))
-	assert.True(t, annotationOnly(before.Artifacts[0], after.Artifacts[0], context))
+	assert.True(t, sameArtifactRelations(before.Artifacts[0], after.Artifacts[0]))
+	assert.Equal(t, ImpactOperational, schemaImpact(before.Artifacts[0], after.Artifacts[0], context))
 	diff, err := Diff(before, after, context)
 	require.NoError(t, err)
 	assert.Empty(t, diff.SchemaContextBindings)
@@ -458,7 +458,7 @@ func TestDiffClassifiesVersionOneNetChangeCases(t *testing.T) {
 		{"schema-update-unknown", "breaking", Manifest{Artifacts: []artifact.Artifact{{Kind: artifact.KindSchema, Type: "device", Revision: "rev-2"}}, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"uri-update", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: []URIEntry{{URI: "https://example.test/device", ArtifactRevision: "rev-2"}}}},
 		{"binding-remove", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog}},
-		{"storage-add", "additive", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []Store{StoreTelemetryStore}}}}},
+		{"storage-add", "breaking", Manifest{Artifacts: base.Artifacts, URICatalog: base.URICatalog, StorageCatalog: []StorageEntry{{Kind: artifact.KindSchema, ArtifactType: "device", Stores: []Store{StoreTelemetryStore}}}}},
 	}
 	base.SchemaContextBindings = []Binding{{SchemaRevision: "rev-1", ContextRevisions: []string{"ctx-1"}}}
 	for _, test := range tests {

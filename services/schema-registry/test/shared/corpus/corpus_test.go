@@ -35,7 +35,7 @@ func TestLoadCorpus(t *testing.T) {
 
 func TestLoadFailures(t *testing.T) {
 	cases := LoadFailures(t)
-	require.Len(t, cases, 91)
+	require.Len(t, cases, 98)
 	first := cases[0]
 	require.Equal(t, "manifest-empty", first.ID)
 	require.Equal(t, "manifest.top-level", first.Rule)

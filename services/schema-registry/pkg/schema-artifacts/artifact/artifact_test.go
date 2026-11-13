@@ -17,6 +17,21 @@ import (
 // origin supplies the fixed Registry origin used by artifact-validation fixtures.
 const origin = "https://registry.example.test"
 
+// TestSchemaDraft2020Acceptance checks acceptance of Draft 2020-12 and rejection of older dialects.
+func TestSchemaDraft2020Acceptance(t *testing.T) {
+	for _, dialect := range []string{"http://json-schema.org/draft-04/schema", "http://json-schema.org/draft-07/schema", "https://json-schema.org/draft/2019-09/schema", "https://json-schema.org/draft/2020-12/schema"} {
+		t.Run(dialect, func(t *testing.T) {
+			a := Artifact{Kind: KindSchema, CanonicalURI: origin + "/v1/resources/schema/device/r1", Payload: Descriptor{MediaType: SchemaMediaType}, PayloadBytes: []byte(fmt.Sprintf(`{"$schema":%q,"type":"object"}`, dialect))}
+			err := a.ValidatePayloadFormat()
+			if dialect == "https://json-schema.org/draft/2020-12/schema" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "Draft 2020-12")
+			}
+		})
+	}
+}
+
 // TestArtifactMetadata checks byte exclusion, metadata preservation, and independent resource storage.
 func TestArtifactMetadata(t *testing.T) {
 	payload, program := []byte(`true`), []byte{0, 255}

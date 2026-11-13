@@ -29,13 +29,13 @@ make build
 To lint all source files, run:
 
 ```sh
-golangci-lint run
+make lint
 ```
 
-To examines Go source code for suspicious constructs, run:
+To inspect Go source code for suspicious constructs, run:
 
 ```sh
-go vet ./...
+make vet
 ```
 
 To check what known vulnerabilities in the dependencies are reachable in the application's source code, run:
@@ -49,13 +49,13 @@ make vuln
 To run the full test suite (with race detection), including unit tests and integration tests, run:
 
 ```sh
-go test ./... -race
+make test
 ```
 
-A convenience `Makefile` target is available to run the test suite:
+To only run the tests for individual (test) packages, run:
 
-```shell
-make test
+```sh
+make test TEST_PACKAGES='./internal/introspection/release ./internal/introspection/httpapi'
 ```
 
 Additional `Makefile` targets are available to run individual tests suites:

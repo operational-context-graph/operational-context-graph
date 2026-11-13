@@ -192,9 +192,10 @@ func (s *Service) Compare(ctx context.Context, from, to string) (manifest.Change
 			if artifactErr != nil {
 				return withRequestMetadata(current, "", artifactErr)
 			}
-			artifacts[artifact.Dependency{Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision}] = artifact.Artifact{
-				Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision, Payload: artifact.Descriptor{MediaType: stored.Payload.MediaType, Digest: stored.Payload.Digest, Size: stored.Payload.Size}, PayloadBytes: stored.Payload.Bytes,
-			}
+			bound := entry.Metadata()
+			bound.Payload = artifact.Descriptor{MediaType: stored.Payload.MediaType, Digest: stored.Payload.Digest, Size: stored.Payload.Size}
+			bound.PayloadBytes = stored.Payload.Bytes
+			artifacts[artifact.Dependency{Kind: entry.Kind, Type: entry.Type, Revision: entry.Revision}] = bound
 		}
 		changes, err = manifest.Diff(beforeManifest, afterManifest, manifest.Context{Artifacts: artifacts})
 		return withRequestMetadata(current, "", err)

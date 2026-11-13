@@ -42,6 +42,7 @@ func Validate(data []byte, context Context) (Manifest, error) {
 //
 // The [Context.History] MUST contain trusted, previously validated releases in oldest-first order.
 // The [Context.Artifacts] MUST match every selection's metadata and include its exact payload and resource bytes.
+// Retargeting JSON aliases also requires affected historical releases' bytes, as documented by [Context.Artifacts].
 //
 // Validate reads the current fields; it does not parse [Manifest.Raw] or check that [Manifest.Raw] still represents
 // those fields. Callers SHOULD use the package-level [Validate] when starting from untrusted manifest bytes.
@@ -55,8 +56,12 @@ func (m Manifest) Validate(context Context) error {
 	if err := m.validateLineage(context.History); err != nil {
 		return err
 	}
+	if err := m.validateHistoricalURIs(context); err != nil {
+		return err
+	}
 	selected := make(map[artifactmodel.Dependency]artifactmodel.Artifact, len(m.Artifacts))
 	byRevision := make(map[string]artifactmodel.Artifact, len(m.Artifacts))
+	history := indexHistory(context.History)
 	for _, selectedArtifact := range m.Artifacts {
 		key := artifactmodel.Dependency{Kind: selectedArtifact.Kind, Type: selectedArtifact.Type, Revision: selectedArtifact.Revision}
 		bound, ok := context.Artifacts[key]
@@ -70,11 +75,11 @@ func (m Manifest) Validate(context Context) error {
 		if validationErr := bound.Validate(context.RegistryOrigin); validationErr != nil {
 			return fmt.Errorf("%w: artifact %s: %w", errInvalid, key.Type, validationErr)
 		}
-		if err := immutableReuse(selectedArtifact, context.History); err != nil {
+		if err := history.validateReuse(selectedArtifact); err != nil {
 			return err
 		}
-		if err := validateCreatedUnder(selectedArtifact, m.SchemaVersion, context.History); err != nil {
-			return err
+		if _, reused := history.revisions[selectedArtifact.Revision]; !reused && selectedArtifact.CreatedUnderSchemaVersion != m.SchemaVersion {
+			return invalid("first selected revision must be created under this release")
 		}
 		selected[key] = bound
 		if previous, exists := byRevision[selectedArtifact.Revision]; exists && (previous.Kind != selectedArtifact.Kind || previous.Type != selectedArtifact.Type) {
@@ -82,33 +87,18 @@ func (m Manifest) Validate(context Context) error {
 		}
 		byRevision[selectedArtifact.Revision] = selectedArtifact
 	}
-	// Build the document catalog before compiling payloads so selected artifacts can reference one another offline.
-	// Only primary payloads become decoded format documents; named resources remain separately bound bytes.
-	formatCatalog := make(map[string]any, len(m.URICatalog))
-	selectedByRevision := make(map[string]artifactmodel.Artifact, len(selected))
-	for _, bound := range selected {
-		selectedByRevision[bound.Revision] = bound
-	}
-	for _, entry := range m.URICatalog {
-		bound, ok := selectedByRevision[entry.ArtifactRevision]
-		if !ok {
-			continue
-		}
-		if entry.Resource == "" {
-			value, parseErr := strictjson.Parse(bound.PayloadBytes)
-			if parseErr != nil {
-				return fmt.Errorf("%w: catalog payload JSON: %w", errInvalid, parseErr)
-			}
-			formatCatalog[entry.URI] = value
-		}
-	}
-	for _, bound := range selected {
-		if err := bound.ValidatePayloadFormatWithCatalog(formatCatalog); err != nil {
-			return fmt.Errorf("%w: validate artifact format: %w", errInvalid, err)
-		}
-	}
 	if err := m.validateReferences(selected, byRevision); err != nil {
 		return err
+	}
+	formatCatalog, err := m.documentCatalog(selected)
+	if err != nil {
+		return err
+	}
+	for _, selection := range m.Artifacts {
+		bound := selected[artifactmodel.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}]
+		if err := bound.ValidatePayloadFormatWithCatalog(formatCatalog.documents); err != nil {
+			return fmt.Errorf("%w: validate artifact format: %w", errInvalid, err)
+		}
 	}
 	if err := m.validateSourceMappings(selected, context); err != nil {
 		return err
@@ -133,9 +123,17 @@ func (m Manifest) validateStructural() error {
 	if err := checkCount(len(m.Artifacts)); err != nil {
 		return err
 	}
+	paths := make(map[string]struct{})
+	duplicatePath := false
 	for _, a := range m.Artifacts {
 		if err := validateArtifact(a); err != nil {
 			return err
+		}
+		for _, path := range bundlePaths(a) {
+			if _, exists := paths[path]; exists {
+				duplicatePath = true
+			}
+			paths[path] = struct{}{}
 		}
 	}
 	for _, b := range m.SchemaContextBindings {
@@ -165,30 +163,11 @@ func (m Manifest) validateStructural() error {
 			}
 		}
 	}
-	return m.validateOrder()
-}
-
-// validateLineage binds the immediate predecessor and rejects repeated schema versions in the supplied history.
-func (m Manifest) validateLineage(history []Release) error {
-	if len(history) == 0 {
-		if m.PreviousRelease != nil {
-			return fmt.Errorf("%w: initial release must have null predecessor", errInvalid)
-		}
-		return nil
+	if err := m.validateOrder(); err != nil {
+		return err
 	}
-	previous := history[len(history)-1]
-	if m.PreviousRelease == nil || m.PreviousRelease.SchemaVersion != previous.Manifest.SchemaVersion || m.PreviousRelease.ManifestDigest != previous.Digest {
-		return fmt.Errorf("%w: predecessor does not bind immediate release", errInvalid)
-	}
-	seen := make(map[string]struct{}, len(history))
-	for _, release := range history {
-		if _, ok := seen[release.Manifest.SchemaVersion]; ok {
-			return fmt.Errorf("%w: non-linear release lineage", errInvalid)
-		}
-		seen[release.Manifest.SchemaVersion] = struct{}{}
-	}
-	if _, exists := seen[m.SchemaVersion]; exists {
-		return fmt.Errorf("%w: schema version already exists in lineage", errInvalid)
+	if duplicatePath {
+		return invalid("duplicate bundle path")
 	}
 	return nil
 }
@@ -456,60 +435,13 @@ func matchesSelection(selection, bound artifactmodel.Artifact) bool {
 	return reflect.DeepEqual(selection, bound)
 }
 
-// immutableReuse rejects changed revision metadata, reassigned canonical identifiers, and reuse of retired logical identities.
-func immutableReuse(selection artifactmodel.Artifact, history []Release) error {
-	seenIdentity, retired := false, false
-	for _, release := range history {
-		present := false
-		for _, previous := range release.Manifest.Artifacts {
-			if previous.Kind == selection.Kind && previous.Type == selection.Type {
-				present = true
-				seenIdentity = true
-			}
-			if previous.CanonicalURI == selection.CanonicalURI && previous.Revision != selection.Revision {
-				return fmt.Errorf("%w: historical canonical URI is reassigned", errInvalid)
-			}
-			if previous.Kind == selection.Kind && previous.Type == selection.Type && previous.Revision == selection.Revision && !reflect.DeepEqual(revisionBoundSelection(previous), revisionBoundSelection(selection)) {
-				return fmt.Errorf("%w: immutable revision changed", errInvalid)
-			}
-		}
-		if seenIdentity && !present {
-			retired = true
-		}
+// bundlePaths returns the payload and resource bundle paths for release-wide uniqueness checks.
+func bundlePaths(a artifactmodel.Artifact) []string {
+	paths := []string{a.Payload.BundlePath}
+	for _, resource := range a.Resources {
+		paths = append(paths, resource.BundlePath)
 	}
-	if retired {
-		return fmt.Errorf("%w: retired logical identity is reused", errInvalid)
-	}
-	return nil
-}
-
-// revisionBoundSelection copies selection metadata while removing release-specific payload and resource bundle paths.
-func revisionBoundSelection(value artifactmodel.Artifact) artifactmodel.Artifact {
-	value = value.Metadata()
-	// A publisher can move identical bytes between bundles without changing the immutable artifact revision.
-	value.Payload.BundlePath = ""
-	for index := range value.Resources {
-		value.Resources[index].BundlePath = ""
-	}
-	return value
-}
-
-// validateCreatedUnder preserves a reused revision's creation release and binds new revisions to the containing release.
-func validateCreatedUnder(selection artifactmodel.Artifact, version string, history []Release) error {
-	for _, release := range history {
-		for _, prior := range release.Manifest.Artifacts {
-			if prior.Kind == selection.Kind && prior.Type == selection.Type && prior.Revision == selection.Revision {
-				if selection.CreatedUnderSchemaVersion != prior.CreatedUnderSchemaVersion {
-					return fmt.Errorf("%w: reused revision changed creation version", errInvalid)
-				}
-				return nil
-			}
-		}
-	}
-	if selection.CreatedUnderSchemaVersion != version {
-		return fmt.Errorf("%w: first selected revision must be created under this release", errInvalid)
-	}
-	return nil
+	return paths
 }
 
 // findSelected looks up a selected artifact by its kind and case-sensitive logical type.

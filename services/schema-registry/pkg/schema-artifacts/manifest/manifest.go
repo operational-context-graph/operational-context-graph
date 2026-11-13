@@ -239,13 +239,16 @@ type Release struct {
 
 // Context provides caller-owned immutable bytes and predecessor lineage.
 // [Context.Artifacts] MUST contain exact payload and resource bytes for every selection.
-// Validation reads this context without retrieving missing data or validating historical releases again.
+// Retargeting JSON aliases also requires historical bytes to distinguish schema usage from context-only usage.
+// Validation checks supplied historical bytes but does not revalidate historical lineage or change summaries.
 type Context struct {
 	// RegistryOrigin supplies the absolute origin required by every selected artifact's canonical URI.
 	// Validation compares the scheme and host; an origin path does not prefix resource paths.
 	RegistryOrigin string
 	// Artifacts supplies exact payload and resource bytes keyed by immutable identity.
-	// Diff also uses this map for old revisions when proving annotation-only schema updates.
+	// Diff uses both endpoint revisions for schema, mapping-metadata, and alias-safety proofs.
+	// Retargeted JSON aliases require every selection's bytes from the affected historical releases.
+	// Missing historical bytes fail closed; unchanged aliases and removed aliases need no historical bytes.
 	Artifacts map[artifactmodel.Dependency]artifactmodel.Artifact
 	// History lists validated predecessors oldest first, ending with the immediate predecessor.
 	// An empty history means the manifest is an initial release.

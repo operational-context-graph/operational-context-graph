@@ -69,6 +69,9 @@ func Parse(data []byte) (Manifest, error) {
 	if m.SchemaVersion, err = requiredString(value, "schemaVersion"); err != nil {
 		return Manifest{}, err
 	}
+	if _, exists := value["previousRelease"]; !exists {
+		return Manifest{}, invalid("previousRelease is required")
+	}
 	if m.PreviousRelease, err = parsePrevious(value["previousRelease"]); err != nil {
 		return Manifest{}, err
 	}
@@ -553,12 +556,27 @@ func parseURIChanges(raw any) ([]URIChange, error) {
 		if item.Impact, err = requiredEnum[Impact](object, "impact"); err != nil {
 			return nil, err
 		}
-		if !artifactmodel.ValidDocumentURI(item.URI) || !validChangeShape(item.Operation, item.BeforeRevision, item.AfterRevision) || !validImpact(item.Impact) || (item.BeforeResource != "" && !artifactmodel.ValidResourceName(item.BeforeResource)) || (item.AfterResource != "" && !artifactmodel.ValidResourceName(item.AfterResource)) {
+		if !artifactmodel.ValidDocumentURI(item.URI) || !validURIChangeShape(item) || !validImpact(item.Impact) || (item.BeforeResource != "" && !artifactmodel.ValidResourceName(item.BeforeResource)) || (item.AfterResource != "" && !artifactmodel.ValidResourceName(item.AfterResource)) {
 			return nil, invalid("invalid URI change")
 		}
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+// validURIChangeShape compares complete targets, including the absent-resource payload selector.
+func validURIChangeShape(item URIChange) bool {
+	switch item.Operation {
+	case OperationAdd:
+		return item.BeforeRevision == "" && item.BeforeResource == "" && artifactmodel.ValidRevision(item.AfterRevision)
+	case OperationRemove:
+		return artifactmodel.ValidRevision(item.BeforeRevision) && item.AfterRevision == "" && item.AfterResource == ""
+	case OperationUpdate:
+		return artifactmodel.ValidRevision(item.BeforeRevision) && artifactmodel.ValidRevision(item.AfterRevision) &&
+			(item.BeforeRevision != item.AfterRevision || item.BeforeResource != item.AfterResource)
+	default:
+		return false
+	}
 }
 
 // parseStorageChanges accepts bounded add or remove entries with registered stores, artifact kinds, and supported impacts.

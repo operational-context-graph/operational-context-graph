@@ -188,19 +188,24 @@ func (a Artifact) Validate(registryOrigin string) error {
 	return nil
 }
 
-// ValidatePayloadFormat parses [Artifact.PayloadBytes] and checks schema or context format without an external
-// document catalog. Source-mapping payloads receive only strict JSON parsing here, not descriptor or program-binding
-// validation. Callers MUST separately call [Artifact.Validate] to check identity and byte integrity.
+// ValidatePayloadFormat checks payload syntax and format without an external document catalog.
+//
+// Schema payloads MUST use JSON Schema Draft 2020-12; contexts MUST be valid JSON-LD documents.
+// Source mappings receive strict JSON parsing, not descriptor or program-binding validation.
+// Callers MUST separately call [Artifact.Validate] to check identity and byte integrity.
 func (a Artifact) ValidatePayloadFormat() error {
 	return a.ValidatePayloadFormatWithCatalog(nil)
 }
 
-// ValidatePayloadFormatWithCatalog validates a payload using caller-supplied release-catalog documents for
-// external references. It does not fetch documents or validate source-mapping program bindings.
+// ValidatePayloadFormatWithCatalog validates syntax and format using supplied catalog documents.
+// Schema payloads MUST use JSON Schema Draft 2020-12. Source-mapping bindings are not checked.
 //
 // The catalog maps exact document identifiers to decoded JSON values; nil denies all catalog lookups.
 // The schema compiler can also resolve resources registered locally and its built-in schemas.
+// Catalog values MUST remain unchanged during validation. Lookups never retrieve external documents.
 // Callers MUST separately call [Artifact.Validate] to check identity and byte integrity.
+//
+// Invalid JSON, unsupported dialects, malformed payloads, and unresolved references return errors.
 func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error {
 	value, err := strictjson.Parse(a.PayloadBytes)
 	if err != nil {
@@ -215,8 +220,12 @@ func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error
 		if err := compiler.AddResource(a.CanonicalURI, value); err != nil {
 			return fmt.Errorf("add schema resource: %w", err)
 		}
-		if _, err := compiler.Compile(a.CanonicalURI); err != nil {
+		compiled, err := compiler.Compile(a.CanonicalURI)
+		if err != nil {
 			return fmt.Errorf("compile JSON Schema: %w", err)
+		}
+		if compiled.DraftVersion != 2020 {
+			return errors.New("JSON Schema must use Draft 2020-12")
 		}
 	case KindContext:
 		if a.Payload.MediaType != ContextMediaType {
