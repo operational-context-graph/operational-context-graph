@@ -63,7 +63,7 @@ ocm download componentdescriptor \
   "${REGISTRY_REF}" \
   -o yaml > /tmp/ocg-descriptor-$$.yaml
 
-SERVICES="schema-registry data-ingestion telemetry-store inventory-store inventory-connector"
+SERVICES="data-ingestion telemetry-store inventory-store inventory-connector"
 mismatches=""
 
 for svc in ${SERVICES}; do

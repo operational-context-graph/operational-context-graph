@@ -154,6 +154,15 @@ jobs:
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
 
+      - name: Bump umbrella chart version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          yq -i ".version = \"${VERSION}\"" helm/Chart.yaml
+          yq -i ".appVersion = \"${VERSION}\"" helm/Chart.yaml
+          git add helm/Chart.yaml
+          git diff --cached --quiet || git commit -m "chore(release): bump helm chart version to v${VERSION}"
+
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
