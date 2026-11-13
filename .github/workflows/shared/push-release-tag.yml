@@ -1,5 +1,5 @@
 # Pushes an annotated git tag using a GitHub App token.
-# Called by tag-component and tag-system in release.yml.
+# Called by tag-component in release-component.yml and tag-system in release-system.yml.
 ---
 name: Push Release Tag
 

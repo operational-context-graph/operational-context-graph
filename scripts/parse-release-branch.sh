@@ -73,7 +73,7 @@ if ! "$SCRIPT_DIR/validate-version.sh" "$version" 2>/dev/null; then
   exit 1
 fi
 
-# The slug is the last segment of the slug path (handles nested paths like connectors/inventory).
+# The slug is the last segment of the slug path (handles nested paths like connectors/inventory-connector).
 slug="${slug_path##*/}"
 
 # Resolve the full component path by searching the entire repo for a directory

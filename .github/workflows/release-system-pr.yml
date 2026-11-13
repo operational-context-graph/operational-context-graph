@@ -1,0 +1,184 @@
+# Creates a system release PR for the full operational-context-graph stack.
+#
+# Accepts optional per-component version overrides. When a version input is empty,
+# resolves the latest released version for that component from git tags. Updates each
+# component's subchart values.yaml .image.tag so the Helm chart always reflects the
+# exact component versions that form the system release.
+---
+name: Release System PR
+run-name: "System release PR creation for v${{ inputs.version }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.0.0)"
+        required: true
+        type: string
+      version_data_ingestion:
+        description: "data-ingestion version (leave empty to use latest released)"
+        required: false
+        type: string
+      version_inventory_connector:
+        description: "inventory-connector version (leave empty to use latest released)"
+        required: false
+        type: string
+      version_inventory_store:
+        description: "inventory-store version (leave empty to use latest released)"
+        required: false
+        type: string
+      version_telemetry_store:
+        description: "telemetry-store version (leave empty to use latest released)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate version format
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/validate-version.sh "$VERSION"
+      - name: Check tag does not already exist
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if git tag --list | grep -qxF "v${VERSION}"; then
+            echo "::error::Tag 'v${VERSION}' already exists"
+            exit 1
+          fi
+
+  create-system-release-pr:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Configure git identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
+      - name: Create release branch
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git checkout -b "release/${VERSION}"
+
+      - name: Bump subchart image tags
+        env:
+          V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
+          V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
+          V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
+          V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
+        run: |
+          # Resolve a component version: use the supplied override, or find the latest
+          # semver tag of the form <path>/v<semver> for the component path.
+          resolve_version() {
+            local override="$1"
+            local component_path="$2"
+            if [ -n "${override}" ]; then
+              echo "${override}"
+              return
+            fi
+            # List all tags matching <component_path>/v*, strip prefix, sort by semver,
+            # take the highest. Requires git >= 2.18 for version sort.
+            git tag --list "${component_path}/v*" \
+              | sed "s|${component_path}/v||" \
+              | sort -V \
+              | tail -1
+          }
+
+          bump() {
+            local slug="$1"
+            local component_path="$2"
+            local override="$3"
+
+            version=$(resolve_version "${override}" "${component_path}")
+            if [ -z "${version}" ]; then
+              echo "::error::No released version found for ${slug} (${component_path}) and no override supplied"
+              exit 1
+            fi
+
+            chart_dir="helm/charts/${slug}"
+            if [ ! -d "${chart_dir}" ]; then
+              echo "::error::Helm chart directory ${chart_dir} does not exist"
+              exit 1
+            fi
+
+            values_file="${chart_dir}/values.yaml"
+            if ! yq e '.image.tag' "${values_file}" > /dev/null 2>&1; then
+              echo "::error::Field .image.tag not found in ${values_file}"
+              exit 1
+            fi
+
+            current=$(yq e '.image.tag' "${values_file}")
+            if [ "${current}" = "${version}" ]; then
+              echo "${slug}: already at ${version}, no change"
+              return
+            fi
+
+            yq -i ".image.tag = \"${version}\"" "${values_file}"
+            echo "${slug}: bumped ${current} → ${version}"
+            git add "${values_file}"
+          }
+
+          bump "data-ingestion"       "services/data-ingestion"                  "${V_DATA_INGESTION}"
+          bump "inventory-connector"  "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
+          bump "inventory-store"      "services/inventory-store"                 "${V_INVENTORY_STORE}"
+          bump "telemetry-store"      "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
+
+          git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${{ inputs.version }}"
+
+      - name: Update changelog
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          SECTION="## [${VERSION}] - ${DATE}"
+          scripts/prepend-changelog.sh \
+            "${VERSION}" \
+            "${SECTION}"
+          git add CHANGELOG.md
+          git commit -m "chore(release): update changelog for v${VERSION}"
+      # TODO: Add step that updates OCM component descriptor with the new component versions
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          git push origin "release/${VERSION}"
+          gh pr create \
+            --base main \
+            --head "release/${VERSION}" \
+            --title "chore(release): v${VERSION}" \
+            --body "System release v${VERSION}. See CHANGELOG.md for details."

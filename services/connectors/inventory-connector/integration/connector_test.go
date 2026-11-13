@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
-	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/netbox"
-	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/publisher"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory-connector/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory-connector/internal/netbox"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory-connector/internal/publisher"
 )
 
 const (

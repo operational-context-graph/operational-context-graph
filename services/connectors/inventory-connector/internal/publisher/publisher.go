@@ -3,7 +3,7 @@ package publisher
 import (
 	"context"
 
-	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory/internal/envelope"
+	"github.com/operational-context-graph/operational-context-graph/services/connectors/inventory-connector/internal/envelope"
 )
 
 type Publisher interface {

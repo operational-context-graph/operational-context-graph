@@ -1,4 +1,4 @@
-module github.com/operational-context-graph/operational-context-graph/services/connectors/inventory
+module github.com/operational-context-graph/operational-context-graph/services/connectors/inventory-connector
 
 go 1.27.3
 
