@@ -1,4 +1,3 @@
-// Package manifest parses and validates immutable Schema Release Manifests.
 package manifest
 
 import (
@@ -18,7 +17,9 @@ const (
 )
 
 var (
-	// ErrInvalid classifies malformed or semantically invalid manifest input.
+	// ErrInvalid classifies manifest-specific structural and semantic validation failures.
+	// Callers MAY use errors.Is to identify it through wrapping.
+	// JSON parsing and canonicalization failures can return other errors without ErrInvalid.
 	ErrInvalid = errors.New("invalid release manifest")
 	// errInvalid preserves the package-local spelling of the public validation sentinel.
 	errInvalid = ErrInvalid
@@ -39,7 +40,7 @@ const (
 )
 
 // Operation identifies a change to an artifact or catalog entry.
-// Binding and storage changes support only add and remove.
+// [Binding] and [Store] changes support only add and remove.
 type Operation string
 
 const (
@@ -51,7 +52,7 @@ const (
 	OperationRemove Operation = "remove"
 )
 
-// Impact classifies one change. Unlike Compatibility, it excludes initial.
+// Impact classifies one change. Unlike [Compatibility], it excludes initial.
 type Impact string
 
 const (
@@ -77,8 +78,9 @@ const (
 	StoreRecordedActionsRepository Store = "recorded-actions-repository"
 )
 
-// Manifest is the complete selected artifact closure for one schema version.
-// Raw contains the submitted authoritative JCS bytes after Parse succeeds.
+// Manifest describes the complete selected artifact closure for one schema version.
+// [Parse] fills metadata and [Manifest.Raw], but does not populate artifact payload or resource bytes.
+// A Manifest value alone does not establish that its selected artifacts or lineage are valid.
 type Manifest struct {
 	// Schema identifies the manifest format schema through an absolute URI.
 	Schema string
@@ -103,6 +105,7 @@ type Manifest struct {
 	// Extensions preserves namespaced release-level publisher metadata.
 	Extensions map[string]any
 	// Raw retains a copy of the authoritative JSON Canonicalization Scheme (JCS) bytes after parsing.
+	// Changing other fields does not update Raw; Validate checks fields without comparing them to Raw.
 	Raw []byte
 }
 
@@ -214,7 +217,7 @@ type URIChange struct {
 
 // StorageChange records an added or removed logical schema-store association.
 type StorageChange struct {
-	// Operation is add or remove; storage associations do not support update.
+	// Operation is 'add' or 'remove'; storage associations do not support update.
 	Operation Operation `json:"operation"`
 	// Kind identifies the artifact category receiving the store assignment.
 	Kind artifactmodel.Kind `json:"kind"`
@@ -235,12 +238,16 @@ type Release struct {
 }
 
 // Context provides caller-owned immutable bytes and predecessor lineage.
-// Artifacts MUST contain exact payload and resource bytes for every selection.
+// [Context.Artifacts] MUST contain exact payload and resource bytes for every selection.
+// Validation reads this context without retrieving missing data or validating historical releases again.
 type Context struct {
 	// RegistryOrigin supplies the absolute origin required by every selected artifact's canonical URI.
+	// Validation compares the scheme and host; an origin path does not prefix resource paths.
 	RegistryOrigin string
 	// Artifacts supplies exact payload and resource bytes keyed by immutable identity.
+	// Diff also uses this map for old revisions when proving annotation-only schema updates.
 	Artifacts map[artifactmodel.Dependency]artifactmodel.Artifact
 	// History lists validated predecessors oldest first, ending with the immediate predecessor.
+	// An empty history means the manifest is an initial release.
 	History []Release
 }

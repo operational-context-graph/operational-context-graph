@@ -1,4 +1,3 @@
-// Package artifact validates immutable Schema Registry artifact descriptors.
 package artifact
 
 import (
@@ -103,7 +102,8 @@ type Dependency struct {
 	Revision string
 }
 
-// Artifact is a typed immutable artifact revision.
+// Artifact describes a typed immutable artifact revision and its caller-supplied bytes.
+// Immutability is a validation rule, not a property enforced by the Go value.
 type Artifact struct {
 	// Kind determines the artifact's format and applicable conditional fields.
 	Kind Kind
@@ -146,6 +146,9 @@ func (a Artifact) Metadata() Artifact {
 
 // Validate validates lexical fields and exact bytes independent of a release.
 // It does not resolve dependencies or validate payload-specific formats.
+//
+// The registryOrigin supplies the absolute scheme and host required by [Artifact.CanonicalURI].
+// Bundle paths are checked lexically; Validate does not read files.
 func (a Artifact) Validate(registryOrigin string) error {
 	if !validKind(a.Kind) || !ValidLogicalType(a.Type) || !ValidRevision(a.Revision) || !ValidVersion(a.CreatedUnderSchemaVersion) {
 		return errors.New("invalid artifact identity")
@@ -185,14 +188,19 @@ func (a Artifact) Validate(registryOrigin string) error {
 	return nil
 }
 
-// ValidatePayloadFormat validates the strict format for schema and context payloads.
+// ValidatePayloadFormat parses [Artifact.PayloadBytes] and checks schema or context format without an external
+// document catalog. Source-mapping payloads receive only strict JSON parsing here, not descriptor or program-binding
+// validation. Callers MUST separately call [Artifact.Validate] to check identity and byte integrity.
 func (a Artifact) ValidatePayloadFormat() error {
 	return a.ValidatePayloadFormatWithCatalog(nil)
 }
 
-// ValidatePayloadFormatWithCatalog validates a payload while allowing references
-// only to exact caller-supplied release-catalog documents.
-// It does not fetch documents or validate source-mapping program bindings.
+// ValidatePayloadFormatWithCatalog validates a payload using caller-supplied release-catalog documents for
+// external references. It does not fetch documents or validate source-mapping program bindings.
+//
+// The catalog maps exact document identifiers to decoded JSON values; nil denies all catalog lookups.
+// The schema compiler can also resolve resources registered locally and its built-in schemas.
+// Callers MUST separately call [Artifact.Validate] to check identity and byte integrity.
 func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error {
 	value, err := strictjson.Parse(a.PayloadBytes)
 	if err != nil {
@@ -228,6 +236,8 @@ func (a Artifact) ValidatePayloadFormatWithCatalog(catalog map[string]any) error
 }
 
 // ValidateDescriptor verifies descriptor metadata and exact byte integrity.
+// The data contains the uncompressed representation whose length and SHA-256 digest MUST match descriptor.
+// The bundle path identifies a location only; this function never opens it.
 func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 	if descriptor.MediaType == "" || len(descriptor.MediaType) > schemaartifacts.MaxIdentifierBytes || descriptor.BundlePath == "" {
 		return errors.New("descriptor requires a bounded media type and bundle path")
@@ -248,26 +258,35 @@ func ValidateDescriptor(descriptor Descriptor, data []byte) error {
 	return nil
 }
 
-// ValidLogicalType validates format logical type and role identifiers.
+// ValidLogicalType reports whether value is a bounded logical type or resource role.
+// It accepts lowercase ASCII letters and digits, with single hyphens separating non-empty segments.
 func ValidLogicalType(value string) bool {
 	return value != "" && len(value) <= schemaartifacts.MaxIdentifierBytes && logicalTypePattern.MatchString(value)
 }
 
-// ValidRevision validates opaque URI-safe artifact revisions.
+// ValidRevision reports whether value is a bounded, non-empty revision using [RFC 3986] unreserved characters.
+// It excludes the path segments "." and ".." and does not interpret revision ordering.
+//
+// [RFC 3986]: https://tools.ietf.org/html/rfc3986
 func ValidRevision(value string) bool {
 	return value != "" && value != "." && value != ".." && len(value) <= schemaartifacts.MaxIdentifierBytes && revisionPattern.MatchString(value)
 }
 
-// ValidResourceName validates an RFC 3986 unreserved resource name.
+// ValidResourceName reports whether value satisfies the same lexical rules as ValidRevision.
 func ValidResourceName(value string) bool { return ValidRevision(value) }
 
 // ValidVersion checks the three-component lexical form of published schema versions.
+// Components use decimal digits without leading zeroes; prerelease and build suffixes are not accepted.
+// It does not bound component sizes or compare versions.
 func ValidVersion(value string) bool { return versionPattern.MatchString(value) }
 
 // ValidDigest validates the Registry SHA-256 digest spelling.
+// The spelling is "sha-256:" followed by exactly 64 lowercase hexadecimal digits.
 func ValidDigest(value string) bool { return digestPattern.MatchString(value) }
 
 // ValidBundlePath validates an offline package-relative slash-separated path.
+// It rejects empty, dot, and parent segments, leading slashes, and backslashes.
+// It does not inspect filesystem entries or prevent symbolic-link traversal when callers later open files.
 func ValidBundlePath(value string) bool {
 	if value == "" || strings.HasPrefix(value, "/") || strings.Contains(value, "\\") {
 		return false
@@ -291,6 +310,9 @@ func ValidDocumentURI(value string) bool {
 }
 
 // ValidateCanonicalURI ensures a Registry-owned immutable resource URI.
+// The value MUST use origin's scheme and host and the exact path '/v1/resources/{kind}/{artifactType}/{revision}'.
+// Queries and fragments are not accepted; origin's path is ignored.
+// Callers MUST separately validate kind, artifactType, and revision.
 func ValidateCanonicalURI(value, origin string, kind Kind, artifactType, revision string) error {
 	if len(value) == 0 || len(value) > schemaartifacts.MaxURIBytes {
 		return errors.New("invalid canonical URI length")
@@ -304,6 +326,7 @@ func ValidateCanonicalURI(value, origin string, kind Kind, artifactType, revisio
 		return errors.New("canonical URI must use the Registry origin")
 	}
 	expected := "/v1/resources/" + string(kind) + "/" + artifactType + "/" + revision
+	// Compare escaped paths so alternate percent-encoded spellings cannot alias an immutable resource identifier.
 	if parsed.EscapedPath() != expected || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return errors.New("canonical URI has an invalid path")
 	}

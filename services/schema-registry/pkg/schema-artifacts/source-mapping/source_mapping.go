@@ -1,4 +1,3 @@
-// Package sourcemapping validates opaque program bindings and schema references.
 package sourcemapping
 
 import (
@@ -11,7 +10,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
-// Version identifies a supported source-mapping descriptor format version.
+// Version identifies a supported source mapping descriptor format version.
 type Version string
 
 // FormatVersion is the supported descriptor format version.
@@ -21,9 +20,9 @@ const FormatVersion Version = "1.0.0"
 const DescriptorMediaType = "application/vnd.apeiro.ocg.source-mapping.v1+json"
 
 // errInvalid classifies descriptor, program-binding, and release-context validation failures.
-var errInvalid = errors.New("invalid source-mapping descriptor")
+var errInvalid = errors.New("invalid source mapping descriptor")
 
-// Descriptor is the parsed source-mapping descriptor format 1.0.0.
+// Descriptor is the parsed source mapping descriptor format 1.0.0.
 type Descriptor struct {
 	// Schema identifies the descriptor's format schema through an absolute URI.
 	Schema string
@@ -113,23 +112,25 @@ type Release struct {
 	Schemas []Schema
 }
 
-// Mapping preserves a validated representation of a mapping revision for reuse checks.
-type Mapping struct {
+// SourceMapping preserves a validated representation of a mapping revision for reuse checks.
+// Constructing a SourceMapping does not validate it or check that [Descriptor] matches [artifact.Artifact.PayloadBytes].
+type SourceMapping struct {
 	// Artifact contains revision-bound metadata, exact descriptor bytes, resources, and dependencies.
 	Artifact artifact.Artifact
-	// Descriptor contains the parsed mapping metadata checked against Artifact.
+	// Descriptor contains the parsed source mapping metadata checked against Artifact.
 	Descriptor Descriptor
 }
 
 // ValidationContext supplies the containing release first, followed by its ancestors.
 // The caller owns the context and MUST provide a consistent immutable release lineage.
+// This order is the reverse of the manifest package's oldest-first history.
 type ValidationContext struct {
 	// Version identifies the release containing the mapping being validated.
 	Version string
 	// Lineage lists the containing release first, followed by its ancestors toward the root.
 	Lineage []Release
 	// ReusedMappings supplies prior validated revisions whose immutable metadata and descriptors must remain unchanged.
-	ReusedMappings []Mapping
+	ReusedMappings []SourceMapping
 }
 
 // Result contains resolved references without interpreting any program bytes.
@@ -156,8 +157,11 @@ type ResolvedTransformation struct {
 	Cardinality Cardinality
 }
 
-// Parse decodes and structurally validates a source-mapping descriptor.
+// Parse decodes and structurally validates a source mapping descriptor.
 // It does not resolve schema selectors, inspect program bytes, or verify resource ownership and digests.
+//
+// The data contains descriptor JSON only; program bytes remain separate resources on the mapping artifact.
+// Unlike release manifests, descriptors do not require JSON Canonicalization Scheme (JCS) input.
 func Parse(data []byte) (Descriptor, error) {
 	object, err := strictjson.Object(data)
 	if err != nil {
@@ -194,67 +198,93 @@ func Parse(data []byte) (Descriptor, error) {
 }
 
 // Validate parses the mapping descriptor and validates it against its release context.
-func Validate(mapping artifact.Artifact, context ValidationContext) (Result, error) {
-	descriptor, err := Parse(mapping.PayloadBytes)
+//
+// The sourceMappingArtifact MUST contain its exact descriptor and resource bytes; context supplies selected schemas
+// and trusted lineage.
+//
+// It verifies program byte integrity and bindings without interpreting or executing programs. It does not check
+// Registry-origin ownership or the full release's non-schema dependency closure. Use [artifact.Artifact.Validate]
+// and manifest validation for those additional checks.
+func Validate(sourceMappingArtifact artifact.Artifact, context ValidationContext) (Result, error) {
+	descriptor, err := Parse(sourceMappingArtifact.PayloadBytes)
 	if err != nil {
 		return Result{}, err
 	}
-	return ValidateParsed(Mapping{Artifact: mapping, Descriptor: descriptor}, context)
+	return ValidateParsed(SourceMapping{Artifact: sourceMappingArtifact, Descriptor: descriptor}, context)
 }
 
 // ValidateParsed validates a previously parsed descriptor and its immutable resources.
 // Callers MUST supply a descriptor parsed from the artifact's exact payload bytes and a consistent release lineage.
-func ValidateParsed(mapping Mapping, context ValidationContext) (Result, error) {
-	if err := validateMappingArtifact(mapping.Artifact); err != nil {
+// It does not reparse [artifact.Artifact.PayloadBytes] to establish that correspondence.
+//
+// [Result] resource bytes share the source mapping's backing data, and descriptor slices retain their original
+// backing data. It applies the same source mapping and binding checks as Validate without repeating JSON parsing.
+func ValidateParsed(sourceMapping SourceMapping, context ValidationContext) (Result, error) {
+	if err := validateMappingArtifact(sourceMapping.Artifact); err != nil {
 		return Result{}, err
 	}
-	if err := validateDescriptor(mapping.Descriptor); err != nil {
+	if err := validateDescriptor(sourceMapping.Descriptor); err != nil {
 		return Result{}, err
 	}
-	if mapping.Descriptor.ID != mapping.Artifact.Type {
+	if sourceMapping.Descriptor.ID != sourceMapping.Artifact.Type {
 		return Result{}, fmt.Errorf("%w: descriptor id differs from mapping type", errInvalid)
 	}
 	if err := validateContext(context); err != nil {
 		return Result{}, err
 	}
-	programs, err := validatePrograms(mapping.Artifact, mapping.Descriptor)
+	// Verify owned program bytes before resolving outputs; engine metadata never authorizes program execution.
+	programs, err := validatePrograms(sourceMapping.Artifact, sourceMapping.Descriptor)
 	if err != nil {
 		return Result{}, err
 	}
-	source, err := resolveReference(mapping.Descriptor.SourceSchema, context, "source")
+	source, err := resolveReference(sourceMapping.Descriptor.SourceSchema, context, "source")
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Descriptor: mapping.Descriptor, Source: source, Transformations: make([]ResolvedTransformation, 0, len(mapping.Descriptor.Programs.Transformations))}
-	if condition := mapping.Descriptor.Programs.Condition; condition != nil {
+	result := Result{
+		Descriptor:      sourceMapping.Descriptor,
+		Source:          source,
+		Transformations: make([]ResolvedTransformation, 0, len(sourceMapping.Descriptor.Programs.Transformations)),
+	}
+	if condition := sourceMapping.Descriptor.Programs.Condition; condition != nil {
 		resource := programs[condition.ProgramRef]
 		result.Condition = &resource
 	}
-	targets := make([]Schema, 0, len(mapping.Descriptor.Programs.Transformations))
-	for _, transformation := range mapping.Descriptor.Programs.Transformations {
-		target, err := resolveTarget(mapping.Artifact.TargetSchema, transformation.TargetSchema, context)
+	targets := make([]Schema, 0, len(sourceMapping.Descriptor.Programs.Transformations))
+	for _, transformation := range sourceMapping.Descriptor.Programs.Transformations {
+		target, err := resolveTarget(sourceMapping.Artifact.TargetSchema, transformation.TargetSchema, context)
 		if err != nil {
 			return Result{}, err
 		}
 		targets = append(targets, target)
-		result.Transformations = append(result.Transformations, ResolvedTransformation{
-			Target: target, OutputClass: target.Class, Program: programs[transformation.ProgramRef], Cardinality: transformation.Cardinality,
-		})
+		resolvedTransformation := ResolvedTransformation{
+			Target:      target,
+			OutputClass: target.Class,
+			Program:     programs[transformation.ProgramRef],
+			Cardinality: transformation.Cardinality,
+		}
+		result.Transformations = append(result.Transformations, resolvedTransformation)
 	}
-	if err := validateDependencies(mapping.Artifact.Dependencies, source, targets, context); err != nil {
+	if err := validateDependencies(sourceMapping.Artifact.Dependencies, source, targets, context); err != nil {
 		return Result{}, err
 	}
-	if err := validateReuse(mapping, context.ReusedMappings); err != nil {
+	if err := validateReuse(sourceMapping, context.ReusedMappings); err != nil {
 		return Result{}, err
 	}
 	return result, nil
 }
 
 // ValidateRelease validates distinct mapping identities, including shared sources.
-func ValidateRelease(mappings []artifact.Artifact, context ValidationContext) ([]Result, error) {
-	results := make([]Result, 0, len(mappings))
-	identities := make(map[string]struct{}, len(mappings))
-	for _, mapping := range mappings {
+//
+// The sourceMappingArtifacts MUST supply exact descriptor and resource bytes; the validation context applies to every mapping.
+//
+// Results preserve input order, and an empty input returns an empty, non-nil slice.
+// Multiple source mapping artifacts MAY share a source schema, but their logical mapping types MUST be distinct.
+// The first validation failure returns an error without partial results.
+func ValidateRelease(sourceMappingArtifacts []artifact.Artifact, context ValidationContext) ([]Result, error) {
+	results := make([]Result, 0, len(sourceMappingArtifacts))
+	identities := make(map[string]struct{}, len(sourceMappingArtifacts))
+	for _, mapping := range sourceMappingArtifacts {
 		result, err := Validate(mapping, context)
 		if err != nil {
 			return nil, err
@@ -296,6 +326,7 @@ func parsePrograms(raw any) (Programs, error) {
 	if !ok || len(transformations) == 0 || len(transformations) > schemaartifacts.MaxArrayEntries {
 		return Programs{}, fmt.Errorf("%w: transformations must be a non-empty bounded array", errInvalid)
 	}
+	// Transformation order belongs to the publisher's program contract; never sort or deduplicate this list.
 	result.Transformations = make([]Transformation, 0, len(transformations))
 	for _, raw := range transformations {
 		entry, ok := raw.(map[string]any)
@@ -444,15 +475,16 @@ func validReference(reference SchemaReference) bool {
 	return artifact.ValidVersion(reference.Version)
 }
 
-// validateMappingArtifact checks mapping identity, target version, descriptor media type, and exact primary-payload byte integrity.
-func validateMappingArtifact(mapping artifact.Artifact) error {
-	if mapping.Kind != artifact.KindSourceMapping || !artifact.ValidLogicalType(mapping.Type) || !artifact.ValidRevision(mapping.Revision) || !artifact.ValidVersion(mapping.TargetSchema) {
-		return fmt.Errorf("%w: invalid source-mapping artifact", errInvalid)
+// validateMappingArtifact checks source mapping artifact identity, target version, descriptor media type,
+// and exact primary-payload byte integrity.
+func validateMappingArtifact(sourceMappingArtifact artifact.Artifact) error {
+	if sourceMappingArtifact.Kind != artifact.KindSourceMapping || !artifact.ValidLogicalType(sourceMappingArtifact.Type) || !artifact.ValidRevision(sourceMappingArtifact.Revision) || !artifact.ValidVersion(sourceMappingArtifact.TargetSchema) {
+		return fmt.Errorf("%w: invalid source mapping artifact", errInvalid)
 	}
-	if mapping.Payload.MediaType != DescriptorMediaType {
+	if sourceMappingArtifact.Payload.MediaType != DescriptorMediaType {
 		return fmt.Errorf("%w: invalid descriptor media type", errInvalid)
 	}
-	if err := artifact.ValidateDescriptor(mapping.Payload, mapping.PayloadBytes); err != nil {
+	if err := artifact.ValidateDescriptor(sourceMappingArtifact.Payload, sourceMappingArtifact.PayloadBytes); err != nil {
 		return fmt.Errorf("validate descriptor bytes: %w", err)
 	}
 	return nil
@@ -478,9 +510,9 @@ func validateContext(context ValidationContext) error {
 
 // validatePrograms verifies every resource's bytes and each declared program's ownership, role, digest, and reference coverage.
 // Ancillary resources remain valid without program bindings.
-func validatePrograms(mapping artifact.Artifact, descriptor Descriptor) (map[string]artifact.Resource, error) {
-	resources := make(map[string]artifact.Resource, len(mapping.Resources))
-	for _, resource := range mapping.Resources {
+func validatePrograms(sourceMappingArtifact artifact.Artifact, descriptor Descriptor) (map[string]artifact.Resource, error) {
+	resources := make(map[string]artifact.Resource, len(sourceMappingArtifact.Resources))
+	for _, resource := range sourceMappingArtifact.Resources {
 		if _, exists := resources[resource.Name]; exists || !artifact.ValidResourceName(resource.Name) || !artifact.ValidLogicalType(string(resource.Role)) {
 			return nil, fmt.Errorf("%w: invalid or duplicate resource", errInvalid)
 		}
@@ -504,6 +536,7 @@ func validatePrograms(mapping artifact.Artifact, descriptor Descriptor) (map[str
 		}
 		referenced[reference.ProgramRef] = true
 	}
+	// Every program resource must participate in the descriptor; ancillary resources need no program reference.
 	for _, resource := range resources {
 		if resource.Role == artifact.ResourceRoleProgram && !referenced[resource.Name] {
 			return nil, fmt.Errorf("%w: unreferenced program resource", errInvalid)
@@ -531,6 +564,7 @@ func resolveReference(reference SchemaReference, context ValidationContext, role
 	if !ok {
 		return Schema{}, fmt.Errorf("%w: %s schema version does not select schema", errInvalid, role)
 	}
+	// Historical selectors pin a revision, not permission to substitute the containing release's newer selection.
 	if _, ok := selectedSchema(current, reference.ID, schema.Revision); !ok {
 		return Schema{}, fmt.Errorf("%w: %s schema revision differs in containing release", errInvalid, role)
 	}
@@ -566,7 +600,9 @@ func canonicalOutputClass(class artifact.SchemaClass) bool {
 
 // validateDependencies requires the resolved source and targets, unique dependency identities, and selected revisions for schema dependencies.
 func validateDependencies(dependencies []artifact.Dependency, source Schema, targets []Schema, context ValidationContext) error {
-	wanted := map[artifact.Dependency]bool{{Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}: true}
+	wanted := map[artifact.Dependency]bool{
+		{Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}: true,
+	}
 	for _, target := range targets {
 		wanted[artifact.Dependency{Kind: artifact.KindSchema, Type: target.Type, Revision: target.Revision}] = true
 	}
@@ -592,7 +628,7 @@ func validateDependencies(dependencies []artifact.Dependency, source Schema, tar
 }
 
 // validateReuse rejects changed artifact metadata or descriptors when a caller supplies a previously validated matching revision.
-func validateReuse(mapping Mapping, reused []Mapping) error {
+func validateReuse(mapping SourceMapping, reused []SourceMapping) error {
 	for _, previous := range reused {
 		if previous.Artifact.Revision != mapping.Artifact.Revision {
 			continue
@@ -606,6 +642,7 @@ func validateReuse(mapping Mapping, reused []Mapping) error {
 
 // sameBoundArtifact compares revision-bound metadata and bytes while ignoring release-specific payload and resource bundle paths.
 func sameBoundArtifact(left, right artifact.Artifact) bool {
+	// Bundle layout can change across releases; copy resource slices before stripping those release-specific paths.
 	left.Payload.BundlePath = ""
 	right.Payload.BundlePath = ""
 	left.Resources = append([]artifact.Resource(nil), left.Resources...)

@@ -22,6 +22,11 @@ var commitPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // Validate parses data and validates its closure against context.
 // It does not enforce application-specific response representation limits.
+//
+// The data MUST satisfy [Parse]'s canonical representation requirements. The context supplies exact selected artifact
+// bytes, the Registry origin, and previously validated predecessors.
+//
+// It returns a metadata [Manifest] with authoritative [Manifest.Raw] bytes, not a copy populated from [Context.Artifacts].
 func Validate(data []byte, context Context) (Manifest, error) {
 	m, err := Parse(data)
 	if err != nil {
@@ -34,7 +39,12 @@ func Validate(data []byte, context Context) (Manifest, error) {
 }
 
 // Validate checks parsed metadata, release closure, lineage, and deterministic changes.
-// Registry acceptance MUST also validate application response serviceability.
+//
+// The [Context.History] MUST contain trusted, previously validated releases in oldest-first order.
+// The [Context.Artifacts] MUST match every selection's metadata and include its exact payload and resource bytes.
+//
+// Validate reads the current fields; it does not parse [Manifest.Raw] or check that [Manifest.Raw] still represents
+// those fields. Callers SHOULD use the package-level [Validate] when starting from untrusted manifest bytes.
 func (m Manifest) Validate(context Context) error {
 	if err := m.validateStructural(); err != nil {
 		return err
@@ -53,6 +63,7 @@ func (m Manifest) Validate(context Context) error {
 		if !ok {
 			return fmt.Errorf("%w: artifact %s/%s/%s bytes are unavailable", errInvalid, key.Kind, key.Type, key.Revision)
 		}
+		// Byte integrity alone is insufficient: supplied revisions must also match every selected metadata field.
 		if !matchesSelection(selectedArtifact, bound) {
 			return fmt.Errorf("%w: artifact %s/%s/%s differs from immutable bytes", errInvalid, key.Kind, key.Type, key.Revision)
 		}
@@ -71,6 +82,8 @@ func (m Manifest) Validate(context Context) error {
 		}
 		byRevision[selectedArtifact.Revision] = selectedArtifact
 	}
+	// Build the document catalog before compiling payloads so selected artifacts can reference one another offline.
+	// Only primary payloads become decoded format documents; named resources remain separately bound bytes.
 	formatCatalog := make(map[string]any, len(m.URICatalog))
 	selectedByRevision := make(map[string]artifactmodel.Artifact, len(selected))
 	for _, bound := range selected {
@@ -287,6 +300,7 @@ func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]a
 			schemas = append(schemas, sourcemappingmodel.Schema{Type: item.Type, Revision: item.Revision, Class: item.SchemaClass})
 		}
 	}
+	// Mapping resolution expects newest-first lineage, unlike Context.History's oldest-first release sequence.
 	lineage := []sourcemappingmodel.Release{{Version: m.SchemaVersion, Schemas: schemas}}
 	for _, v := range slices.Backward(context.History) {
 		prior := v.Manifest
@@ -314,6 +328,7 @@ func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]a
 // validateChanges checks initial-release summaries, effective differences, exact predecessor changes, and required version increments.
 func (m Manifest) validateChanges(context Context) error {
 	if m.Changes == nil {
+		// Omitted summaries still require an effective difference, but do not trigger compatibility-based version checks.
 		if len(context.History) > 0 {
 			diff, err := Diff(context.History[len(context.History)-1].Manifest, m, context)
 			if err != nil {
@@ -471,6 +486,7 @@ func immutableReuse(selection artifactmodel.Artifact, history []Release) error {
 // revisionBoundSelection copies selection metadata while removing release-specific payload and resource bundle paths.
 func revisionBoundSelection(value artifactmodel.Artifact) artifactmodel.Artifact {
 	value = value.Metadata()
+	// A publisher can move identical bytes between bundles without changing the immutable artifact revision.
 	value.Payload.BundlePath = ""
 	for index := range value.Resources {
 		value.Resources[index].BundlePath = ""
@@ -624,6 +640,7 @@ func compareMany(values ...string) int {
 
 // compareUTF16 compares strings by UTF-16 code units, as required by the manifest's canonical array ordering.
 func compareUTF16[T ~string](left, right T) int {
+	// UTF-8 byte order differs for supplementary characters; Go's native string comparison is not sufficient here.
 	leftUnits, rightUnits := utf16.Encode([]rune(left)), utf16.Encode([]rune(right))
 	for index := 0; index < len(leftUnits) && index < len(rightUnits); index++ {
 		if leftUnits[index] < rightUnits[index] {

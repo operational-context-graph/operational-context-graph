@@ -17,9 +17,13 @@ import (
 // extensionPattern requires dot-separated namespace labels for publisher extension keys.
 var extensionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`)
 
-// ParseFromFile reads a version 1 manifest from the given file path.
+// ParseFromFile reads a version 1 schema release manifest from the given file path.
+//
 // The file MUST contain JCS canonical JSON, without a byte order mark or trailing newline.
 // Callers MUST restrict untrusted paths when filesystem access requires a boundary.
+//
+// It reads the entire file before [Parse] enforces the manifest byte limit.
+// Read errors wrap the underlying filesystem error; content errors follow [Parse]'s error behavior.
 func ParseFromFile(path string) (Manifest, error) {
 	// #nosec G304 -- this file-loading API intentionally reads the caller-selected path.
 	data, err := os.ReadFile(path)
@@ -29,8 +33,12 @@ func ParseFromFile(path string) (Manifest, error) {
 	return Parse(data)
 }
 
-// Parse strictly decodes a version 1 manifest and requires submitted bytes to be JCS.
+// Parse strictly decodes a version 1 schema release manifest and requires submitted bytes to be JCS.
 // It checks structure, lexical forms, and ordering, but does not resolve bytes or predecessor-dependent changes.
+//
+// The data contains manifest bytes only, not a bundle or embedded artifact payloads.
+// On success, Raw owns a copy of data and selected artifacts contain metadata without payload or resource bytes.
+// Use [Validate] to also check caller-supplied bytes and release history.
 func Parse(data []byte) (Manifest, error) {
 	if len(data) > schemaartifacts.MaxArtifactBytes {
 		return Manifest{}, fmt.Errorf("%w: manifest exceeds byte limit", errInvalid)
@@ -38,10 +46,12 @@ func Parse(data []byte) (Manifest, error) {
 	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) || bytes.HasSuffix(data, []byte("\n")) {
 		return Manifest{}, fmt.Errorf("%w: manifest must not contain a byte order mark or trailing newline", errInvalid)
 	}
+	// Reject duplicate members and profile violations before canonicalization can obscure the submitted representation.
 	value, err := strictjson.Object(data)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
 	}
+	// Equality preserves the publisher's authoritative bytes instead of silently accepting a normalized manifest.
 	canonical, err := jcs.Transform(data)
 	if err != nil || !bytes.Equal(canonical, data) {
 		return Manifest{}, fmt.Errorf("%w: manifest is not JCS canonical", errInvalid)

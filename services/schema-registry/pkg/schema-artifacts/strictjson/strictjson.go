@@ -1,4 +1,3 @@
-// Package strictjson parses bounded RFC 7493 Internet JSON (I-JSON) documents.
 package strictjson
 
 import (
@@ -36,8 +35,15 @@ var (
 	ErrNumber = errors.New("value is not an I-JSON number")
 )
 
-// Parse decodes one complete bounded I-JSON document. Objects use map values,
-// arrays use []any, and numbers retain json.Number for exact interpretation.
+// Parse decodes one complete bounded I-JSON document.
+//
+// Objects use map values, arrays use []any, and numbers retain [json.Number] for exact interpretation.
+// Strings, booleans, and null become string, bool, and nil values.
+//
+// It accepts surrounding JSON whitespace but rejects a byte order mark and additional top-level values.
+// Integral numbers MUST lie within the contiguous binary64 safe integer range, even when written with exponents.
+//
+// Errors match the applicable package sentinel with [errors.Is].
 func Parse(input []byte) (any, error) {
 	if len(input) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformed)
@@ -49,6 +55,7 @@ func Parse(input []byte) (any, error) {
 		return nil, fmt.Errorf("%w: invalid UTF-8 encoding", ErrMalformed)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(input))
+	// Preserve numeric spelling so range checks run before any rounding to binary64 can hide an unsafe integer.
 	decoder.UseNumber()
 	value, err := parseValue(decoder, 0)
 	if err != nil {
@@ -64,6 +71,7 @@ func Parse(input []byte) (any, error) {
 }
 
 // Object parses a document that must contain a JSON object.
+// It applies [Parse]'s limits and returns an error wrapping [ErrMalformed] for any other top-level value.
 func Object(input []byte) (map[string]any, error) {
 	value, err := Parse(input)
 	if err != nil {
@@ -76,7 +84,10 @@ func Object(input []byte) (map[string]any, error) {
 	return object, nil
 }
 
-// RejectUnknownFields verifies the declared object shape.
+// RejectUnknownFields rejects object members whose names do not appear in allowed.
+//
+// It returns an error wrapping [ErrMalformed] for an unknown member.
+// It does not require allowed members to exist or check their values; a nil object is accepted.
 func RejectUnknownFields(object map[string]any, allowed ...string) error {
 	permitted := make(map[string]struct{}, len(allowed))
 	for _, field := range allowed {
@@ -144,6 +155,7 @@ func parseObject(decoder *json.Decoder, depth int) (map[string]any, error) {
 		if len(name) > schemaartifacts.MaxJSONStringBytes {
 			return nil, ErrStringTooLarge
 		}
+		// Check decoded names, so escaped and literal spellings of the same member cannot bypass duplicate detection.
 		if _, exists := object[name]; exists {
 			return nil, fmt.Errorf("%w: %q", ErrDuplicate, name)
 		}
@@ -180,6 +192,7 @@ func parseArray(decoder *json.Decoder, depth int) ([]any, error) {
 
 // validateNumber requires finite binary64 conversion and restricts integral values to the exactly representable range.
 func validateNumber(number json.Number) error {
+	// Rational parsing detects integral exponent and decimal spellings without losing precision through float conversion.
 	rational, ok := new(big.Rat).SetString(number.String())
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrNumber, number)

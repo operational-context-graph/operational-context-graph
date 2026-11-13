@@ -346,7 +346,7 @@ func TestValidateRejectsRevisionReuseChange(t *testing.T) {
 	mapping, context := validMapping(t, []byte("opaque"))
 	descriptor, err := Parse(mapping.PayloadBytes)
 	require.NoError(t, err)
-	context.ReusedMappings = []Mapping{{Artifact: mapping, Descriptor: descriptor}}
+	context.ReusedMappings = []SourceMapping{{Artifact: mapping, Descriptor: descriptor}}
 	_, err = Validate(mapping, context)
 	require.NoError(t, err)
 	mapping.Dependencies[1].Revision = "another-target"
@@ -376,12 +376,10 @@ func TestValidateIsRaceSafe(t *testing.T) {
 	var group sync.WaitGroup
 	errors := make(chan error, workers)
 	for range workers {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			_, err := Validate(mapping, context)
 			errors <- err
-		}()
+		})
 	}
 	group.Wait()
 	close(errors)
@@ -542,7 +540,7 @@ func TestProgramBindingFailuresAndImmutableReuse(t *testing.T) {
 	mapping, context := validMapping(t, []byte("original"))
 	parsed, err := Parse(mapping.PayloadBytes)
 	require.NoError(t, err)
-	context.ReusedMappings = []Mapping{{Artifact: mapping, Descriptor: parsed}}
+	context.ReusedMappings = []SourceMapping{{Artifact: mapping, Descriptor: parsed}}
 	mapping.Resources = []artifact.Resource{resource("program.bin", []byte("replacement"))}
 	mapping.PayloadBytes = descriptorBytes(mapping.Type, mapping.Resources[0], `"revision":"source-r1"`, `"version":"2.0.0"`)
 	mapping.Payload = descriptor(mapping.PayloadBytes, DescriptorMediaType, "mappings/source.json")

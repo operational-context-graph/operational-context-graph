@@ -56,6 +56,7 @@ func equalWithoutAnnotations(left, right any) bool {
 		return false
 	}
 	if leftOK {
+		// Compare all remaining members in both directions so an added non-annotation field cannot be overlooked.
 		for key, leftValue := range leftMap {
 			if key == "title" || key == "description" || key == "$comment" || key == "examples" {
 				continue
@@ -84,6 +85,7 @@ func equalWithoutAnnotations(left, right any) bool {
 		if len(leftArray) != len(rightArray) {
 			return false
 		}
+		// Array order remains significant even when annotation members inside its elements are ignored.
 		for index := range leftArray {
 			if !equalWithoutAnnotations(leftArray[index], rightArray[index]) {
 				return false

@@ -10,10 +10,13 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
-// Canonicalize sorts format-defined manifest arrays and returns RFC 8785 UTF-8 bytes.
-// It rejects duplicate members, invalid structure, and profile violations without repairing or deduplicating entries.
-// It preserves extension arrays and never loads or reserializes artifact payloads, including ordered mapping transformations.
-// Callers MUST separately validate the release closure and application response serviceability.
+// Canonicalize sorts format-defined manifest arrays and returns RFC 8785 UTF-8 bytes. It rejects duplicate members,
+// invalid structure, and profile violations without repairing or deduplicating entries. It preserves extension arrays
+// and never loads or reserializes artifact payloads, including ordered mapping transformations. Callers MUST separately
+// validate the release closure and application response serviceability.
+//
+// The data MAY contain whitespace and unsorted manifest collections, but MUST contain a bounded JSON object.
+// The returned bytes pass [Parse]; Canonicalize does not modify data.
 func Canonicalize(data []byte) ([]byte, error) {
 	document, err := strictjson.Object(data)
 	if err != nil {
@@ -23,6 +26,7 @@ func Canonicalize(data []byte) ([]byte, error) {
 	if _, canonicalErr := jcs.Transform(data); canonicalErr != nil {
 		return nil, fmt.Errorf("%w: canonicalize manifest: %w", ErrInvalid, canonicalErr)
 	}
+	// JCS orders object members, not arrays; sort only collections whose order the manifest format defines.
 	sortObjects(document, "artifacts", "kind", "artifactType")
 	artifacts, _ := document["artifacts"].([]any)
 	for _, value := range artifacts {
@@ -57,6 +61,7 @@ func Canonicalize(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize manifest: %w", err)
 	}
+	// Sorting is not validation: reparse to reject malformed entries and duplicate format-defined sort keys.
 	if _, err := Parse(canonical); err != nil {
 		return nil, err
 	}

@@ -8,7 +8,14 @@ import (
 )
 
 // Diff returns the deterministic conservative change summary for two manifests.
-// The caller supplies validated endpoint manifests and exact bytes needed to prove annotation-only updates or additive mapping additions.
+//
+// The before and after manifests MUST be validated endpoints; Diff does not validate them or require adjacent releases.
+//
+// The [context.Artifacts] supplies both endpoint revisions when proving annotation-only schema updates. It also
+// supplies added mapping descriptors when proving their source schema is newly introduced. Missing or unusable proof
+// bytes produce a breaking impact rather than an error. [Context.RegistryOrigin] and [Context.History] are unused;
+// an empty difference is operational, not initial. The result has sorted, non-nil change collections and an empty
+// [Changes.Summary].
 func Diff(before, after Manifest, context Context) (Changes, error) {
 	changes := Changes{Artifacts: make([]ArtifactChange, 0)}
 	beforeArtifacts, afterArtifacts := artifactMap(before), artifactMap(after)
@@ -22,15 +29,38 @@ func Diff(before, after Manifest, context Context) (Changes, error) {
 			if right.Kind == artifactmodel.KindSourceMapping {
 				impact = addedMappingImpact(before, right, context)
 			}
-			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: OperationAdd, Kind: right.Kind, ArtifactType: right.Type, AfterRevision: right.Revision, Impact: impact})
+			artifactChange := ArtifactChange{
+				Operation:     OperationAdd,
+				Kind:          right.Kind,
+				ArtifactType:  right.Type,
+				AfterRevision: right.Revision,
+				Impact:        impact,
+			}
+			changes.Artifacts = append(changes.Artifacts, artifactChange)
 		case !hasRight:
-			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: OperationRemove, Kind: left.Kind, ArtifactType: left.Type, BeforeRevision: left.Revision, Impact: ImpactBreaking})
+			artifactChange := ArtifactChange{
+				Operation:      OperationRemove,
+				Kind:           left.Kind,
+				ArtifactType:   left.Type,
+				BeforeRevision: left.Revision,
+				Impact:         ImpactBreaking,
+			}
+			changes.Artifacts = append(changes.Artifacts, artifactChange)
 		case left.Revision != right.Revision:
+			// Default to breaking unless exact schema bytes prove the supported annotation-only exception.
 			impact := ImpactBreaking
 			if left.Kind == artifactmodel.KindSchema && annotationOnly(left, right, context) {
 				impact = ImpactOperational
 			}
-			changes.Artifacts = append(changes.Artifacts, ArtifactChange{Operation: OperationUpdate, Kind: right.Kind, ArtifactType: right.Type, BeforeRevision: left.Revision, AfterRevision: right.Revision, Impact: impact})
+			artifactChange := ArtifactChange{
+				Operation:      OperationUpdate,
+				Kind:           right.Kind,
+				ArtifactType:   right.Type,
+				BeforeRevision: left.Revision,
+				AfterRevision:  right.Revision,
+				Impact:         impact,
+			}
+			changes.Artifacts = append(changes.Artifacts, artifactChange)
 		}
 	}
 	changes.SchemaContextBindings = diffBindings(before, after)
@@ -98,12 +128,24 @@ func diffBindings(before, after Manifest) []BindingChange {
 	result := make([]BindingChange, 0)
 	for key := range left {
 		if _, ok := right[key]; !ok {
-			result = append(result, BindingChange{Operation: OperationRemove, SchemaRevision: left[key][0], ContextRevision: left[key][1], Impact: ImpactBreaking})
+			bindingChange := BindingChange{
+				Operation:       OperationRemove,
+				SchemaRevision:  left[key][0],
+				ContextRevision: left[key][1],
+				Impact:          ImpactBreaking,
+			}
+			result = append(result, bindingChange)
 		}
 	}
 	for key := range right {
 		if _, ok := left[key]; !ok {
-			result = append(result, BindingChange{Operation: OperationAdd, SchemaRevision: right[key][0], ContextRevision: right[key][1], Impact: ImpactAdditive})
+			bindingChange := BindingChange{
+				Operation:       OperationAdd,
+				SchemaRevision:  right[key][0],
+				ContextRevision: right[key][1],
+				Impact:          ImpactAdditive,
+			}
+			result = append(result, bindingChange)
 		}
 	}
 	return result
@@ -133,14 +175,37 @@ func diffURIs(before, after Manifest) []URIChange {
 	for uri, entry := range left {
 		current, ok := right[uri]
 		if !ok {
-			result = append(result, URIChange{Operation: OperationRemove, URI: uri, BeforeRevision: entry.ArtifactRevision, BeforeResource: entry.Resource, Impact: ImpactBreaking})
+			uriChange := URIChange{
+				Operation:      OperationRemove,
+				URI:            uri,
+				BeforeRevision: entry.ArtifactRevision,
+				BeforeResource: entry.Resource,
+				Impact:         ImpactBreaking,
+			}
+			result = append(result, uriChange)
 		} else if current.ArtifactRevision != entry.ArtifactRevision || current.Resource != entry.Resource {
-			result = append(result, URIChange{Operation: OperationUpdate, URI: uri, BeforeRevision: entry.ArtifactRevision, BeforeResource: entry.Resource, AfterRevision: current.ArtifactRevision, AfterResource: current.Resource, Impact: ImpactBreaking})
+			uriChange := URIChange{
+				Operation:      OperationUpdate,
+				URI:            uri,
+				BeforeRevision: entry.ArtifactRevision,
+				BeforeResource: entry.Resource,
+				AfterRevision:  current.ArtifactRevision,
+				AfterResource:  current.Resource,
+				Impact:         ImpactBreaking,
+			}
+			result = append(result, uriChange)
 		}
 	}
 	for uri, entry := range right {
 		if _, ok := left[uri]; !ok {
-			result = append(result, URIChange{Operation: OperationAdd, URI: uri, AfterRevision: entry.ArtifactRevision, AfterResource: entry.Resource, Impact: ImpactAdditive})
+			uriChange := URIChange{
+				Operation:     OperationAdd,
+				URI:           uri,
+				AfterRevision: entry.ArtifactRevision,
+				AfterResource: entry.Resource,
+				Impact:        ImpactAdditive,
+			}
+			result = append(result, uriChange)
 		}
 	}
 	return result
@@ -152,12 +217,26 @@ func diffStorage(before, after Manifest) []StorageChange {
 	result := make([]StorageChange, 0)
 	for key, item := range left {
 		if _, ok := right[key]; !ok {
-			result = append(result, StorageChange{Operation: OperationRemove, Kind: item.Kind, ArtifactType: item.ArtifactType, Store: item.Store, Impact: ImpactBreaking})
+			storageChange := StorageChange{
+				Operation:    OperationRemove,
+				Kind:         item.Kind,
+				ArtifactType: item.ArtifactType,
+				Store:        item.Store,
+				Impact:       ImpactBreaking,
+			}
+			result = append(result, storageChange)
 		}
 	}
 	for key, item := range right {
 		if _, ok := left[key]; !ok {
-			result = append(result, StorageChange{Operation: OperationAdd, Kind: item.Kind, ArtifactType: item.ArtifactType, Store: item.Store, Impact: ImpactAdditive})
+			storageChange := StorageChange{
+				Operation:    OperationAdd,
+				Kind:         item.Kind,
+				ArtifactType: item.ArtifactType,
+				Store:        item.Store,
+				Impact:       ImpactAdditive,
+			}
+			result = append(result, storageChange)
 		}
 	}
 	return result

@@ -1,4 +1,3 @@
-// Package schemaartifacts defines the version 1 artifact validation limits.
 package schemaartifacts
 
 const (
