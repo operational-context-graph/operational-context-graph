@@ -1,4 +1,4 @@
-package publisher
+package grpc
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func dial(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
+func Dial(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
 	if certFile == "" && keyFile == "" {
 		return grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
@@ -22,6 +22,6 @@ func dial(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
 	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 }
 
-func outCtx(ctx context.Context, connectorID string) context.Context {
+func OutCtx(ctx context.Context, connectorID string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "connector-id", connectorID)
 }
