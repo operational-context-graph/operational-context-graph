@@ -100,6 +100,7 @@ jobs:
           V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
           V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
           V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
+          VERSION: ${{ inputs.version }}
         run: |
           # Resolve a component version: use the supplied override, or find the latest
           # semver tag of the form <path>/v<semver> for the component path.
@@ -157,7 +158,7 @@ jobs:
           bump "inventory-store"      "services/inventory-store"                 "${V_INVENTORY_STORE}"
           bump "telemetry-store"      "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
 
-          git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${{ inputs.version }}"
+          git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
 
       - name: Update changelog
         env:

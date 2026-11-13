@@ -4,12 +4,11 @@
 #
 # Both release-component.yml and release-system.yml fire on every CI completion on main.
 # This workflow exits cleanly when the merge was not a component release branch.
-# zizmor: ignore[dangerous-triggers]
 ---
 name: Release Component
 
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["Continuous Integration"]
     types: [completed]
     branches: ["main"]
