@@ -1,0 +1,503 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Schema Release Manifest Specification v1.0.0",
+  "description": "Structural validation for an Operational Context Graph (OCG) schema release manifest, format version 1.0.0.",
+  "$comment": "Validators MUST enable format assertions for 'uri' and 'iri'. No canonical publication URI is assigned by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "schemaVersion",
+    "previousRelease",
+    "source",
+    "artifacts",
+    "schemaContextBindings",
+    "uriCatalog",
+    "storageCatalog"
+  ],
+  "properties": {
+    "$schema": { "$ref": "#/$defs/absoluteUri" },
+    "formatVersion": { "const": "1.0.0" },
+    "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+    "previousRelease": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/previousRelease" }
+      ]
+    },
+    "source": { "$ref": "#/$defs/source" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "schemaContextBindings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/schemaContextBinding" }
+    },
+    "uriCatalog": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/uriCatalogEntry" },
+      "$comment": "At least one entry is necessary because every artifact canonicalUri MUST appear in this catalog."
+    },
+    "storageCatalog": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/storageCatalogEntry" }
+    },
+    "changes": { "$ref": "#/$defs/changes" },
+    "extensions": { "$ref": "#/$defs/extensions" }
+  },
+  "if": { "properties": { "previousRelease": { "type": "null" } } },
+  "then": {
+    "properties": {
+      "changes": {
+        "properties": {
+          "compatibility": { "const": "initial" },
+          "artifacts": { "maxItems": 0 },
+          "schemaContextBindings": { "maxItems": 0 },
+          "uriCatalog": { "maxItems": 0 },
+          "storageCatalog": { "maxItems": 0 }
+        }
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "changes": {
+        "properties": {
+          "compatibility": { "enum": ["breaking", "additive", "operational"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "absoluteUri": {
+      "$ref": "#/$defs/nonEmptyString",
+      "format": "uri",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:(?:[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=-]|%[0-9A-Fa-f]{2})*$",
+      "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+    },
+    "absoluteIri": {
+      "$ref": "#/$defs/nonEmptyString",
+      "format": "iri",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:",
+      "not": { "pattern": "[\u0000-\u0020\u007f-\u009f<>\"{}|\\\\^`]" }
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha-256:[0-9a-f]{64}$",
+      "minLength": 72,
+      "maxLength": 72
+    },
+    "artifactRevision": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]+$",
+      "not": { "pattern": "[\\r\\n\u2028\u2029]" },
+      "minLength": 1,
+      "allOf": [{ "not": { "enum": [".", ".."] } }]
+    },
+    "logicalType": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+    },
+    "artifactKind": {
+      "enum": ["schema", "context", "source-mapping"]
+    },
+    "store": {
+      "enum": [
+        "data-center-inventory",
+        "telemetry-store",
+        "insights-repository",
+        "recorded-actions-repository"
+      ]
+    },
+    "impact": {
+      "enum": ["breaking", "additive", "operational"]
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$",
+        "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+      },
+      "additionalProperties": true,
+      "$comment": "Extension data is producer-defined. This schema checks reverse-domain syntax, not domain ownership."
+    },
+    "previousRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "manifestDigest"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "manifestDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": { "$ref": "#/$defs/absoluteUri" },
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+          "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+        }
+      }
+    },
+    "mediaType": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:[ \\t]*;[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|\"(?:[\\t !#-\\[\\]-~\u0080-\u00ff]|\\\\[\\t -~\u0080-\u00ff])*\"))*$",
+      "not": { "pattern": "[\\r\\n\u2028\u2029]" }
+    },
+    "bundlePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$",
+      "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)" }
+    },
+    "byteDescriptor": {
+      "type": "object",
+      "required": ["mediaType", "digest", "size", "bundlePath"],
+      "properties": {
+        "mediaType": { "$ref": "#/$defs/mediaType" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bundlePath": { "$ref": "#/$defs/bundlePath" }
+      }
+    },
+    "payload": {
+      "$ref": "#/$defs/byteDescriptor",
+      "unevaluatedProperties": false
+    },
+    "resource": {
+      "$ref": "#/$defs/byteDescriptor",
+      "required": ["name", "role"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "role": { "$ref": "#/$defs/logicalType" }
+      },
+      "unevaluatedProperties": false
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "artifactType", "artifactRevision"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/artifactKind" },
+        "artifactType": { "$ref": "#/$defs/logicalType" },
+        "artifactRevision": { "$ref": "#/$defs/artifactRevision" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "artifactType",
+        "artifactRevision",
+        "createdUnderSchemaVersion",
+        "canonicalUri",
+        "payload",
+        "resources",
+        "dependencies"
+      ],
+      "properties": {
+        "kind": { "$ref": "#/$defs/artifactKind" },
+        "artifactType": { "$ref": "#/$defs/logicalType" },
+        "artifactRevision": { "$ref": "#/$defs/artifactRevision" },
+        "createdUnderSchemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "schemaClass": {
+          "$ref": "#/$defs/nonEmptyString",
+          "$comment": "The classification catalog is extensible. Consumers MUST reject unsupported classifications separately."
+        },
+        "targetSchemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "canonicalUri": { "$ref": "#/$defs/absoluteUri" },
+        "payload": { "$ref": "#/$defs/payload" },
+        "resources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/resource" }
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "schema" } } },
+          "then": {
+            "required": ["schemaClass"],
+            "properties": {
+              "payload": { "properties": { "mediaType": { "const": "application/schema+json" } } }
+            }
+          },
+          "else": { "not": { "required": ["schemaClass"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "source-mapping" } } },
+          "then": {
+            "required": ["targetSchemaVersion"],
+            "properties": {
+              "resources": {
+                "contains": { "properties": { "role": { "const": "program" } } }
+              },
+              "dependencies": {
+                "contains": { "properties": { "kind": { "const": "schema" } } }
+              }
+            },
+            "$comment": "A mapping MUST reference a transformation program and a source schema, so both collections contain corresponding entries."
+          },
+          "else": { "not": { "required": ["targetSchemaVersion"] } }
+        }
+      ]
+    },
+    "schemaContextBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaRevision", "contextRevisions"],
+      "properties": {
+        "schemaRevision": { "$ref": "#/$defs/artifactRevision" },
+        "contextRevisions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/artifactRevision" }
+        }
+      }
+    },
+    "uriCatalogEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "artifactRevision"],
+      "properties": {
+        "uri": { "$ref": "#/$defs/absoluteIri" },
+        "artifactRevision": { "$ref": "#/$defs/artifactRevision" },
+        "resource": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "stores": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/store" },
+      "$comment": "The finite store vocabulary permits exact enforcement of UTF-16 lexicographic ordering.",
+      "enum": [
+        ["data-center-inventory"],
+        ["insights-repository"],
+        ["recorded-actions-repository"],
+        ["telemetry-store"],
+        ["data-center-inventory", "insights-repository"],
+        ["data-center-inventory", "recorded-actions-repository"],
+        ["data-center-inventory", "telemetry-store"],
+        ["insights-repository", "recorded-actions-repository"],
+        ["insights-repository", "telemetry-store"],
+        ["recorded-actions-repository", "telemetry-store"],
+        ["data-center-inventory", "insights-repository", "recorded-actions-repository"],
+        ["data-center-inventory", "insights-repository", "telemetry-store"],
+        ["data-center-inventory", "recorded-actions-repository", "telemetry-store"],
+        ["insights-repository", "recorded-actions-repository", "telemetry-store"],
+        ["data-center-inventory", "insights-repository", "recorded-actions-repository", "telemetry-store"]
+      ]
+    },
+    "storageCatalogEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "artifactType", "stores"],
+      "properties": {
+        "kind": { "const": "schema" },
+        "artifactType": { "$ref": "#/$defs/logicalType" },
+        "stores": { "$ref": "#/$defs/stores" }
+      }
+    },
+    "revisionChange": {
+      "type": "object",
+      "required": ["operation", "impact"],
+      "properties": {
+        "operation": { "enum": ["add", "update", "remove"] },
+        "beforeRevision": { "$ref": "#/$defs/artifactRevision" },
+        "afterRevision": { "$ref": "#/$defs/artifactRevision" },
+        "impact": { "$ref": "#/$defs/impact" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "add" } } },
+          "then": {
+            "required": ["afterRevision"],
+            "not": { "required": ["beforeRevision"] },
+            "properties": { "impact": { "enum": ["additive", "breaking"] } }
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "update" } } },
+          "then": { "required": ["beforeRevision", "afterRevision"] }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "remove" } } },
+          "then": {
+            "required": ["beforeRevision"],
+            "not": { "required": ["afterRevision"] },
+            "properties": { "impact": { "const": "breaking" } }
+          }
+        }
+      ]
+    },
+    "artifactChange": {
+      "$ref": "#/$defs/revisionChange",
+      "required": ["kind", "artifactType"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/artifactKind" },
+        "artifactType": { "$ref": "#/$defs/logicalType" }
+      },
+      "unevaluatedProperties": false
+    },
+    "uriCatalogChange": {
+      "$ref": "#/$defs/revisionChange",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "$ref": "#/$defs/absoluteIri" },
+        "beforeResource": { "$ref": "#/$defs/nonEmptyString" },
+        "afterResource": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "dependentRequired": {
+        "beforeResource": ["beforeRevision"],
+        "afterResource": ["afterRevision"]
+      },
+      "if": { "properties": { "operation": { "const": "update" } } },
+      "then": { "properties": { "impact": { "const": "breaking" } } },
+      "unevaluatedProperties": false
+    },
+    "associationChange": {
+      "type": "object",
+      "required": ["operation", "impact"],
+      "properties": {
+        "operation": { "enum": ["add", "remove"] },
+        "impact": { "enum": ["additive", "breaking"] }
+      },
+      "if": { "properties": { "operation": { "const": "remove" } } },
+      "then": { "properties": { "impact": { "const": "breaking" } } }
+    },
+    "bindingChange": {
+      "$ref": "#/$defs/associationChange",
+      "required": ["schemaRevision", "contextRevision"],
+      "properties": {
+        "schemaRevision": { "$ref": "#/$defs/artifactRevision" },
+        "contextRevision": { "$ref": "#/$defs/artifactRevision" }
+      },
+      "unevaluatedProperties": false
+    },
+    "storageCatalogChange": {
+      "$ref": "#/$defs/associationChange",
+      "required": ["kind", "artifactType", "store"],
+      "properties": {
+        "kind": { "const": "schema" },
+        "artifactType": { "$ref": "#/$defs/logicalType" },
+        "store": { "$ref": "#/$defs/store" }
+      },
+      "unevaluatedProperties": false
+    },
+    "hasBreakingImpact": {
+      "anyOf": [
+        { "properties": { "artifacts": { "contains": { "properties": { "impact": { "const": "breaking" } } } } } },
+        { "properties": { "schemaContextBindings": { "contains": { "properties": { "impact": { "const": "breaking" } } } } } },
+        { "properties": { "uriCatalog": { "contains": { "properties": { "impact": { "const": "breaking" } } } } } },
+        { "properties": { "storageCatalog": { "contains": { "properties": { "impact": { "const": "breaking" } } } } } }
+      ]
+    },
+    "hasAdditiveImpact": {
+      "anyOf": [
+        { "properties": { "artifacts": { "contains": { "properties": { "impact": { "const": "additive" } } } } } },
+        { "properties": { "schemaContextBindings": { "contains": { "properties": { "impact": { "const": "additive" } } } } } },
+        { "properties": { "uriCatalog": { "contains": { "properties": { "impact": { "const": "additive" } } } } } },
+        { "properties": { "storageCatalog": { "contains": { "properties": { "impact": { "const": "additive" } } } } } }
+      ]
+    },
+    "hasOperationalImpact": {
+      "anyOf": [
+        { "properties": { "artifacts": { "contains": { "properties": { "impact": { "const": "operational" } } } } } },
+        { "properties": { "schemaContextBindings": { "contains": { "properties": { "impact": { "const": "operational" } } } } } },
+        { "properties": { "uriCatalog": { "contains": { "properties": { "impact": { "const": "operational" } } } } } },
+        { "properties": { "storageCatalog": { "contains": { "properties": { "impact": { "const": "operational" } } } } } }
+      ]
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compatibility", "artifacts", "schemaContextBindings", "uriCatalog", "storageCatalog"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/nonEmptyString" },
+        "compatibility": { "enum": ["initial", "breaking", "additive", "operational"] },
+        "artifacts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/artifactChange" }
+        },
+        "schemaContextBindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/bindingChange" }
+        },
+        "uriCatalog": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/uriCatalogChange" }
+        },
+        "storageCatalog": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/storageCatalogChange" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "compatibility": { "const": "breaking" } } },
+          "then": { "$ref": "#/$defs/hasBreakingImpact" }
+        },
+        {
+          "if": { "properties": { "compatibility": { "const": "additive" } } },
+          "then": {
+            "$ref": "#/$defs/hasAdditiveImpact",
+            "not": { "$ref": "#/$defs/hasBreakingImpact" }
+          }
+        },
+        {
+          "if": { "properties": { "compatibility": { "const": "operational" } } },
+          "then": {
+            "$ref": "#/$defs/hasOperationalImpact",
+            "not": {
+              "anyOf": [
+                { "$ref": "#/$defs/hasBreakingImpact" },
+                { "$ref": "#/$defs/hasAdditiveImpact" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
