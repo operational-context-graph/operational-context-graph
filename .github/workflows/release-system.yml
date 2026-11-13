@@ -1,6 +1,6 @@
-# Fires after CI passes on main. For system releases: pushes a git tag, aliases the
-# dev Helm chart to the release version, and creates a GitHub Release with the chart attached.
-# No container image build. No Helm chart repackaging.
+# Fires after CI passes on main. For system releases: pushes a git tag, builds and
+# signs the OCM bundle, and creates a GitHub Release with the Helm chart and OCM
+# CTF archive attached.
 #
 # Both release-component.yml and release-system.yml fire on every CI completion on main.
 # This workflow exits cleanly when the merge was not a system release branch.
@@ -120,7 +120,161 @@ jobs:
           src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
           crane tag "${src}" "${VERSION}"
           echo "Aliased Helm chart ${src} → ${VERSION}"
-          # TODO: alias OCM bundle when publish-ocm-bundle is implemented
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Pull previously published OCI images from ghcr.io as OCI layout tarballs.
+  # Verifies each image digest matches the value pinned in helm/charts/*/values.yaml.
+  # ─────────────────────────────────────────────────────────────────────────────
+  pull-images:
+    name: Pull Service Images
+    runs-on: ubuntu-latest
+    needs: [detect, tag-system]
+    if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        service:
+          - data-ingestion
+          - inventory-store
+          - telemetry-store
+          - inventory-connector
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install skopeo and yq
+        run: |
+          sudo apt-get install -y skopeo
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Read pinned version and digest
+        id: pin
+        run: |
+          values="helm/charts/${{ matrix.service }}/values.yaml"
+          tag=$(yq '.image.tag' "$values")
+          digest=$(yq '.image.digest' "$values")
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pull OCI image as OCI layout tarball
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.pin.outputs.tag }}
+        run: |
+          REGISTRY="ghcr.io/${{ github.repository_owner }}"
+          mkdir -p bin/images
+          skopeo copy \
+            --src-creds "${GHCR_TOKEN}:${GHCR_TOKEN}" \
+            "docker://${REGISTRY}/${{ matrix.service }}:${TAG}" \
+            "oci-archive:bin/images/${{ matrix.service }}.oci.tar"
+
+      - name: Verify pulled digest matches pinned value
+        env:
+          DIGEST: ${{ steps.pin.outputs.digest }}
+        run: |
+          actual=$(tar -xOf "bin/images/${{ matrix.service }}.oci.tar" index.json \
+            | python3 -c 'import sys,json; m=json.load(sys.stdin)["manifests"][0]; print(m["digest"])')
+          if [ "$actual" != "${DIGEST}" ]; then
+            echo "::error::Digest mismatch for ${{ matrix.service }}: pinned=${DIGEST} pulled=${actual}"
+            exit 1
+          fi
+          echo "Digest verified: ${actual}"
+
+      - name: Upload OCI tarball artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oci-${{ matrix.service }}
+          path: bin/images/${{ matrix.service }}.oci.tar
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OCM Bundle: preflight → ocm-build → package → inspect → sign → verify
+  # ─────────────────────────────────────────────────────────────────────────────
+  ocm-bundle:
+    name: OCM Bundle
+    runs-on: ubuntu-latest
+    needs: [detect, tag-system, pull-images]
+    if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      OCM_VERSION: "0.22.1"
+      OCM_CLI_SHA256: "15532daec120686519dc3d122e078820114f2bd090b1ed3091e9bea6704339ca"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: "v${{ needs.detect.outputs.version }}"
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download OCI tarballs
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          pattern: oci-*
+          merge-multiple: true
+          path: bin/images/
+
+      - name: Install OCM v2 CLI
+        run: |
+          # Source MUST be open-component-model/open-component-model (NOT legacy open-component-model/ocm)
+          curl -fsSL \
+            "https://github.com/open-component-model/open-component-model/releases/download/v${OCM_VERSION}/ocm-linux-amd64" \
+            -o /tmp/ocm-bin
+          echo "${OCM_CLI_SHA256}  /tmp/ocm-bin" | sha256sum --check --status || {
+            echo "ERROR: OCM CLI checksum mismatch"
+            sha256sum /tmp/ocm-bin
+            exit 1
+          }
+          install -m 0755 /tmp/ocm-bin /usr/local/bin/ocm
+          ocm version
+
+      - name: Write signing key
+        env:
+          OCM_SIGNING_KEY: ${{ secrets.OCM_SIGNING_KEY }}
+        run: |
+          # Write private key to path OUTSIDE the checkout
+          printf '%s' "${OCM_SIGNING_KEY}" > /tmp/ocg-signing-key.pem
+          chmod 600 /tmp/ocg-signing-key.pem
+
+      - name: Install tools (helm, yq)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: OCM preflight
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make preflight
+
+      - name: OCM build
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
+
+      - name: OCM package
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make package
+
+      - name: OCM inspect
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make inspect
+
+      - name: OCM sign
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make sign
+
+      - name: OCM verify
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make verify
+
+      - name: Upload OCM CTF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ocg-ctf-${{ needs.detect.outputs.version }}
+          path: bin/ocg-${{ needs.detect.outputs.version }}.ctf.tgz
+          retention-days: 30
 
   pull-helm-chart:
     name: Pull Helm Chart from OCI
@@ -181,7 +335,7 @@ jobs:
 
   github-release-system:
     name: Create System GitHub Release
-    needs: [detect, pull-helm-chart, generate-system-release-notes]
+    needs: [detect, pull-helm-chart, ocm-bundle, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
     uses: $/.github/workflows/shared/create-github-release.yml
     with:
@@ -190,6 +344,7 @@ jobs:
       notes: ${{ needs.generate-system-release-notes.outputs.notes }}
       artifacts: |
         ocg-helm-${{ needs.detect.outputs.version }}:operational-context-graph-${{ needs.detect.outputs.version }}.tgz#Helm chart
+        ocg-ctf-${{ needs.detect.outputs.version }}:ocg-${{ needs.detect.outputs.version }}.ctf.tgz#OCM bundle
       client_id: ${{ vars.APP_CLIENT_ID }}
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
