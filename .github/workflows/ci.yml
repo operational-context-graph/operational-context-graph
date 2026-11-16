@@ -68,6 +68,7 @@ jobs:
     needs: build
     permissions:
       contents: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,7 +82,30 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
       - name: Run tests
-        run: make test-all
+        run: make test-all COVERAGE_THRESHOLD=0
+      - name: Check coverage
+        id: coverage
+        run: make test-coverage-all
+        continue-on-error: true
+      - name: Post coverage comment
+        if: steps.coverage.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          threshold=$(grep -oP 'COVERAGE_THRESHOLD\s*:=\s*\K[0-9]+' Makefile)
+          body=$(bash scripts/coverage-comment.sh coverage "${threshold:-20}")
+          pr="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+          comment_id=$(gh api "repos/${repo}/issues/${pr}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- coverage-report -->"))] | last | .id // empty')
+          if [ -n "$comment_id" ]; then
+            gh api "repos/${repo}/issues/comments/${comment_id}" -X PATCH -f body="$body"
+          else
+            gh pr comment "$pr" --body "$body"
+          fi
+      - name: Fail if coverage failed
+        if: steps.coverage.outcome == 'failure'
+        run: exit 1
 
   # Lints all subcharts using chart-testing (ct lint). ct discovers each subchart via its ci/
   # directory and passes every ci/*.yaml file as --values to helm lint. See helm/README.md.
