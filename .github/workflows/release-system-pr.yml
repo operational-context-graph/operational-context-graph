@@ -102,62 +102,10 @@ jobs:
           V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
           VERSION: ${{ inputs.version }}
         run: |
-          # Resolve a component version: use the supplied override, or find the latest
-          # semver tag of the form <path>/v<semver> for the component path.
-          resolve_version() {
-            local override="$1"
-            local component_path="$2"
-            if [ -n "${override}" ]; then
-              echo "${override}"
-              return
-            fi
-            # List all tags matching <component_path>/v*, strip prefix, sort by semver,
-            # take the highest. Requires git >= 2.18 for version sort.
-            git tag --list "${component_path}/v*" \
-              | sed "s|${component_path}/v||" \
-              | sort -V \
-              | tail -1
-          }
-
-          bump() {
-            local slug="$1"
-            local component_path="$2"
-            local override="$3"
-
-            version=$(resolve_version "${override}" "${component_path}")
-            if [ -z "${version}" ]; then
-              echo "::error::No released version found for ${slug} (${component_path}) and no override supplied"
-              exit 1
-            fi
-
-            chart_dir="helm/charts/${slug}"
-            if [ ! -d "${chart_dir}" ]; then
-              echo "::error::Helm chart directory ${chart_dir} does not exist"
-              exit 1
-            fi
-
-            values_file="${chart_dir}/values.yaml"
-            if ! yq e '.image.tag' "${values_file}" > /dev/null 2>&1; then
-              echo "::error::Field .image.tag not found in ${values_file}"
-              exit 1
-            fi
-
-            current=$(yq e '.image.tag' "${values_file}")
-            if [ "${current}" = "${version}" ]; then
-              echo "${slug}: already at ${version}, no change"
-              return
-            fi
-
-            yq -i ".image.tag = \"${version}\"" "${values_file}"
-            echo "${slug}: bumped ${current} → ${version}"
-            git add "${values_file}"
-          }
-
-          bump "data-ingestion"       "services/data-ingestion"                  "${V_DATA_INGESTION}"
-          bump "inventory-connector"  "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
-          bump "inventory-store"      "services/inventory-store"                 "${V_INVENTORY_STORE}"
-          bump "telemetry-store"      "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
-
+          scripts/bump-subchart-versions.sh "data-ingestion"      "services/data-ingestion"                  "${V_DATA_INGESTION}"
+          scripts/bump-subchart-versions.sh "inventory-connector" "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
+          scripts/bump-subchart-versions.sh "inventory-store"     "services/inventory-store"                 "${V_INVENTORY_STORE}"
+          scripts/bump-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
           git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
 
       - name: Update changelog
