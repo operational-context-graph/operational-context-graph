@@ -1,0 +1,27 @@
+package grpc
+
+import (
+	"context"
+	"crypto/tls"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+)
+
+func Dial(endpoint, certFile, keyFile string) (*grpc.ClientConn, error) {
+	if certFile == "" && keyFile == "" {
+		return grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+}
+
+func OutCtx(ctx context.Context, connectorID string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, "connector-id", connectorID)
+}

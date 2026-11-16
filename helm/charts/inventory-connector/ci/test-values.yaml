@@ -1,0 +1,6 @@
+netbox:
+  baseURL: "http://netbox.example.com"
+  tokenSecret:
+    name: "netbox-token"
+grpc:
+  endpoint: "data-ingestion:9090"

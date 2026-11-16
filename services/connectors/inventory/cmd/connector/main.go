@@ -43,6 +43,7 @@ func main() {
 
 	slog.Info("connector finished",
 		"published", totals.Published,
+		"rejected", totals.Rejected,
 		"endpoints_skipped", totals.Skipped,
 		"duration_ms", time.Since(start).Milliseconds(),
 	)

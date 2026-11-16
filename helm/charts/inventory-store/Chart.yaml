@@ -1,0 +1,9 @@
+apiVersion: v2
+name: inventory-store
+description: Subchart for the Inventory Store Go HTTP service
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
+maintainers:
+  - name: operational-context-graph
+    url: https://github.com/operational-context-graph/operational-context-graph

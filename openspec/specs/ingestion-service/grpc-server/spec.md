@@ -114,25 +114,32 @@ When the parent context is cancelled, `Server.Run` SHALL call `GracefulStop()` t
 - **WHEN** two goroutines call `Run` on the same `Server` simultaneously
 - **THEN** the second call returns a non-nil error without binding a second listener
 
-### Requirement: `NewServer` constructs all receivers; OTLP is always-on
+### Requirement: `NewServer` constructs all receivers; OTLP and BackfillService are always-on
 
-`NewServer(grpcCfg, limits, retry, ingestor, schemaClient)` SHALL construct both an
-`OCGReceiver` and an `OTLPReceiver` from the supplied arguments and store them as
-`[]serviceRegistrar`. All five parameters are required; `NewServer` SHALL return a
-non-nil error when any of them is nil. `RunOnListener` iterates the slice and calls
-`register(grpcSrv)` on each receiver — no nil-check, no optional OTLP path.
+`NewServer(grpcCfg, limits, retry, ingestor, schemaClient, backfiller)` SHALL construct an
+`OCGReceiver`, an `OTLPReceiver`, and an `OCGBackfillReceiver` from the supplied arguments and
+store them as `[]serviceRegistrar`. All six parameters are required; `NewServer` SHALL return
+a non-nil error when any of them is nil. `RunOnListener` iterates the slice and calls
+`register(grpcSrv)` on each receiver — no nil-check, no optional path.
 
-#### Scenario: All arguments valid — both service families registered
+#### Scenario: All arguments valid — all three service families registered
 - **WHEN** `NewServer` is called with all non-nil arguments
-- **THEN** `RunOnListener` registers `IngestionService` plus all three OTLP services
+- **THEN** `RunOnListener` registers `IngestionService`, `BackfillService`, and all three OTLP services
+
+#### Scenario: Nil backfiller — construction fails
+- **WHEN** `NewServer` is called with a nil `backfill.Backfiller`
+- **THEN** `NewServer` returns a non-nil error; no server is started
 
 #### Scenario: Nil schemaClient — construction fails
 - **WHEN** `NewServer` is called with a nil `SchemaRegistryClient`
 - **THEN** `NewServer` returns a non-nil error; no server is started
 
+#### Scenario: BackfillService present in registered-services log
+- **WHEN** `Server.Run` starts successfully
+- **THEN** the startup log lists `ocg.ingestion.v1.BackfillService` alongside `ocg.ingestion.v1.IngestionService` and the OTLP services
+
 ## Non-goals
 
-- `BackfillService` or OTLP service registration — separate tickets.
 - gRPC reflection, rate limiting.
 - Connector identity extraction from mTLS CN — separate interceptor ticket.
 - Certificate rotation / hot reload.

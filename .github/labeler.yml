@@ -67,3 +67,4 @@
           - "LICENSES/**"
           - "REUSE.toml"
           - "LICENSE*"
+          - ".grant.yml"

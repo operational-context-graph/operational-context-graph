@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -20,8 +21,10 @@ type pageResponse struct {
 }
 
 // Client paginates a NetBox endpoint and returns all records.
+// params are appended to every page request as additional query parameters.
+// Pass nil for a full scan (bootstrap). Pass last_updated__gt + ordering for delta.
 type Client interface {
-	Paginate(ctx context.Context, path string) ([]json.RawMessage, error)
+	Paginate(ctx context.Context, path string, params url.Values) ([]json.RawMessage, error)
 }
 
 type HTTPClient struct {
@@ -41,13 +44,16 @@ func NewHTTPClient(baseURL, token string, pageSize int) *HTTPClient {
 	}
 }
 
-func (c *HTTPClient) Paginate(ctx context.Context, path string) ([]json.RawMessage, error) {
+func (c *HTTPClient) Paginate(ctx context.Context, path string, params url.Values) ([]json.RawMessage, error) {
 	var all []json.RawMessage
 	offset := 0
 
 	for {
-		url := fmt.Sprintf("%s/api/%s?limit=%d&offset=%d", c.base, path, c.pageSize, offset)
-		page, err := c.fetchPage(ctx, url)
+		pageURL := fmt.Sprintf("%s/api/%s?limit=%d&offset=%d", c.base, path, c.pageSize, offset)
+		if len(params) > 0 {
+			pageURL += "&" + params.Encode()
+		}
+		page, err := c.fetchPage(ctx, pageURL)
 		if err != nil {
 			return nil, err
 		}
