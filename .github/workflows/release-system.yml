@@ -175,7 +175,7 @@ jobs:
         env:
           VERSION: ${{ needs.detect.outputs.version }}
         run: |
-          NOTES=$(awk '/^## \['"${VERSION}"'\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
+          NOTES=$(scripts/extract-release-notes.sh "${VERSION}" CHANGELOG.md)
           printf 'notes<<EOF\n%s\nEOF\n' "${NOTES}" >> "$GITHUB_OUTPUT"
 
   github-release-system:
