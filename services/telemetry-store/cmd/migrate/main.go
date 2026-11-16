@@ -1,58 +1,65 @@
-// Command migrate applies pending Goose migrations to Apache Doris.
+// Command migrate applies or rolls back Goose migrations for Apache Doris.
 //
 // It uses the Goose Provider API with a custom Doris dialect so that no
 // MySQL driver other than go-mysql-org/go-mysql is linked. The stock goose
 // CLI cannot be used against Doris because its built-in MySQL support uses
 // a different driver that conflicts at registration time.
 //
-// Required environment variables:
+// Usage:
 //
-//	DORIS_MIGRATE_DSN        — Doris DSN without a database, e.g. "root:pass@tcp(host:9030)/"
-//	DORIS_REPLICATION_NUM    — replication_num for the tracking table, e.g. "1" or "3"
-//	DORIS_BUCKETS            — bucket count used in migration SQL, e.g. "10"
+//	migrate          — apply all pending migrations (default, used in production)
+//	migrate -down    — roll back the most recently applied migration (dev only)
+//
+// Configuration is read from the same environment variables as the service
+// itself; see internal/config/config.go for the full list. The migration
+// files are read from /migrations inside the container image.
 package main
 
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/database"
 
+	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/config"
 	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorismigrate"
 	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/dorissql"
-	"github.com/operational-context-graph/operational-context-graph/services/telemetry-store/internal/migrations"
 )
 
 func main() {
-	if err := run(); err != nil {
+	down := flag.Bool("down", false, "roll back the most recently applied migration (dev only)")
+	flag.Parse()
+
+	if err := run(*down); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
 }
 
-func run() error {
-	dsn := requireEnv("DORIS_MIGRATE_DSN")
+func run(down bool) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
 	dorissql.RegisterTimeArgs()
 
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", cfg.DorisDSN)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
 
+	// Doris accepts TCP connections before its query engine is ready to serve SQL.
+	// Ping can fail even after sql.Open succeeds, so we retry until the server is queryable.
 	if err := waitForDoris(db); err != nil {
 		return err
-	}
-
-	if _, err := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS ocg"); err != nil {
-		return fmt.Errorf("create database: %w", err)
 	}
 
 	store, err := database.NewStoreFromQuerier("ocg.goose_db_version_telemetry_store", &dorismigrate.Querier{})
@@ -60,11 +67,24 @@ func run() error {
 		return fmt.Errorf("create store: %w", err)
 	}
 
-	provider, err := goose.NewProvider(goose.DialectCustom, db, migrations.FS,
+	provider, err := goose.NewProvider(goose.DialectCustom, db, os.DirFS("/migrations"),
 		goose.WithStore(store),
 	)
 	if err != nil {
 		return fmt.Errorf("create provider: %w", err)
+	}
+
+	if down {
+		result, err := provider.Down(context.Background())
+		if err != nil {
+			return fmt.Errorf("roll back migration: %w", err)
+		}
+		if result != nil {
+			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration)
+		} else {
+			log.Println("no migrations to roll back")
+		}
+		return nil
 	}
 
 	results, err := provider.Up(context.Background())
@@ -79,14 +99,6 @@ func run() error {
 		log.Println("no pending migrations")
 	}
 	return nil
-}
-
-func requireEnv(key string) string {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		log.Fatalf("missing required environment variable: %s", key)
-	}
-	return v
 }
 
 func waitForDoris(db *sql.DB) error {

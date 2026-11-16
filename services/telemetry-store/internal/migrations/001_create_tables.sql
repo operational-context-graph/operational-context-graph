@@ -1,7 +1,5 @@
 -- +goose Up
 -- +goose ENVSUB ON
-CREATE DATABASE IF NOT EXISTS ocg;
-
 CREATE TABLE IF NOT EXISTS ocg.logs (
   `timestamp`            DATETIME(6)   NOT NULL,
   `iri`                  VARCHAR(512)  NOT NULL,
@@ -101,4 +99,3 @@ PROPERTIES (
 DROP TABLE IF EXISTS ocg.traces;
 DROP TABLE IF EXISTS ocg.metrics;
 DROP TABLE IF EXISTS ocg.logs;
-DROP DATABASE IF EXISTS ocg;

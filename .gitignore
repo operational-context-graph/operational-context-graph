@@ -7,6 +7,7 @@ vendor/
 coverage/
 go.work
 go.work.sum
+services/telemetry-store/migrate
 
 # Compiled class file
 *.class

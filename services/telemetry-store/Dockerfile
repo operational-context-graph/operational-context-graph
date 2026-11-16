@@ -28,6 +28,7 @@ LABEL org.opencontainers.image.source=https://github.com/operational-context-gra
 COPY --from=build /out/telemetry-store /usr/local/bin/telemetry-store
 COPY --from=build /out/migrate /usr/local/bin/migrate
 COPY --from=goose /go/bin/goose /usr/local/bin/goose
+COPY services/telemetry-store/internal/migrations/*.sql /migrations/
 
 EXPOSE 8080
 USER 1000:1000
