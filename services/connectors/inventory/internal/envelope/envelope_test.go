@@ -37,7 +37,7 @@ func TestBuild_Partition(t *testing.T) {
 }
 
 func TestBuild_Watermark(t *testing.T) {
-	assert.Equal(t, map[string]any{"last_id": 55147}, build(t).Watermark)
+	assert.Equal(t, map[string]any{"last_updated": "2026-07-10T07:47:31.240892Z"}, build(t).Watermark)
 }
 
 func TestBuild_PayloadIsRaw(t *testing.T) {
@@ -47,8 +47,8 @@ func TestBuild_PayloadIsRaw(t *testing.T) {
 	assert.Equal(t, "1010173-sw1", raw["name"])
 }
 
-func TestBuild_MissingID(t *testing.T) {
-	msg, err := Build(json.RawMessage(`{"name": "no-id"}`), "dcim/devices/", "netbox.Device", "0.1.0")
+func TestBuild_MissingLastUpdated(t *testing.T) {
+	msg, err := Build(json.RawMessage(`{"name": "no-ts"}`), "dcim/devices/", "netbox.Device", "0.1.0")
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"last_id": 0}, msg.Watermark)
+	assert.Nil(t, msg.Watermark, "a record with no last_updated must carry no watermark")
 }

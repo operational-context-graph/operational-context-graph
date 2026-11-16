@@ -12,11 +12,11 @@ type StubPublisher struct {
 	msgs []envelope.Message
 }
 
-func (s *StubPublisher) Publish(_ context.Context, msgs []envelope.Message) error {
+func (s *StubPublisher) Publish(_ context.Context, msgs []envelope.Message) (PublishResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.msgs = append(s.msgs, msgs...)
-	return nil
+	return PublishResult{}, nil
 }
 
 func (s *StubPublisher) Messages() []envelope.Message {
