@@ -137,10 +137,11 @@ jobs:
       - name: Pin image tags and digests
         env:
           RESOLVED_VERSIONS: ${{ needs.validate.outputs.resolved_versions }}
+          VERSION: ${{ inputs.version }}
         run: |
           echo "${RESOLVED_VERSIONS}" | scripts/pin-image-digests.sh
           git add helm/charts/*/values.yaml
-          git diff --cached --quiet || git commit -m "chore(release): pin component image tags and digests for v${{ inputs.version }}"
+          git diff --cached --quiet || git commit -m "chore(release): pin component image tags and digests for v${VERSION}"
 
       - name: Update changelog
         env:
