@@ -24,6 +24,7 @@ type OCGBackfillHandler struct {
 	ingestor   ingest.Ingestor
 	limits     *config.LimitsConfig
 	retry      *config.RetryConfig
+	log        *slog.Logger
 }
 
 // NewOCGBackfillHandler constructs an OCGBackfillHandler. Returns an error when
@@ -51,6 +52,7 @@ func NewOCGBackfillHandler(
 		ingestor:   ingestor,
 		limits:     limits,
 		retry:      retry,
+		log:        slog.Default(),
 	}, nil
 }
 
@@ -61,7 +63,7 @@ func (h *OCGBackfillHandler) register(grpcSrv *grpc.Server) {
 
 // unavailableWithRetry builds a codes.Unavailable status with a RetryInfo hint.
 func (h *OCGBackfillHandler) unavailableWithRetry(msg string) error {
-	return unavailableWithRetry(msg, h.retry)
+	return unavailableWithRetry(msg, h.retry, h.log)
 }
 
 // ── receiver struct ───────────────────────────────────────────────────────────
@@ -180,7 +182,7 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 			}
 		}
 		if !gapOpen {
-			slog.WarnContext(ctx, "backfill message dropped: no open gap for partition",
+			recv.handler.log.WarnContext(ctx, "backfill message dropped: no open gap for partition",
 				"connector_id", connectorID,
 				"partition", partKey,
 			)
@@ -220,12 +222,12 @@ func (recv *OCGBackfillReceiver) Ingest(ctx context.Context, req *ingestionv1.In
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 		}
-		slog.Error("unexpected backfill pipeline error", "err", err)
+		recv.handler.log.ErrorContext(ctx, "unexpected backfill pipeline error", "err", err)
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
 	// Reverse scan: last accepted watermark per partition, stop once all open-gap partitions covered.
-	lastWM := lastAcceptedWatermarks(batch, result.Accepted, openPartitions, connectorID)
+	lastWM := lastAcceptedWatermarks(batch, result.Accepted, openPartitions, connectorID, recv.handler.log)
 	for partition, wm := range lastWM {
 		if err := recv.handler.backfiller.AdvanceBackfill(ctx, connectorID, partition, wm); err != nil {
 			return nil, recv.handler.unavailableWithRetry("watermark advance failed")
