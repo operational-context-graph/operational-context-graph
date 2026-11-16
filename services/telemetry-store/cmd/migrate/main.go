@@ -54,12 +54,12 @@ func run(down bool) error {
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Doris accepts TCP connections before its query engine is ready to serve SQL.
 	// Ping can fail even after sql.Open succeeds, so we retry until the server is queryable.
-	if err := waitForDoris(db); err != nil {
-		return err
+	if waitErr := waitForDoris(db); waitErr != nil {
+		return waitErr
 	}
 
 	store, err := database.NewStoreFromQuerier("ocg.goose_db_version_telemetry_store", &dorismigrate.Querier{})
@@ -75,9 +75,9 @@ func run(down bool) error {
 	}
 
 	if down {
-		result, err := provider.Down(context.Background())
-		if err != nil {
-			return fmt.Errorf("roll back migration: %w", err)
+		result, downErr := provider.Down(context.Background())
+		if downErr != nil {
+			return fmt.Errorf("roll back migration: %w", downErr)
 		}
 		if result != nil {
 			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration)

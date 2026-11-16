@@ -13,7 +13,6 @@ func (d *DB) QueryTrace(ctx context.Context, q TraceQuery) ([]Span, error) {
 
 	// Doris does not support a parameter placeholder for LIMIT; the value is an integer
 	// clamped by clampLimit, not user input.
-	//nolint:gosec // G201: LIMIT is an integer clamped by clampLimit, not user input.
 	stmt := fmt.Sprintf(`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name,
 		 trace_id, span_id, parent_span_id, span_name, duration_nanos, status_code,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
