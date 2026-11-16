@@ -1,12 +1,12 @@
 ---
 name: sdd-propose
-description: Enumerate failure modes for a new component, then run /opsx:propose (OpenSpec) with those failure modes folded into the description so the generated spec covers edge cases, not just the happy path. Use when building a new component, library, or interface with any of: non-obvious boundary conditions (concurrent access, timeout/retry, partial failure, ordering invariants); a spec that serves as a design document (multiple consumers, security-relevant interface, traceable requirement); a long-lived contract (extended, versioned, or depended on by other packages); or team coding standards that must be applied consistently. Skip for a simple, short-lived, single-consumer utility.
+description: Enumerate failure modes for a new component, then run openspec-propose (OpenSpec) with those failure modes folded into the description so the generated spec covers edge cases, not just the happy path. Use when building a new component, library, or interface with any of: non-obvious boundary conditions (concurrent access, timeout/retry, partial failure, ordering invariants); a spec that serves as a design document (multiple consumers, security-relevant interface, traceable requirement); a long-lived contract (extended, versioned, or depended on by other packages); or team coding standards that must be applied consistently. Skip for a simple, short-lived, single-consumer utility.
 ---
 
 # sdd-propose
 
 Generate an OpenSpec proposal for a new component in two steps: first enumerate how the
-component can fail (the *elicitation* step), then run `/opsx:propose` with those failure
+component can fail (the *elicitation* step), then run `openspec-propose` with those failure
 modes written into the description. A proposal built this way seeds the spec with WHEN/THEN
 scenarios for concurrency, boundary inputs, and error paths — the cases a plain happy-path
 prompt leaves out.
@@ -68,13 +68,19 @@ Continue regardless of the warning — do not block.
 
 ### 3. Initialize OpenSpec (if needed)
 
-Check whether `.claude/commands/opsx/` exists. If not, run:
+Run:
+
+```sh
+openspec list --json
+```
+
+Read `root` from the output. If `root` is null, OpenSpec is not initialized — run:
 
 ```sh
 openspec init
 ```
 
-Select Claude Code as the AI tool when prompted.
+Select Claude Code as the AI tool when prompted. Do not proceed until `root` is non-null.
 
 ### 4. Pre-propose elicitation
 
@@ -113,9 +119,9 @@ The elicitation output MUST include at least one item per category. If a categor
 genuinely does not apply (e.g. a purely functional, stateless component has no
 concurrent access concern), state that explicitly — do not leave the category blank.
 
-### 5. Run /opsx:propose (enriched)
+### 5. Run openspec-propose (enriched)
 
-Run `/opsx:propose` with a description that includes BOTH the original requirement AND
+Run `openspec-propose` with a description that includes BOTH the original requirement AND
 the specific failure modes and boundary conditions from the elicitation. Do not use a
 generic happy-path description.
 
@@ -136,7 +142,7 @@ the artifact.
 
 ### 6. Capture elicitation reference
 
-After `/opsx:propose` completes, append a one-line reference to the elicitation file
+After `openspec-propose` completes, append a one-line reference to the elicitation file
 inside the generated `proposal.md` (under a `## Elicitation` heading if not already
 present):
 
