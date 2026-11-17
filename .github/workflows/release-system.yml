@@ -71,8 +71,8 @@ jobs:
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
-  alias-release-artifacts:
-    name: Alias Release Artifacts to Release Version
+  retag-release-artifacts:
+    name: Retag Release Artifacts to Release Version
     runs-on: ubuntu-latest
     needs: [detect, tag-system]
     if: needs.detect.outputs.release_type == 'system'
@@ -102,7 +102,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Alias dev Helm chart to release version
+      - name: Retag dev Helm chart to release version
         env:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           VERSION: ${{ needs.detect.outputs.version }}
@@ -117,13 +117,13 @@ jobs:
           DEV_TAG="dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
-          echo "Aliased Helm chart ${src} → ${VERSION}"
+          echo "Retagged Helm chart ${src} → ${VERSION}"
           # TODO: alias OCM bundle when publish-ocm-bundle is implemented
 
   pull-helm-chart:
     name: Pull Helm Chart from OCI
     runs-on: ubuntu-latest
-    needs: [detect, alias-release-artifacts]
+    needs: [detect, retag-release-artifacts]
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read

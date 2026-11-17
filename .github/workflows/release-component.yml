@@ -73,8 +73,8 @@ jobs:
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
-  alias-component-image:
-    name: Alias Component Image to Release Version
+  retag-component-image:
+    name: Retag Component Image to Release Version
     runs-on: ubuntu-latest
     needs: [detect, tag-component]
     if: |
@@ -101,7 +101,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Alias dev image to release version
+      - name: Retag dev image to release version
         env:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           SLUG: ${{ needs.detect.outputs.slug }}
@@ -118,4 +118,4 @@ jobs:
           src="${REGISTRY}/${SLUG}:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           ~/.local/bin/crane tag "${src}" "${VERSION}-${HEAD_SHA:0:7}"
-          echo "Aliased ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"
+          echo "Retagged ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"
