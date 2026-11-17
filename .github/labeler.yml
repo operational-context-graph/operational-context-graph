@@ -12,7 +12,7 @@
 
 "inventory-connector":
   - changed-files:
-      - any-glob-to-any-file: "services/connectors/inventory/**"
+      - any-glob-to-any-file: "services/connectors/inventory-connector/**"
 
 "proto":
   - changed-files:
