@@ -1,4 +1,4 @@
-# Fires after CI passes on main. For system releases: pushes a git tag, aliases the
+# Fires after CI passes on main. For system releases: pushes a git tag, retags the
 # dev Helm chart to the release version, and creates a GitHub Release with the chart attached.
 # No container image build. No Helm chart repackaging.
 #
@@ -118,7 +118,7 @@ jobs:
           src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           echo "Retagged Helm chart ${src} → ${VERSION}"
-          # TODO: alias OCM bundle when publish-ocm-bundle is implemented
+          # TODO: retag OCM bundle when publish-ocm-bundle is implemented
 
   pull-helm-chart:
     name: Pull Helm Chart from OCI
