@@ -126,8 +126,9 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           git push origin "release/${VERSION}"
-          gh pr create \
+          pr_url=$(gh pr create \
             --base main \
             --head "release/${VERSION}" \
             --title "chore(release): v${VERSION}" \
-            --body "System release v${VERSION}. See CHANGELOG.md for details."
+            --body "System release v${VERSION}. See CHANGELOG.md for details.")
+          echo "Release PR created: ${pr_url}"

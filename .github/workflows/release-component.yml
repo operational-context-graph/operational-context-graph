@@ -47,6 +47,7 @@ jobs:
             "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
             --jq '.[0].head.ref // ""')
           echo "SOURCE_BRANCH=${SOURCE_BRANCH}"
+          echo "source_branch=${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
           scripts/parse-release-branch.sh "${SOURCE_BRANCH}"
       - name: Log detected release
         env:
@@ -54,9 +55,10 @@ jobs:
           SLUG: ${{ steps.parse.outputs.slug }}
           VERSION: ${{ steps.parse.outputs.version }}
           TAG: ${{ steps.parse.outputs.tag }}
+          SOURCE_BRANCH: ${{ steps.parse.outputs.source_branch }}
         run: |
           if [ -z "${RELEASE_TYPE}" ]; then
-            echo "Not a release merge — all jobs will be skipped"
+            echo "Not a release merge. All jobs will be skipped (branch: ${SOURCE_BRANCH})"
           else
             echo "release_type=${RELEASE_TYPE} slug=${SLUG} version=${VERSION} tag=${TAG}"
           fi
