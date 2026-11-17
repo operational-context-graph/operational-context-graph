@@ -38,10 +38,6 @@ Defines the behavior of `release-component-pr.yml`: the workflow that creates a 
 
 `release-system-pr.yml` SHALL accept optional per-component version override inputs. For each OCG-owned subchart, it SHALL resolve the version (from the override or the latest released git tag for that component) and update `helm/charts/<slug>/values.yaml` `.image.tag` before committing the root `CHANGELOG.md` update.
 
-Version resolution and values.yaml patching are delegated to `scripts/bump-subchart-versions.sh <slug> <component-path> [version-override]`. The script resolves the version, validates the chart directory and `.image.tag` field, patches the file with `yq`, and stages it with `git add`. The workflow commits all staged changes in a single commit after all subcharts are processed.
-
-Workflow inputs (`${{ inputs.version_<slug> }}`) MUST be passed to shell steps via the step `env:` block (e.g., `VERSION: ${{ inputs.version }}`), not interpolated directly into `run:` scripts, to prevent template injection.
-
 #### Scenario: System release PR bumps all subchart versions from overrides
 - **WHEN** `release-system-pr.yml` is dispatched for version `1.0.0` with all version overrides supplied
 - **THEN** each subchart `values.yaml` `.image.tag` is set to the supplied version
@@ -68,6 +64,28 @@ Workflow inputs (`${{ inputs.version_<slug> }}`) MUST be passed to shell steps v
 #### Scenario: Subchart image tag already at target version
 - **WHEN** the current `.image.tag` in `values.yaml` equals the resolved version
 - **THEN** no change is made for that subchart; no commit entry is produced for it
+
+---
+
+### Requirement: Subchart version resolution and patching are delegated to bump-subchart-versions.sh
+
+`release-system-pr.yml` SHALL delegate version resolution and `values.yaml` patching to `scripts/bump-subchart-versions.sh <slug> <component-path> [version-override]`. The script resolves the version, validates the chart directory and `.image.tag` field, patches the file with `yq`, and stages it with `git add`. The workflow commits all staged changes in a single commit after all subcharts are processed.
+
+#### Scenario: Script stages changes; workflow commits once
+- **WHEN** `release-system-pr.yml` calls `bump-subchart-versions.sh` for each subchart
+- **THEN** each invocation stages its `values.yaml` with `git add`
+- **AND** the workflow issues one `git commit` covering all staged changes
+
+---
+
+### Requirement: Workflow inputs are passed via env block to prevent template injection
+
+Workflow inputs (`${{ inputs.* }}`) SHALL be mapped to environment variables in each step's `env:` block and referenced as shell variables (e.g., `${VERSION}`). They SHALL NOT be interpolated directly into `run:` script bodies.
+
+#### Scenario: Version input passed via env block
+- **WHEN** a code reviewer inspects the bump step in `release-system-pr.yml`
+- **THEN** `${{ inputs.version }}` appears only in the `env:` block, not inside the `run:` script
+- **AND** the script references `${VERSION}` (or equivalent env var name) instead
 
 ## Non-Goals
 
