@@ -10,14 +10,16 @@ on:
   schedule:
     - cron: "20 8 * * *"
 
+permissions: {}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
     permissions:
       security-events: write
-      # required to fetch internal or private CodeQL packs
       packages: read
+      contents: read
     strategy:
       fail-fast: false
       matrix:
