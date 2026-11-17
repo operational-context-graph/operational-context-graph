@@ -2,8 +2,6 @@
 # On pushes to main, also builds and publishes dev images, Helm chart, and OCM bundle
 # to GHCR after all checks pass.
 #
-# Artifact aliasing (dev.* → release version) happens in release-component.yml and
-# release-system.yml after CI completes on a release branch merge.
 ---
 name: Continuous Integration
 
