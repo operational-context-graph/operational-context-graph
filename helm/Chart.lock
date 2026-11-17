@@ -4,7 +4,7 @@ dependencies:
   version: 0.0.1
 - name: postgresql
   repository: oci://registry-1.docker.io/bitnamicharts
-  version: 18.12.17
+  version: 18.12.18
 - name: pgadmin
   repository: file://charts/pgadmin
   version: 0.0.1
@@ -23,5 +23,5 @@ dependencies:
 - name: otelcol
   repository: file://charts/otelcol
   version: 0.0.1
-digest: sha256:0f0f564b6d92260901a49911be89661db0a5048c2504fa01d12f75d6d722f726
-generated: "2026-11-05T16:20:40.923812871+01:00"
+digest: sha256:a1d08702c701e40d2ae0d249d9c4ae126bd86c5bd9c0d18a2b048c2ad4e8735f
+generated: "2026-11-17T11:14:54.956354+01:00"
