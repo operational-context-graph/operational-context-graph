@@ -222,11 +222,15 @@ jobs:
           VERSION: ${{ needs.publish-dev.outputs.version }}
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
+          # helm package requires valid semver. dev.YYYYMMDD-SHA is not semver
+          # (no MAJOR.MINOR.PATCH base), so prefix with 0.0.0- to satisfy the parser.
+          # The OCI tag pushed to GHCR still uses VERSION unchanged.
+          HELM_VERSION="0.0.0-${VERSION}"
           helm dependency update helm/
           helm package helm/ \
-            --version "${VERSION}" \
+            --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
-          helm push "operational-context-graph-${VERSION}.tgz" \
+          helm push "operational-context-graph-${HELM_VERSION}.tgz" \
             "oci://${REGISTRY}/operational-context-graph"
 
   # TODO: implement OCM bundle packaging (separate PR/branch).
