@@ -38,6 +38,10 @@ Defines the behavior of `release-component-pr.yml`: the workflow that creates a 
 
 `release-system-pr.yml` SHALL accept optional per-component version override inputs. For each OCG-owned subchart, it SHALL resolve the version (from the override or the latest released git tag for that component) and update `helm/charts/<slug>/values.yaml` `.image.tag` before committing the root `CHANGELOG.md` update.
 
+Version resolution and values.yaml patching are delegated to `scripts/bump-subchart-versions.sh <slug> <component-path> [version-override]`. The script resolves the version, validates the chart directory and `.image.tag` field, patches the file with `yq`, and stages it with `git add`. The workflow commits all staged changes in a single commit after all subcharts are processed.
+
+Workflow inputs (`${{ inputs.version_<slug> }}`) MUST be passed to shell steps via the step `env:` block (e.g., `VERSION: ${{ inputs.version }}`), not interpolated directly into `run:` scripts, to prevent template injection.
+
 #### Scenario: System release PR bumps all subchart versions from overrides
 - **WHEN** `release-system-pr.yml` is dispatched for version `1.0.0` with all version overrides supplied
 - **THEN** each subchart `values.yaml` `.image.tag` is set to the supplied version
