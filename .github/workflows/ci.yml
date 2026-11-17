@@ -84,6 +84,10 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
       - name: Run tests
+        # COVERAGE_THRESHOLD=0 disables the coverage gate in make test-all.
+        # Coverage is checked separately below with continue-on-error so failures
+        # post a PR comment rather than blocking the run during ramp-up.
+        # Raise the threshold in the Makefile once baseline coverage is established.
         run: make test-all COVERAGE_THRESHOLD=0
       - name: Check coverage
         id: coverage
@@ -206,7 +210,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:

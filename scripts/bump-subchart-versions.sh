@@ -41,7 +41,7 @@ if [ ! -d "${CHART_DIR}" ]; then
 fi
 
 VALUES_FILE="${CHART_DIR}/values.yaml"
-if ! yq e '.image.tag' "${VALUES_FILE}" > /dev/null 2>&1; then
+if [ "$(yq e '.image.tag // ""' "${VALUES_FILE}")" = "" ]; then
   echo "::error::Field .image.tag not found in ${VALUES_FILE}"
   exit 1
 fi
