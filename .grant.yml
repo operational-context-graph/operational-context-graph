@@ -81,9 +81,11 @@ ignore-packages:
   - docker/bake-action # Apache-2.0
   - docker/login-action # Apache-2.0
   - docker/setup-buildx-action # Apache-2.0
+  - docker/build-push-action # Apache-2.0
 
-  # Exclude github.com/operational-context-graph/* due to being our own packages
+  # Exclude github.com/operational-context-graph/* and $/.github/workflows/shared/* due to being our own packages
   - github.com/operational-context-graph/*
+  - $/.github/workflows/shared/*
 
   # -------------------------
   # The following packages have known permissive licenses but Syft also emits a LicenseRef-* hash
