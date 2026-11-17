@@ -116,7 +116,7 @@ jobs:
             --jq '.commit.committer.date' \
             | cut -c1-10 \
             | tr -d '-')
-          DEV_TAG="dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
+          DEV_TAG="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           echo "Retagged Helm chart ${src} → ${VERSION}"
