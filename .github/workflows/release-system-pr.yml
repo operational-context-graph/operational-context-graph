@@ -94,7 +94,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: git checkout -b "release/${VERSION}"
 
-      - name: Bump subchart image tags
+      - name: Pin subchart image tags
         env:
           V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
           V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
@@ -102,10 +102,10 @@ jobs:
           V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
           VERSION: ${{ inputs.version }}
         run: |
-          scripts/bump-subchart-versions.sh "data-ingestion"      "services/data-ingestion"                  "${V_DATA_INGESTION}"
-          scripts/bump-subchart-versions.sh "inventory-connector" "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
-          scripts/bump-subchart-versions.sh "inventory-store"     "services/inventory-store"                 "${V_INVENTORY_STORE}"
-          scripts/bump-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
+          scripts/pin-subchart-versions.sh "data-ingestion"      "services/data-ingestion"                  "${V_DATA_INGESTION}"
+          scripts/pin-subchart-versions.sh "inventory-connector" "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
+          scripts/pin-subchart-versions.sh "inventory-store"     "services/inventory-store"                 "${V_INVENTORY_STORE}"
+          scripts/pin-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
           git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
 
       - name: Update changelog

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Bump subchart image tags to released component versions.
+# Pin subchart image tags to a specific component version.
 #
-# Usage: bump-subchart-versions.sh <slug> <component-path> [version-override]
+# Usage: pin-subchart-versions.sh <slug> <component-path> [version-override]
 #
 #   slug             Helm chart directory name under helm/charts/
 #   component-path   Repo-relative path to the component (e.g. services/data-ingestion)
@@ -58,5 +58,5 @@ if [ "${CURRENT}" = "${VERSION}" ]; then
 fi
 
 yq -i ".image.tag = \"${VERSION}\"" "${VALUES_FILE}"
-echo "${SLUG}: bumped ${CURRENT} → ${VERSION}"
+echo "${SLUG}: pinned ${CURRENT} → ${VERSION}"
 git add "${VALUES_FILE}"
