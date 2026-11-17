@@ -12,23 +12,23 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 1.0.0)"
+        description: "Release version (e.g. 0.0.1)"
         required: true
         type: string
       version_data_ingestion:
-        description: "data-ingestion version (leave empty to use latest released)"
+        description: "data-ingestion version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_inventory_connector:
-        description: "inventory-connector version (leave empty to use latest released)"
+        description: "inventory-connector version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_inventory_store:
-        description: "inventory-store version (leave empty to use latest released)"
+        description: "inventory-store version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_telemetry_store:
-        description: "telemetry-store version (leave empty to use latest released)"
+        description: "telemetry-store version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
 
