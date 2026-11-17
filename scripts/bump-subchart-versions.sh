@@ -19,6 +19,11 @@ OVERRIDE="${3:-}"
 
 resolve_version() {
   if [ -n "${OVERRIDE}" ]; then
+    local tag="${COMPONENT_PATH}/v${OVERRIDE}"
+    if ! git tag --list | grep -qxF "${tag}"; then
+      echo "::error::Override tag '${tag}' does not exist" >&2
+      exit 1
+    fi
     echo "${OVERRIDE}"
     return
   fi
