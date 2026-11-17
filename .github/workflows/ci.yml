@@ -219,8 +219,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Log in to GHCR (Helm)
         run: |
-          # docker/login-action configures Docker's credential store but Helm
-          # maintains its own OCI registry config and does not read from it.
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
             --username "${{ github.repository_owner }}" \
             --password-stdin
