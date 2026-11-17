@@ -79,7 +79,7 @@ jobs:
           - [ ] Add a target for the component to \`docker-bake.hcl\`, set the \`org.opencontainers.image.description\` label, and add it to the \`default\` group
           - [ ] Add the component to the \`matrix.package\` list in \`.github/workflows/dev-image-cleanup.yml\` if it has a container image
           - [ ] If the component has a container image: navigate to the package in the org's Packages page and grant the repository \`Admin\` access under Package settings → Manage Actions access
-          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed — the subchart directory name must match the component slug (basename of the component path)
+          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed (note: the subchart directory name must match the component slug, basename of the component path)
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
