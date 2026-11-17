@@ -94,8 +94,9 @@ jobs:
           url="https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${archive}"
           curl -fsSL -o "${archive}" "${url}"
           echo "${CRANE_SHA256}  ${archive}" | sha256sum -c -
-          tar -xzf "${archive}" crane
-          sudo mv crane /usr/local/bin/crane
+          mkdir -p ~/.local/bin
+          tar -xzf "${archive}" -C ~/.local/bin crane
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           crane version
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
