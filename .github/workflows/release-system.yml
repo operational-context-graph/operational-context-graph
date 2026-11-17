@@ -96,8 +96,6 @@ jobs:
           echo "${CRANE_SHA256}  ${archive}" | sha256sum -c -
           mkdir -p ~/.local/bin
           tar -xzf "${archive}" -C ~/.local/bin crane
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          crane version
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -118,7 +116,7 @@ jobs:
             | tr -d '-')
           DEV_TAG="dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
-          crane tag "${src}" "${VERSION}"
+          ~/.local/bin/crane tag "${src}" "${VERSION}"
           echo "Aliased Helm chart ${src} → ${VERSION}"
           # TODO: alias OCM bundle when publish-ocm-bundle is implemented
 
