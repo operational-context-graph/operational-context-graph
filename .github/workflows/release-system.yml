@@ -193,7 +193,8 @@ jobs:
           retention-days: 1
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # OCM Bundle: preflight → ocm-build → package → inspect → sign → verify
+  # OCM Bundle: scripts/ocm-bundle.sh (preflight → package → inspect → sign →
+  # verify) → push CTF to GHCR as OCI → upload tarball artifact
   # ─────────────────────────────────────────────────────────────────────────────
   ocm-bundle:
     name: OCM Bundle
@@ -202,6 +203,7 @@ jobs:
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
+      packages: write
     env:
       VERSION: ${{ needs.detect.outputs.version }}
       OCM_VERSION: "0.22.1"
@@ -250,23 +252,23 @@ jobs:
             -o /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
 
-      - name: OCM preflight
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make preflight
+      - name: Build, sign, and verify OCM bundle
+        run: SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
 
-      - name: OCM build
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: OCM package
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make package
-
-      - name: OCM inspect
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make inspect
-
-      - name: OCM sign
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make sign
-
-      - name: OCM verify
-        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make verify
+      - name: Push CTF to GHCR as OCI
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          ocm transfer component-version \
+            ctf::./bin/ctf// \
+            "oci::${REGISTRY}/operational-context-graph-bundle:${VERSION}"
 
       - name: Upload OCM CTF artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
