@@ -101,6 +101,10 @@ func run(down bool) error {
 	return nil
 }
 
+// waitForDoris polls until Doris accepts connections. sql.Open only validates
+// the DSN without opening a real connection, so the Doris MySQL-compatible
+// listener may still be initialising when this binary starts. Repeated pings
+// are required before any DDL statement can succeed.
 func waitForDoris(db *sql.DB) error {
 	const maxAttempts = 30
 	const delay = 5 * time.Second
