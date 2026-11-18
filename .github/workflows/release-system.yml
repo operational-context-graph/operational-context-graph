@@ -1,6 +1,6 @@
-# Fires after CI passes on main. For system releases: pushes a git tag, builds and
-# signs the OCM bundle, and creates a GitHub Release with the Helm chart and OCM
-# CTF archive attached.
+# Fires after CI passes on main. For system releases: pushes a git tag, builds retags the
+# dev Helm chart to the release version and signs the OCM bundle, and creates a GitHub Release
+# with the Helm chart and OCM CTF archive attached.
 #
 # Both release-component.yml and release-system.yml fire on every CI completion on main.
 # This workflow exits cleanly when the merge was not a system release branch.
@@ -54,7 +54,7 @@ jobs:
           TAG: ${{ steps.parse.outputs.tag }}
         run: |
           if [ -z "${RELEASE_TYPE}" ]; then
-            echo "Not a release merge — all jobs will be skipped"
+            echo "Not a release merge. All jobs will be skipped (branch: ${SOURCE_BRANCH})"
           else
             echo "release_type=${RELEASE_TYPE} version=${VERSION} tag=${TAG}"
           fi

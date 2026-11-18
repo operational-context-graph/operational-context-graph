@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
-# Build and sign an OCM bundle from pre-built OCI image tarballs.
+# Build and optionally sign an OCM bundle from pre-built OCI image tarballs.
 #
-# Runs the shared pipeline stages: build → package → inspect → sign → verify.
+# Stages: build → package → inspect → [sign → verify].
 # Assumes OCI tarballs are already present in bin/images/. Use make ocm-dev
 # to build them locally first, or make ocm-build in CI where they are pulled.
 #
 # Usage:
 #   scripts/ocm-bundle.sh <version>
 #
-# Required env:
-#   SIGN_KEY  — path to RSA private key PEM; copied to /tmp/ocg-signing-key.pem
-#               so the .ocm/config credential lookup resolves it (default: /tmp/ocg-signing-key.pem)
+# Env:
+#   SIGN_KEY   — path to RSA private key PEM; copied to /tmp/ocg-signing-key.pem
+#                so the .ocm/config credential lookup resolves it.
+#                Required unless SKIP_SIGN=1.
+#   SKIP_SIGN  — set to 1 to skip stages 4+5 (sign/verify). Produces an
+#                unsigned bundle. Useful when signing happens separately.
 #
-# Example:
+# Examples:
 #   SIGN_KEY=.ocm/ocg.key scripts/ocm-bundle.sh 1.2.3
-#   SIGN_KEY=.ocm/ocg.key scripts/ocm-bundle.sh 0.0.0
+#   SKIP_SIGN=1 scripts/ocm-bundle.sh 0.0.0-dev.20260101-abc1234
 
 set -euo pipefail
 
 VERSION="${1:?version argument required}"
 SIGN_KEY="${SIGN_KEY:-/tmp/ocg-signing-key.pem}"
+SKIP_SIGN="${SKIP_SIGN:-0}"
 OCM_SERVICES="data-ingestion telemetry-store inventory-store inventory-connector"
 OCM_COMPONENT="github.com/operational-context-graph/operational-context-graph"
 OCM_CTF="ctf::./bin/ctf//"
@@ -32,19 +36,20 @@ for tool in ocm helm yq python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool: not found" >&2; exit 1; }
 done
 
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "error: VERSION '$VERSION' is not valid semver (X.Y.Z)" >&2
+if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+  echo "error: VERSION '$VERSION' must start with X.Y.Z semver" >&2
   exit 1
 fi
 
-if [ ! -s "$SIGN_KEY" ]; then
-  echo "error: SIGN_KEY='$SIGN_KEY' does not exist or is empty" >&2
-  exit 1
-fi
-
-if [ ! -s .ocm/ocg.pub.pem ]; then
-  echo "error: .ocm/ocg.pub.pem: missing or empty" >&2
-  exit 1
+if [ "$SKIP_SIGN" != "1" ]; then
+  if [ ! -s "$SIGN_KEY" ]; then
+    echo "error: SIGN_KEY='$SIGN_KEY' does not exist or is empty" >&2
+    exit 1
+  fi
+  if [ ! -s .ocm/ocg.pub.pem ]; then
+    echo "error: .ocm/ocg.pub.pem: missing or empty" >&2
+    exit 1
+  fi
 fi
 
 for svc in $OCM_SERVICES; do
@@ -64,7 +69,7 @@ for svc in $OCM_SERVICES; do
   fi
 done
 
-echo "preflight: OK (VERSION=${VERSION})"
+echo "preflight: OK (VERSION=${VERSION} SKIP_SIGN=${SKIP_SIGN})"
 
 # ---------------------------------------------------------------------------
 # Stage 1: build — Helm chart + bundle-manifest.yaml + image-values.yaml
@@ -129,6 +134,12 @@ for svc in $OCM_SERVICES; do
   fi
 done
 echo "inspect: OK"
+
+if [ "$SKIP_SIGN" = "1" ]; then
+  tar -czf "bin/ocg-${VERSION}.ctf.tgz" -C bin ctf/
+  echo "package: unsigned bundle — bin/ocg-${VERSION}.ctf.tgz"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Stage 4: sign — .ocm/config resolves key from /tmp/ocg-signing-key.pem
