@@ -196,13 +196,17 @@ require-targets:
 # =============================================================================
 # Entry points sharing scripts/ocm-bundle.sh (build → package → inspect → sign → verify):
 #
-#   make ocm-build              — build and sign; VERSION must be supplied.
-#                                 Works for both dev CI (untagged HEAD) and releases.
+#   make ocm-build              — build and sign from pre-pulled OCI tarballs in
+#                                 bin/images/; VERSION must be supplied. Used by
+#                                 the dev CI job (untagged HEAD, dev version).
 #   make ocm-release-preflight  — release guard: verifies HEAD is tagged vVERSION
-#                                 and working tree is clean. Run before ocm-build
+#                                 and working tree is clean. Run before ocm-reversion
 #                                 in the release workflow.
-#   make ocm-dev                — local path: builds images via docker buildx bake first,
-#                                 then runs the same pipeline script.
+#   make ocm-dev                — local path: builds images via docker buildx bake
+#                                 first, then runs the same pipeline script.
+#
+# For the release workflow, scripts/ocm-reversion.sh re-versions the dev CTF from
+# GHCR rather than rebuilding from source.
 #
 # Required env:
 #   SIGN_KEY     - path to RSA private key PEM (default: /tmp/ocg-signing-key.pem)
@@ -212,7 +216,7 @@ require-targets:
 #
 # Usage:
 #   CI (dev):     VERSION=0.0.0-dev.DATE-SHA SIGN_KEY=/run/secrets/ocg.key make ocm-build
-#   CI (release): VERSION=1.2.3 make ocm-release-preflight && VERSION=1.2.3 SIGN_KEY=/run/secrets/ocg.key make ocm-build
+#   CI (release): scripts/ocm-reversion.sh <dev-version> <release-version> <registry>
 #   Local (dev):  SIGN_KEY=.ocm/ocg.key make ocm-dev
 #   Local (dev):  DEV_VERSION=0.1.0 SIGN_KEY=.ocm/ocg.key make ocm-dev
 
