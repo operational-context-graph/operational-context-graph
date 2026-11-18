@@ -161,7 +161,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write
+      packages: write  # required: pushes container images and attestations to GHCR
       attestations: write
       id-token: write
     outputs:
@@ -203,7 +203,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write
+      packages: write  # required: helm push publishes the chart to GHCR via OCI
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -236,7 +236,7 @@ jobs:
             --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
           helm push "operational-context-graph-${HELM_VERSION}.tgz" \
-            "oci://${REGISTRY}/operational-context-graph"
+            "oci://${REGISTRY}"
 
   # TODO: implement OCM bundle packaging (separate PR/branch).
   # Placeholder wired into dependency graph so the system alias job
@@ -248,7 +248,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write
     outputs:
       digest: ${{ steps.placeholder.outputs.digest }}
     steps:

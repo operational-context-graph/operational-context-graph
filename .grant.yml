@@ -27,6 +27,7 @@ allow:
   - Zlib
   - CC0-*
   - BSL-1.0
+  - BlueOak-1.0.0
 
 # Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
