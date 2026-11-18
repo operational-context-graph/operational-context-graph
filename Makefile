@@ -194,15 +194,15 @@ require-targets:
 # =============================================================================
 # OCM Bundle Pipeline
 # =============================================================================
-# Two entry points sharing scripts/ocm-bundle.sh for the pipeline stages
-# (build → package → inspect → sign → verify):
+# Entry points sharing scripts/ocm-bundle.sh (build → package → inspect → sign → verify):
 #
-#   make ocm-build   — release path: requires git tag + clean tree + pre-pulled
-#                      OCI tarballs in bin/images/ (done by CI pull step)
-#   make ocm-dev     — local path: builds images via docker buildx bake first,
-#                      then runs the same pipeline script
-#
-# Both call scripts/ocm-bundle.sh <version> with SIGN_KEY set.
+#   make ocm-build              — build and sign; VERSION must be supplied.
+#                                 Works for both dev CI (untagged HEAD) and releases.
+#   make ocm-release-preflight  — release guard: verifies HEAD is tagged vVERSION
+#                                 and working tree is clean. Run before ocm-build
+#                                 in the release workflow.
+#   make ocm-dev                — local path: builds images via docker buildx bake first,
+#                                 then runs the same pipeline script.
 #
 # Required env:
 #   SIGN_KEY     - path to RSA private key PEM (default: /tmp/ocg-signing-key.pem)
@@ -211,9 +211,10 @@ require-targets:
 #   DEV_VERSION  - semver string to use for the local build (default: 0.0.0)
 #
 # Usage:
-#   CI (release):  VERSION=1.2.3 SIGN_KEY=/run/secrets/ocg.key make ocm-build
-#   Local (dev):   SIGN_KEY=.ocm/ocg.key make ocm-dev
-#   Local (dev):   DEV_VERSION=0.1.0 SIGN_KEY=.ocm/ocg.key make ocm-dev
+#   CI (dev):     VERSION=0.0.0-dev.DATE-SHA SIGN_KEY=/run/secrets/ocg.key make ocm-build
+#   CI (release): VERSION=1.2.3 make ocm-release-preflight && VERSION=1.2.3 SIGN_KEY=/run/secrets/ocg.key make ocm-build
+#   Local (dev):  SIGN_KEY=.ocm/ocg.key make ocm-dev
+#   Local (dev):  DEV_VERSION=0.1.0 SIGN_KEY=.ocm/ocg.key make ocm-dev
 
 .NOTPARALLEL:
 
@@ -222,23 +223,40 @@ SIGN_KEY     ?= /tmp/ocg-signing-key.pem
 OCM_SERVICES := data-ingestion telemetry-store inventory-store inventory-connector
 DEV_VERSION  ?= 0.0.0
 
-.PHONY: ocm-build ocm-dev ocm-dev-images
+.PHONY: ocm-build ocm-release-preflight ocm-dev ocm-dev-images
 
 # ---------------------------------------------------------------------------
-# ocm-build: release entry point
-# Validates git tag + clean tree, then delegates to the pipeline script.
-# OCI tarballs must already be present in bin/images/ (pulled by CI).
+# ocm-release-preflight: release guard — run before ocm-build in release CI.
+# Checks that HEAD is tagged with a matching vX.Y.Z tag and the working tree
+# is clean. Keeps these constraints out of ocm-build so the same target works
+# for both the dev CI job (untagged HEAD) and the release workflow.
+# ---------------------------------------------------------------------------
+
+ocm-release-preflight:
+	@test -n "$(VERSION)" || { \
+	  echo "ERROR: VERSION is required. Example: make ocm-release-preflight VERSION=1.2.3"; exit 1; \
+	}
+	@git describe --tags --exact-match HEAD 2>/dev/null | grep -qxF "v$(VERSION)" || { \
+	  echo "ERROR: HEAD is not tagged v$(VERSION)"; \
+	  echo "       current tags at HEAD: $$(git tag --points-at HEAD | tr '\n' ' ')"; \
+	  exit 1; \
+	}
+	@test -z "$$(git status --porcelain)" || { \
+	  echo "ERROR: working tree is dirty:"; git status --porcelain; exit 1; \
+	}
+	@echo "ocm-release-preflight: OK (VERSION=$(VERSION), HEAD tagged v$(VERSION), tree clean)"
+
+# ---------------------------------------------------------------------------
+# ocm-build: build and sign the OCM bundle.
+# OCI tarballs must already be in bin/images/ (pulled by pull-images in CI).
+# VERSION must be supplied by the caller; no git-tag or clean-tree guard here
+# so this target works for both dev CI builds (untagged HEAD) and releases.
+# Run make ocm-release-preflight first when building a release.
 # ---------------------------------------------------------------------------
 
 ocm-build:
-	@# Derive VERSION from git tag if not set
-	$(eval VERSION ?= $(shell git describe --tags --exact-match HEAD 2>/dev/null | sed 's/^v//' || true))
 	@test -n "$(VERSION)" || { \
-	  echo "ERROR: VERSION is not set and HEAD is not tagged with a vX.Y.Z tag"; exit 1; \
-	}
-	@# Require clean working tree for releases
-	@test -z "$$(git status --porcelain)" || { \
-	  echo "ERROR: working tree is dirty:"; git status --porcelain; exit 1; \
+	  echo "ERROR: VERSION is required. Example: make ocm-build VERSION=1.2.3"; exit 1; \
 	}
 	SIGN_KEY="$(SIGN_KEY)" scripts/ocm-bundle.sh "$(VERSION)"
 

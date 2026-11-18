@@ -252,6 +252,9 @@ jobs:
             -o /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
 
+      - name: Release preflight
+        run: VERSION="${VERSION}" make ocm-release-preflight
+
       - name: Build, sign, and verify OCM bundle
         run: SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
 

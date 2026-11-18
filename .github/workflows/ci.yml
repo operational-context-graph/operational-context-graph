@@ -312,7 +312,7 @@ jobs:
       - name: Build and sign OCM bundle
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: SIGN_KEY=/tmp/ocg-signing-key.pem scripts/ocm-bundle.sh "${VERSION}"
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
 
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
