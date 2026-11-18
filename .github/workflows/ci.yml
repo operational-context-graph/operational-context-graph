@@ -236,7 +236,7 @@ jobs:
             --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
           helm push "operational-context-graph-${HELM_VERSION}.tgz" \
-            "oci://${REGISTRY}/operational-context-graph"
+            "oci://${REGISTRY}"
 
   # TODO: implement OCM bundle packaging (separate PR/branch).
   # Placeholder wired into dependency graph so the system alias job
