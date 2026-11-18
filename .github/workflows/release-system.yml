@@ -268,7 +268,7 @@ jobs:
         run: |
           ocm transfer component-version \
             ctf::./bin/ctf// \
-            "oci::${REGISTRY}/operational-context-graph-bundle:${VERSION}"
+            "oci::${REGISTRY}/operational-context-graph-bundle"
 
       - name: Upload OCM CTF artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
