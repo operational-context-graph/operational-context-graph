@@ -242,7 +242,7 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           helm pull \
-            "oci://${REGISTRY}/operational-context-graph" \
+            "oci://${REGISTRY}/operational-context-graph-helm/operational-context-graph" \
             --version "${VERSION}"
           ls -la "operational-context-graph-${VERSION}.tgz"
       - name: Upload Helm chart artifact
