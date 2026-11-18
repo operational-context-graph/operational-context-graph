@@ -40,7 +40,7 @@ WORKSPACE="bin/reversion-workspace"
 # Prerequisites
 # ---------------------------------------------------------------------------
 
-for tool in ocm helm yq python3; do
+for tool in ocm helm yq jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool: not found" >&2; exit 1; }
 done
 
@@ -98,46 +98,31 @@ mkdir -p "${WORKSPACE}"
 echo "extract: reading resource versions from dev descriptor..."
 DESCRIPTOR_JSON=$(ocm get component-version "${DEV_REF}" -o json)
 
-# Read resource version for each named resource; validate they are present
 get_resource_version() {
   local name="$1"
-  echo "$DESCRIPTOR_JSON" \
-    | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-resources = d.get('component', {}).get('resources', [])
-for r in resources:
-    if r.get('name') == sys.argv[1]:
-        print(r['version'])
-        sys.exit(0)
-print('', end='')
-" "$name"
+  local v
+  v=$(echo "$DESCRIPTOR_JSON" \
+    | jq -r --arg name "$name" \
+        '.component.resources[] | select(.name == $name) | .version')
+  if [ -z "$v" ] || [ "$v" = "null" ]; then
+    echo "error: resource '${name}' not found in dev descriptor" >&2
+    exit 1
+  fi
+  echo "$v"
 }
 
 declare -A RES_VERSIONS
 for svc in $OCM_SERVICES; do
-  v=$(get_resource_version "$svc")
-  if [ -z "$v" ]; then
-    echo "error: resource '${svc}' not found in dev descriptor" >&2
-    exit 1
-  fi
-  RES_VERSIONS[$svc]="$v"
-  echo "  ${svc}: ${v}"
+  RES_VERSIONS[$svc]=$(get_resource_version "$svc")
+  echo "  ${svc}: ${RES_VERSIONS[$svc]}"
 done
 
 V_CHART=$(get_resource_version "chart")
 V_BUNDLE_MANIFEST=$(get_resource_version "bundle-manifest")
 V_IMAGE_VALUES=$(get_resource_version "image-values")
-
-for name_v in "chart:${V_CHART}" "bundle-manifest:${V_BUNDLE_MANIFEST}" "image-values:${V_IMAGE_VALUES}"; do
-  name="${name_v%%:*}"
-  v="${name_v##*:}"
-  if [ -z "$v" ]; then
-    echo "error: resource '${name}' not found in dev descriptor" >&2
-    exit 1
-  fi
-  echo "  ${name}: ${v}"
-done
+echo "  chart: ${V_CHART}"
+echo "  bundle-manifest: ${V_BUNDLE_MANIFEST}"
+echo "  image-values: ${V_IMAGE_VALUES}"
 
 echo "extract: downloading resources from dev CTF..."
 
@@ -175,10 +160,6 @@ if [ -z "$HELM_TGZ" ]; then
   echo "error: no .tgz found under ${WORKSPACE}/chart after helm extraction" >&2
   exit 1
 fi
-
-# Read labels from dev descriptor to carry forward
-LABELS_JSON=$(echo "$DESCRIPTOR_JSON" \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get("component",{}).get("labels",[])))')
 
 CONSTRUCTOR="${WORKSPACE}/component-constructor.yaml"
 cat > "$CONSTRUCTOR" <<YAML
@@ -225,22 +206,12 @@ cat >> "$CONSTRUCTOR" <<YAML
           path: ${WORKSPACE}/image-values.yaml
 YAML
 
-# Carry labels forward from dev descriptor
-if [ "$LABELS_JSON" != "[]" ] && [ "$LABELS_JSON" != "null" ]; then
-  python3 - "$CONSTRUCTOR" "$LABELS_JSON" <<'PYEOF'
-import sys, json
-path, labels_json = sys.argv[1], sys.argv[2]
-labels = json.loads(labels_json)
-with open(path) as f:
-    content = f.read()
-labels_yaml = "    labels:\n" + "".join(
-    f"      - name: \"{l['name']}\"\n        value: \"{l['value']}\"\n"
-    for l in labels
-)
-content = content.replace("    labels: []\n", labels_yaml)
-with open(path, "w") as f:
-    f.write(content)
-PYEOF
+# Carry labels forward from dev descriptor via yq (reads JSON array from env)
+LABELS_JSON=$(echo "$DESCRIPTOR_JSON" | jq '.component.labels // []')
+if [ "$LABELS_JSON" != "[]" ]; then
+  LABELS_JSON="$LABELS_JSON" yq -i \
+    '.components[0].labels = (strenv(LABELS_JSON) | fromjson)' \
+    "$CONSTRUCTOR"
   echo "build: labels carried forward from dev descriptor"
 fi
 
