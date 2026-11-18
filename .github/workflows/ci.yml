@@ -217,6 +217,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to GHCR (Helm)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.repository_owner }}" \
+            --password-stdin
       - name: Package and push Helm chart
         env:
           VERSION: ${{ needs.publish-dev.outputs.version }}
@@ -231,7 +236,7 @@ jobs:
             --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
           helm push "operational-context-graph-${HELM_VERSION}.tgz" \
-            "oci://${REGISTRY}/operational-context-graph"
+            "oci://${REGISTRY}"
 
   # TODO: implement OCM bundle packaging (separate PR/branch).
   # Placeholder wired into dependency graph so the system alias job
