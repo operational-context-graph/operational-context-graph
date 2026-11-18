@@ -79,6 +79,8 @@ slug="${slug_path##*/}"
 # Resolve the full component path by searching the entire repo for a directory
 # whose basename matches the slug and contains a recognisable module manifest.
 # Excludes hidden directories and node_modules.
+# Note: if two components share a slug (unlikely but possible), the alphabetically
+# first match wins. Add a uniqueness check here if that ever becomes a concern.
 component=""
 while IFS= read -r manifest; do
   dir="$(dirname "$manifest")"

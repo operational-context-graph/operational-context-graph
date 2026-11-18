@@ -144,8 +144,16 @@ When the source branch of a main push is `release/<version>`, the CI pipeline SH
 - Automated component discovery from workspace manifests — the bake targets and component slugs are enumerated statically.
 - Changing the CI behavior for pull requests — PR CI continues to run lint, build, and test only; no artifact push.
 
-## Open Questions
+## Non-Goals
 
-- **OCM bundle tool**: which CLI (`ocm`, `ctf`, other?) is used to package the OCM bundle? The spec assumes `ocm` CLI. Implementor must confirm availability on `ubuntu-latest` runners.
-- **Helm OCI target path**: spec assumes `ghcr.io/operational-context-graph/operational-context-graph`. Confirm the target image name and namespace before implementing.
-- **Alias mechanism**: spec assumes `crane tag` for re-tagging without rebuild. Confirm `crane` is available on `ubuntu-latest` runners or identify the alternative.
+- Multi-architecture builds (`linux/arm64`) — all images target `linux/amd64` only.
+- Integration or end-to-end tests as part of the CI suite — only unit tests and static analysis.
+- Automated component discovery from workspace manifests — the bake targets and component slugs are enumerated statically.
+- Changing the CI behavior for pull requests — PR CI continues to run lint, build, and test only; no artifact push.
+
+## Implementation Notes
+
+- **Alias mechanism**: `crane tag` is used for re-tagging without rebuild. Crane is installed at runtime from the GitHub releases page at a pinned version (v0.22.1, SHA256 `0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0`). The installer verifies the checksum before use.
+- **Dev tag date source**: the commit committer date is fetched via `gh api repos/{repo}/commits/{sha}` and formatted as `YYYYMMDD`. This ensures the date matches the commit timestamp rather than the runner's wall clock.
+- **Helm OCI target path**: `ghcr.io/<repo-owner>/operational-context-graph/operational-context-graph`.
+- **OCM bundle**: the OCM alias step is a placeholder pending `publish-ocm-bundle` workflow implementation.

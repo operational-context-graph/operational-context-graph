@@ -56,3 +56,4 @@ jobs:
           scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
           git tag -a "${TAG}" -m "${MESSAGE}"
           git push origin "${TAG}"
+          echo "Pushed tag ${TAG}"

@@ -8,7 +8,7 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 
 ### Requirement: Each release workflow is scoped to one release type with minimal permissions
 
-`release-component.yml` SHALL declare only `contents: read` at the workflow level (individual jobs acquire `contents: write` via the shared `push-release-tag.yml` reusable workflow and `packages: write` for image aliasing). `release-system.yml` SHALL declare `contents: read` and `packages: read` at the workflow level; the `alias-release-artifacts` job acquires `packages: write`. Neither workflow SHALL declare permissions beyond what its release type requires at the workflow level.
+`release-component.yml` SHALL declare only `contents: read` at the workflow level (individual jobs acquire `contents: write` and `packages: write` as needed). `release-system.yml` SHALL declare `contents: read` and `packages: read` at the workflow level. Neither workflow SHALL declare permissions beyond what its release type requires at the workflow level.
 
 #### Scenario: Component release workflow has no workflow-level registry write permissions
 - **WHEN** a code reviewer inspects `release-component.yml`
@@ -17,6 +17,27 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 #### Scenario: System release workflow has no workflow-level registry write permissions
 - **WHEN** a code reviewer inspects `release-system.yml`
 - **THEN** `packages: write` does not appear at the workflow level; only the `alias-release-artifacts` job declares it
+
+---
+
+### Requirement: Local reusable workflow references use the $/ prefix
+
+Local reusable workflow references SHALL use the `$/` prefix (e.g., `$/.github/workflows/shared/push-release-tag.yml`), not `./`. The `./` prefix is flagged as a security finding by zizmor.
+
+#### Scenario: Local reusable workflow reference uses $/ prefix
+- **WHEN** a code reviewer inspects `release-component.yml` or `release-system.yml`
+- **THEN** all `uses:` references to workflows in the same repository start with `$/`
+- **AND** no `uses:` reference starts with `./`
+
+---
+
+### Requirement: workflow_run trigger carries an inline zizmor suppression comment
+
+The `workflow_run` trigger line SHALL carry `# zizmor: ignore[dangerous-triggers]` as an inline comment on the same line. A standalone comment on a preceding line is not recognized by zizmor.
+
+#### Scenario: zizmor suppression is inline on the trigger line
+- **WHEN** a code reviewer inspects `release-component.yml` or `release-system.yml`
+- **THEN** the `workflow_run:` key and `# zizmor: ignore[dangerous-triggers]` appear on the same line
 
 ---
 
@@ -126,6 +147,36 @@ Neither `release-component.yml` nor `release-system.yml` SHALL build container i
 - **WHEN** `release_type` is `component`
 - **THEN** no `gh release create` or equivalent step runs in `release-component.yml`
 - **AND** the GitHub Releases page shows no new entry after the workflow completes
+
+---
+
+### Requirement: System release notes are extracted from CHANGELOG.md by a script
+
+`release-system.yml` SHALL extract the GitHub Release body from the root `CHANGELOG.md` by invoking `scripts/extract-release-notes.sh <version> CHANGELOG.md`. The script exits non-zero with a GitHub Actions error annotation when no matching section is found.
+
+#### Scenario: Release notes extracted successfully
+- **WHEN** `release_type` is `system` for version `1.0.0` and `CHANGELOG.md` contains `## [1.0.0] - 2026-03-15`
+- **THEN** `scripts/extract-release-notes.sh 1.0.0 CHANGELOG.md` prints the section body and exits 0
+- **AND** the GitHub Release description contains the extracted markdown
+
+#### Scenario: CHANGELOG section missing for requested version
+- **WHEN** `scripts/extract-release-notes.sh` finds no heading matching the supplied version
+- **THEN** the script exits non-zero with `::error::No release notes found for version <version>`
+- **AND** the `generate-system-release-notes` job fails; the GitHub Release is not created
+
+---
+
+### Requirement: extract-release-notes.sh supports both CHANGELOG heading formats
+
+`scripts/extract-release-notes.sh` SHALL match headings in either the git-cliff format (`## v<version> (<YYYY-MM-DD>)`) or the system format (`## [<version>] - <YYYY-MM-DD>`). The match is on the version string regardless of brackets or leading `v`. The section body is everything between the matched heading (exclusive) and the next `##` heading (exclusive), with leading and trailing blank lines stripped.
+
+#### Scenario: git-cliff format heading matched
+- **WHEN** `CHANGELOG.md` contains `## v1.2.3 (2026-03-15)` and version `1.2.3` is requested
+- **THEN** the script extracts the body of that section
+
+#### Scenario: System format heading matched
+- **WHEN** `CHANGELOG.md` contains `## [1.0.0] - 2026-03-15` and version `1.0.0` is requested
+- **THEN** the script extracts the body of that section
 
 ## Non-Goals
 

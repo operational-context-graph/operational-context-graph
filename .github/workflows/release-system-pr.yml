@@ -1,9 +1,9 @@
 # Creates a system release PR for the full operational-context-graph stack.
 #
 # Accepts optional per-component version overrides. When a version input is empty,
-# resolves the latest released version for that component from ghcr.io. Pins image
-# tags and digests into helm/charts/*/values.yaml so the Helm chart reflects the
-# exact images that form the system release.
+# resolves the latest released version for that component from git tags. Updates each
+# component's subchart values.yaml .image.tag so the Helm chart always reflects the
+# exact component versions that form the system release.
 ---
 name: Release System PR
 run-name: "System release PR creation for v${{ inputs.version }}"
@@ -12,23 +12,23 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 1.0.0)"
+        description: "Release version (e.g. 0.0.1)"
         required: true
         type: string
       version_data_ingestion:
-        description: "data-ingestion version (leave empty to use latest released)"
+        description: "data-ingestion version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_inventory_connector:
-        description: "inventory-connector version (leave empty to use latest released)"
+        description: "inventory-connector version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_inventory_store:
-        description: "inventory-store version (leave empty to use latest released)"
+        description: "inventory-store version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
       version_telemetry_store:
-        description: "telemetry-store version (leave empty to use latest released)"
+        description: "telemetry-store version (e.g. 0.0.1, leave empty to use latest released)"
         required: false
         type: string
 
@@ -41,24 +41,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
-    outputs:
-      resolved_versions: ${{ steps.resolve.outputs.resolved_versions }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - name: Install skopeo
-        run: sudo apt-get install -y skopeo
-
       - name: Validate version format
         env:
           VERSION: ${{ inputs.version }}
         run: scripts/validate-version.sh "$VERSION"
-
       - name: Check tag does not already exist
         env:
           VERSION: ${{ inputs.version }}
@@ -67,28 +59,6 @@ jobs:
             echo "::error::Tag 'v${VERSION}' already exists"
             exit 1
           fi
-
-      - name: Resolve component versions from ghcr
-        id: resolve
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
-          V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
-          V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
-          V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
-        run: |
-          # Capture markdown table (stdout) and structured resolution data (stderr)
-          scripts/resolve-component-versions.sh \
-            "${V_DATA_INGESTION}" \
-            "${V_INVENTORY_STORE}" \
-            "${V_TELEMETRY_STORE}" \
-            "${V_INVENTORY_CONNECTOR}" \
-            2>/tmp/resolved-versions.txt
-
-          resolved=$(grep -A100 'RESOLVED_VERSIONS:' /tmp/resolved-versions.txt | tail -n +2 || true)
-          echo "resolved_versions<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$resolved" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
   create-system-release-pr:
     name: Create Release PR
@@ -106,14 +76,12 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: true
           fetch-depth: 0
-
       - name: Configure git identity
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -121,27 +89,24 @@ jobs:
         run: |
           APP_USER_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
           scripts/configure-git-identity.sh "$APP_SLUG" "$APP_USER_ID"
-
       - name: Create release branch
         env:
           VERSION: ${{ inputs.version }}
         run: git checkout -b "release/${VERSION}"
 
-      - name: Install yq
-        run: |
-          YQ_VERSION=v4.44.6
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
-            -o /usr/local/bin/yq
-          chmod +x /usr/local/bin/yq
-
-      - name: Pin image tags and digests
+      - name: Pin subchart image tags
         env:
-          RESOLVED_VERSIONS: ${{ needs.validate.outputs.resolved_versions }}
+          V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
+          V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
+          V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
+          V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
           VERSION: ${{ inputs.version }}
         run: |
-          echo "${RESOLVED_VERSIONS}" | scripts/pin-image-digests.sh
-          git add helm/charts/*/values.yaml
-          git diff --cached --quiet || git commit -m "chore(release): pin component image tags and digests for v${VERSION}"
+          scripts/pin-subchart-versions.sh "data-ingestion"      "services/data-ingestion"                  "${V_DATA_INGESTION}"
+          scripts/pin-subchart-versions.sh "inventory-connector" "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
+          scripts/pin-subchart-versions.sh "inventory-store"     "services/inventory-store"                 "${V_INVENTORY_STORE}"
+          scripts/pin-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
+          git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
 
       - name: Update changelog
         env:
@@ -154,24 +119,16 @@ jobs:
             "${SECTION}"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
-
-      - name: Bump umbrella chart version
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          yq -i ".version = \"${VERSION}\"" helm/Chart.yaml
-          yq -i ".appVersion = \"${VERSION}\"" helm/Chart.yaml
-          git add helm/Chart.yaml
-          git diff --cached --quiet || git commit -m "chore(release): bump helm chart version to v${VERSION}"
-
+      # TODO: Add step that updates OCM component descriptor with the new component versions
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ inputs.version }}
         run: |
           git push origin "release/${VERSION}"
-          gh pr create \
+          pr_url=$(gh pr create \
             --base main \
             --head "release/${VERSION}" \
             --title "chore(release): v${VERSION}" \
-            --body "System release v${VERSION}. See CHANGELOG.md for details."
+            --body "System release v${VERSION}. See CHANGELOG.md for details.")
+          echo "Release PR created: ${pr_url}"

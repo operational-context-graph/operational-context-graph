@@ -77,9 +77,9 @@ jobs:
           - [ ] Add a label entry for the component to \`.github/labeler.yml\`
           - [ ] Add a scope for the component to \`.github/workflows/semantic-pull-requests.yml\` if one does not already exist
           - [ ] Add a target for the component to \`docker-bake.hcl\`, set the \`org.opencontainers.image.description\` label, and add it to the \`default\` group
-          - [ ] Add the component to the \`matrix.package\` list in \`.github/workflows/dev-image-cleanup.yml\` if it has a container image
           - [ ] If the component has a container image: navigate to the package in the org's Packages page and grant the repository \`Admin\` access under Package settings → Manage Actions access
-          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed — the subchart directory name must match the component slug (basename of the component path)
+          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed (note: the subchart directory name must match the component slug, basename of the component path)
+          - [ ] Add the component to \`.github/workflows/release-system-pr.yml\`: add a \`version_<slug>\` workflow input, pass it to \`scripts/pin-subchart-versions.sh\`, and add the corresponding \`matrix.package\` entry in \`.github/workflows/artifact-cleanup.yml\`
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
