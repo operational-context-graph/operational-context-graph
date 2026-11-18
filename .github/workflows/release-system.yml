@@ -117,7 +117,7 @@ jobs:
             | cut -c1-10 \
             | tr -d '-')
           DEV_TAG="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
-          src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
+          src="${REGISTRY}/operational-context-graph:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           echo "Retagged Helm chart ${src} → ${VERSION}"
           # TODO: retag OCM bundle when publish-ocm-bundle is implemented
@@ -145,7 +145,7 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           helm pull \
-            "oci://${REGISTRY}/operational-context-graph/operational-context-graph" \
+            "oci://${REGISTRY}/operational-context-graph" \
             --version "${VERSION}"
           ls -la "operational-context-graph-${VERSION}.tgz"
       - name: Upload Helm chart artifact
