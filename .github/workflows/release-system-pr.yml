@@ -108,6 +108,28 @@ jobs:
           scripts/pin-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
           git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
 
+      - name: Update OCM component descriptor labels
+        env:
+          V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
+          V_INVENTORY_CONNECTOR: ${{ inputs.version_inventory_connector }}
+          V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
+          V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Resolve versions the same way pin-subchart-versions.sh does — use the
+          # input if set, otherwise fall back to the latest git tag for each service.
+          resolve() {
+            local override="$1" path="$2"
+            if [ -n "$override" ]; then echo "$override"; return; fi
+            git tag --list "${path}/v*" | sed "s|${path}/v||" | sort -V | tail -1
+          }
+          export V_DATA_INGESTION=$(resolve      "$V_DATA_INGESTION"      "services/data-ingestion")
+          export V_INVENTORY_CONNECTOR=$(resolve "$V_INVENTORY_CONNECTOR" "services/connectors/inventory-connector")
+          export V_INVENTORY_STORE=$(resolve     "$V_INVENTORY_STORE"     "services/inventory-store")
+          export V_TELEMETRY_STORE=$(resolve     "$V_TELEMETRY_STORE"     "services/telemetry-store")
+          scripts/update-ocm-component-labels.sh
+          git diff --cached --quiet || git commit -m "chore(release): update OCM component version labels for v${VERSION}"
+
       - name: Update changelog
         env:
           VERSION: ${{ inputs.version }}
@@ -119,7 +141,6 @@ jobs:
             "${SECTION}"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
-      # TODO: Add step that updates OCM component descriptor with the new component versions
       - name: Open release PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
