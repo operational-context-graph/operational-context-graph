@@ -150,9 +150,6 @@ jobs:
         run: git push origin "$BRANCH"
 
       - name: Commit changelog via GitHub API
-        # Use the GitHub API to create the commit so GitHub signs it automatically.
-        # A runner-side git commit is unsigned and fails branch protection rules
-        # that require verified signatures.
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENT_PATH: ${{ inputs.component_path }}
