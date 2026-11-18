@@ -78,7 +78,7 @@ jobs:
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
-      packages: write
+      packages: write  # required: crane tag retags the dev Helm chart in GHCR to the release version
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -229,7 +229,7 @@ jobs:
       packages: read
     steps:
       - name: Set up Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -242,11 +242,11 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           helm pull \
-            "oci://${REGISTRY}/operational-context-graph-helm/operational-context-graph" \
+            "oci://${REGISTRY}/operational-context-graph" \
             --version "${VERSION}"
           ls -la "operational-context-graph-${VERSION}.tgz"
       - name: Upload Helm chart artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ocg-helm-${{ needs.detect.outputs.version }}
           path: operational-context-graph-${{ needs.detect.outputs.version }}.tgz

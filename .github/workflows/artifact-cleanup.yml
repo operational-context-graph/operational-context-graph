@@ -20,7 +20,7 @@ jobs:
     name: Delete stale dev image versions
     runs-on: ubuntu-latest
     permissions:
-      packages: write
+      packages: write  # required: deletes stale dev container image versions from GHCR
     strategy:
       matrix:
         package:
@@ -52,7 +52,7 @@ jobs:
     name: Delete stale dev Helm chart versions
     runs-on: ubuntu-latest
     permissions:
-      packages: write
+      packages: write  # required: deletes stale dev Helm chart versions from GHCR
     steps:
       - name: Delete dev versions older than 7 days
         env:
