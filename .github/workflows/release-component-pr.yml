@@ -146,16 +146,35 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Commit changelog
+      - name: Push release branch
+        run: git push origin "$BRANCH"
+
+      - name: Commit changelog via GitHub API
+        # Use the GitHub API to create the commit so GitHub signs it automatically.
+        # A runner-side git commit is unsigned and fails branch protection rules
+        # that require verified signatures.
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENT_PATH: ${{ inputs.component_path }}
           VERSION: ${{ inputs.version }}
+          REPO: ${{ github.repository }}
         run: |
-          git add "$COMPONENT_PATH/CHANGELOG.md"
-          if git diff --cached --quiet; then
-            echo "No changelog changes to commit"
+          CHANGELOG="${COMPONENT_PATH}/CHANGELOG.md"
+          if ! git diff --quiet HEAD -- "$CHANGELOG" || git ls-files --others --error-unmatch "$CHANGELOG" 2>/dev/null; then
+            CONTENT=$(base64 -w 0 < "$CHANGELOG")
+            SHA=$(gh api "repos/${REPO}/contents/${CHANGELOG}" \
+              --jq .sha \
+              -H "Accept: application/vnd.github+json")
+            gh api "repos/${REPO}/contents/${CHANGELOG}" \
+              -X PUT \
+              -H "Accept: application/vnd.github+json" \
+              -f message="chore(release): update ${SLUG} changelog for v${VERSION}" \
+              -f content="$CONTENT" \
+              -f sha="$SHA" \
+              -f branch="$BRANCH"
+            echo "Changelog committed via API"
           else
-            git commit -m "chore(release): update ${SLUG} changelog for v${VERSION}"
+            echo "No changelog changes to commit"
           fi
 
       - name: Open release PR
@@ -164,7 +183,6 @@ jobs:
           VERSION: ${{ inputs.version }}
           PR_BODY: ${{ steps.changelog.outputs.pr_body }}
         run: |
-          git push origin "$BRANCH"
           pr_url=$(gh pr create \
             --base main \
             --head "$BRANCH" \
