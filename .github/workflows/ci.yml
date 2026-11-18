@@ -1,5 +1,7 @@
 # Runs CI checks on every push and pull request targeting main.
-# On pushes to main, also builds and publishes dev images to GHCR after all checks pass.
+# On pushes to main, also builds and publishes dev images, Helm chart, and OCM bundle
+# to GHCR after all checks pass.
+#
 ---
 name: Continuous Integration
 
@@ -82,6 +84,10 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
       - name: Run tests
+        # COVERAGE_THRESHOLD=0 disables the coverage gate in make test-all.
+        # Coverage is checked separately below with continue-on-error so failures
+        # post a PR comment rather than blocking the run during ramp-up.
+        # Raise the threshold in the Makefile once baseline coverage is established.
         run: make test-all COVERAGE_THRESHOLD=0
       - name: Check coverage
         id: coverage
@@ -189,3 +195,60 @@ jobs:
           sbom: true
         env:
           VERSION: ${{ steps.version.outputs.version }}
+
+  publish-helm:
+    name: Publish Dev Helm Chart
+    runs-on: ubuntu-latest
+    needs: [publish-dev, helm-lint]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Helm
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and push Helm chart
+        env:
+          VERSION: ${{ needs.publish-dev.outputs.version }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          # helm package requires valid semver. dev.YYYYMMDD-SHA is not semver
+          # (no MAJOR.MINOR.PATCH base), so prefix with 0.0.0- to satisfy the parser.
+          # The OCI tag pushed to GHCR still uses VERSION unchanged.
+          HELM_VERSION="0.0.0-${VERSION}"
+          helm dependency update helm/
+          helm package helm/ \
+            --version "${HELM_VERSION}" \
+            --app-version "${VERSION}"
+          helm push "operational-context-graph-${HELM_VERSION}.tgz" \
+            "oci://${REGISTRY}/operational-context-graph"
+
+  # TODO: implement OCM bundle packaging (separate PR/branch).
+  # Placeholder wired into dependency graph so the system alias job
+  # does not need a second PR when OCM support lands.
+  publish-ocm-bundle:
+    name: Publish Dev OCM Bundle (placeholder)
+    runs-on: ubuntu-latest
+    needs: [publish-helm]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.placeholder.outputs.digest }}
+    steps:
+      - name: Placeholder - OCM bundle not yet implemented
+        id: placeholder
+        run: |
+          echo "TODO: implement OCM bundle packaging"
+          echo "digest=" >> "$GITHUB_OUTPUT"

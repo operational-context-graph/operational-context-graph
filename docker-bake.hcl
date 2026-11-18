@@ -50,7 +50,7 @@ target "_base" {
 
 target "inventory-connector" {
   inherits   = ["_base"]
-  dockerfile = "services/connectors/inventory/Dockerfile"
+  dockerfile = "services/connectors/inventory-connector/Dockerfile"
   tags       = ["${REGISTRY}/inventory-connector:${VERSION}"]
   labels = {
     "org.opencontainers.image.description" = "Ingests asset and topology data from external inventory systems into the OCG Infrastructure Knowledge Base"
