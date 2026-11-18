@@ -20,11 +20,10 @@ import (
 // commitPattern accepts lowercase Git object identifiers using SHA-1 or SHA-256 lengths.
 var commitPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// Validate parses data and validates its closure against context.
-// It does not enforce application-specific response representation limits.
+// Validate checks canonical manifest bytes, selection metadata, byte integrity, reference resolution, historical
+// immutability, and predecessor bindings. It performs every check described by [Parse] and [Manifest.Validate].
 //
-// The data MUST satisfy [Parse]'s canonical representation requirements. The context supplies exact selected artifact
-// bytes, the Registry origin, and previously validated predecessors.
+// The context supplies exact selected artifact bytes, the Registry origin, and previously validated predecessors.
 //
 // It returns a metadata [Manifest] with authoritative [Manifest.Raw] bytes, not a copy populated from [Context.Artifacts].
 func Validate(data []byte, context Context) (Manifest, error) {
@@ -38,11 +37,51 @@ func Validate(data []byte, context Context) (Manifest, error) {
 	return m, nil
 }
 
-// Validate checks parsed metadata, release closure, lineage, and deterministic changes.
+// Validate checks a schema release manifest's fields and selected bytes against the schema release manifest format
+// specification.
+//
+// For artifact selections and byte integrity, it checks that:
+//   - Every selection matches its supplied metadata and exact payload and resource bytes.
+//   - Descriptors have valid media types, bundle paths, SHA-256 digests, and matching byte lengths within Registry limits.
+//   - Canonical URIs use the Registry origin and /v1/resources/{kind}/{artifactType}/{revision} path.
+//   - Artifact identities, revisions, canonical URIs, resources, dependencies, bindings, and catalog keys satisfy their respective uniqueness checks.
+//
+// For release closure and storage placement, it checks that:
+//   - Dependencies and catalog targets resolve within this release, and bindings select schema and context artifacts respectively.
+//   - Every canonical URI resolves to its artifact's primary payload.
+//   - JSON Schema identifiers select their owning payloads or resources in the catalog.
+//   - Runtime document references resolve through the catalog, and cross-artifact references have exact declared dependencies.
+//   - Schema payloads compile as Draft 2020-12, and context payloads are valid JSON-LD with the context media type.
+//   - Every canonical schema has one storage entry with registered stores, and source-record schemas have none.
+//
+// For source mappings, it checks that:
+//   - Each descriptor's id matches its artifact's logical type.
+//   - Schema selectors resolve to declared dependencies and revisions selected by this release.
+//   - Target versions identify this release or a supplied ancestor, with target revisions unchanged in this release.
+//   - Transformation targets are entity, identifier, or edge schemas.
+//   - Program references identify owned program resources with matching names and digests, and every program resource is referenced.
+//
+// For release history, it checks that:
+//   - The predecessor identifies the latest supplied release's version and digest, and the candidate schema version is new.
+//   - Reused revisions preserve revision-bound metadata, excluding bundle paths.
+//   - Newly selected revisions declare this release as their creation version, and retired logical identities do not reappear.
+//   - Historical canonical URIs and schema identifiers do not select different content.
+//   - Retargeted JSON aliases have historical context-only use rather than schema use.
+//
+// For deterministic changes, it checks that:
+//   - An initial change summary has compatibility initial and empty change arrays.
+//   - Later releases have an effective difference, even when changes are absent.
+//   - Present change arrays and compatibility equal the deterministic predecessor comparison, excluding the textual summary.
+//   - Present changes use exactly the next major, minor, or patch version, resetting lower components as appropriate.
 //
 // The [Context.History] MUST contain trusted, previously validated releases in oldest-first order.
 // The [Context.Artifacts] MUST match every selection's metadata and include its exact payload and resource bytes.
 // Retargeting JSON aliases also requires affected historical releases' bytes, as documented by [Context.Artifacts].
+//
+// Validation does not verify Git provenance, retrieve the manifest's format schema, or establish extension namespace ownership.
+// Document references resolve offline; validation rejects undeclared or unavailable document dependencies.
+// Source mapping validation allows shared source schemas and does not restrict source schema classification or execute programs.
+// Compatibility-based version increment checks apply only when changes are present.
 //
 // Validate reads the current fields; it does not parse [Manifest.Raw] or check that [Manifest.Raw] still represents
 // those fields. Callers SHOULD use the package-level [Validate] when starting from untrusted manifest bytes.
@@ -109,7 +148,19 @@ func (m Manifest) Validate(context Context) error {
 	return nil
 }
 
-// validateStructural checks format declarations, metadata shapes, collection limits, and canonical ordering.
+// validateStructural checks manifest metadata without resolving artifact bytes or history.
+// For declarations and artifact selections, it checks that:
+//   - The format is 1.0.0, schema versions use published syntax, and document URIs are absolute.
+//   - The source commit is a full lowercase Git object identifier.
+//   - Artifacts are non-empty and pass [validateArtifact], and payload and resource bundle paths are release-unique.
+//
+// For bindings and catalogs, it checks that:
+//   - Binding schema revisions are non-empty, and context arrays stay within the collection limit.
+//   - URI entries have valid absolute document identifiers, revisions, and optional resource names.
+//   - Storage entries select schema logical types and non-empty, bounded lists of registered stores.
+//   - All format-defined arrays pass [Manifest.validateOrder].
+//
+// Required JSON field presence, complete descriptor validity, reference resolution, and history are not checked here.
 func (m Manifest) validateStructural() error {
 	if !artifactmodel.ValidDocumentURI(m.Schema) || m.FormatVersion != FormatVersion || !artifactmodel.ValidVersion(m.SchemaVersion) {
 		return fmt.Errorf("%w: invalid format declaration", errInvalid)
@@ -172,7 +223,17 @@ func (m Manifest) validateStructural() error {
 	return nil
 }
 
-// validateReferences enforces unique selections, dependency closure, context bindings, URI ownership, and class-appropriate store placement.
+// validateReferences checks references between selected artifacts and release catalogs.
+// For artifacts and bindings, it checks that:
+//   - Logical artifact identities and canonical URIs are unique, and every dependency is selected by exact identity.
+//   - Each bound revision selects a schema with at most one binding, whose distinct context revisions select context artifacts.
+//
+// For catalog targets and storage placement, it checks that:
+//   - URI keys are unique and select existing payloads or owned resources.
+//   - Every canonical URI selects its owning payload, and top-level payload identifiers have catalog entries.
+//   - Each canonical schema has exactly one storage entry, and source-record schemas have none.
+//
+// Nested document references and schema identifier ownership are checked by [Manifest.documentCatalog], not here.
 func (m Manifest) validateReferences(selected map[artifactmodel.Dependency]artifactmodel.Artifact, revisions map[string]artifactmodel.Artifact) error {
 	logical := make(map[string]struct{}, len(m.Artifacts))
 	canonical := make(map[string]struct{}, len(m.Artifacts))
@@ -271,7 +332,14 @@ func (m Manifest) validateReferences(selected map[artifactmodel.Dependency]artif
 	return nil
 }
 
-// validateSourceMappings resolves selected mapping descriptors against the containing release and its supplied ancestors.
+// validateSourceMappings checks mapping descriptors against the containing release and its supplied ancestors.
+// It checks that:
+//   - Descriptor identifiers match mapping logical types, and schema selectors resolve to declared dependencies and selected schemas.
+//   - Program references identify owned resources with matching roles and digests.
+//   - Transformation targets are entity, identifier, or edge schemas.
+//   - Target releases are this release or supplied ancestors, selecting the same target revisions as this release.
+//
+// Distinct mappings can share a source schema; condition and transformation programs are not interpreted or executed.
 func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]artifactmodel.Artifact, context Context) error {
 	schemas := make([]sourcemappingmodel.Schema, 0)
 	for _, item := range m.Artifacts {
@@ -304,7 +372,12 @@ func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]a
 	return nil
 }
 
-// validateChanges checks initial-release summaries, effective differences, exact predecessor changes, and required version increments.
+// validateChanges checks the release difference and optional change summary.
+// It checks that:
+//   - An initial summary has compatibility initial and empty change arrays.
+//   - Later releases differ effectively from their immediate predecessors, regardless of whether changes are present.
+//   - Present machine-readable changes equal [Diff], including impacts and aggregate compatibility, but excluding the textual summary.
+//   - Present changes use the exact compatibility-based version increment checked by [validIncrement].
 func (m Manifest) validateChanges(context Context) error {
 	if m.Changes == nil {
 		// Omitted summaries still require an effective difference, but do not trigger compatibility-based version checks.
@@ -353,7 +426,6 @@ func checkCount(count int) error {
 }
 
 // absoluteURI recognizes document identifiers for catalog coverage, including invalid over-limit identifiers.
-// Recognition MUST NOT silently omit identifiers that bounded catalog validation rejects.
 func absoluteURI(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && parsed.IsAbs() && parsed.RawQuery == "" && parsed.Fragment == ""
@@ -373,7 +445,17 @@ func validImpact(value Impact) bool {
 	return value == ImpactBreaking || value == ImpactAdditive || value == ImpactOperational
 }
 
-// validateArtifact checks selection metadata and collection bounds without resolving or verifying the selected bytes.
+// validateArtifact checks an artifact selection's metadata.
+// For common fields, it checks that:
+//   - Logical type, revision, creation version, canonical document URI, payload digest, and bundle path have valid syntax.
+//   - Payload size is non-negative, and resource and dependency counts stay within the manifest collection limit.
+//
+// For conditional fields, it checks that:
+//   - Schemas have a registered class and no target version.
+//   - Contexts have neither a class nor a target version.
+//   - Other kinds have a published target version and no class; kind registration is not checked here.
+//
+// Resource metadata, dependency metadata, media types, byte integrity, and reference resolution are not checked here.
 func validateArtifact(item artifactmodel.Artifact) error {
 	if !artifactmodel.ValidLogicalType(item.Type) || !artifactmodel.ValidRevision(item.Revision) || !artifactmodel.ValidVersion(item.CreatedUnderSchemaVersion) || !artifactmodel.ValidDocumentURI(item.CanonicalURI) {
 		return invalid("invalid artifact identity")
@@ -401,7 +483,12 @@ func validateArtifact(item artifactmodel.Artifact) error {
 	return nil
 }
 
-// validateArtifactChange checks logical identity, revision transition shape, supported impact, and breaking removals.
+// validateArtifactChange checks an artifact change's identity, impact, and revision transition.
+// It checks that:
+//   - The logical type is valid, the impact is supported, and the revision transition passes [validChangeShape].
+//   - Artifact removals have breaking impact.
+//
+// Kind registration and other impact classifications are not checked here.
 func validateArtifactChange(item ArtifactChange) error {
 	if !artifactmodel.ValidLogicalType(item.ArtifactType) || !validImpact(item.Impact) || !validChangeShape(item.Operation, item.BeforeRevision, item.AfterRevision) {
 		return invalid("invalid artifact change")
@@ -412,7 +499,12 @@ func validateArtifactChange(item ArtifactChange) error {
 	return nil
 }
 
-// validChangeShape checks required and absent revision selectors for add, update, and remove operations.
+// validChangeShape checks operation-specific revision selectors. It checks that:
+//   - Add entries have only a valid after revision.
+//   - Remove entries have only a valid before revision.
+//   - Update entries have valid, distinct before and after revisions.
+//
+// Other operations are rejected.
 func validChangeShape(operation Operation, before, after string) bool {
 	switch operation {
 	case OperationAdd:
@@ -425,7 +517,8 @@ func validChangeShape(operation Operation, before, after string) bool {
 	return false
 }
 
-// matchesSelection compares shared revision metadata without caller-supplied bytes.
+// matchesSelection checks for identical selection metadata, including descriptors, bundle paths, resources, dependencies, and extensions.
+// Payload and resource bytes are excluded; dependency comparison includes their order.
 func matchesSelection(selection, bound artifactmodel.Artifact) bool {
 	if !slices.Equal(selection.Dependencies, bound.Dependencies) {
 		return false
@@ -494,7 +587,21 @@ func requiredURIs(item artifactmodel.Artifact) []string {
 	return result
 }
 
-// validateOrder checks strict UTF-16 lexical ordering for artifact, resource, catalog, binding, and change collections.
+// validateOrder checks strictly increasing lexicographic keys using UTF-16 code units without Unicode normalization.
+// Equal keys are rejected, even when other entry fields differ.
+// For release selections, it checks these sort keys:
+//   - Artifacts: kind, then artifactType.
+//   - Resources: role, then name.
+//   - Dependencies: kind, artifactType, then artifactRevision.
+//   - Bindings: schemaRevision; contextRevisions: revision.
+//   - URI entries: uri.
+//   - Storage entries: kind, then artifactType; stores: store identifier.
+//
+// For change entries, it checks these sort keys:
+//   - Artifacts: kind, artifactType, then operation.
+//   - Bindings: schemaRevision, contextRevision, then operation.
+//   - URI entries: uri, then operation.
+//   - Storage entries: kind, artifactType, store, then operation.
 func (m Manifest) validateOrder() error {
 	if !sorted(m.Artifacts, func(left, right artifactmodel.Artifact) int {
 		return compareMany(string(left.Kind), left.Type, string(right.Kind), right.Type)
@@ -545,7 +652,7 @@ func (m Manifest) validateOrder() error {
 	return nil
 }
 
-// sorted requires each adjacent pair to compare strictly increasing, rejecting duplicates as well as descending values.
+// sorted checks that each adjacent pair compares strictly increasing, rejecting duplicates as well as descending values.
 func sorted[T any](values []T, compare func(T, T) int) bool {
 	for index := 1; index < len(values); index++ {
 		if compare(values[index-1], values[index]) >= 0 {
@@ -623,7 +730,12 @@ func equalChanges(left, right Changes) bool {
 	return reflect.DeepEqual(left, right)
 }
 
-// validIncrement checks the exact next major, minor, or patch release required by the compatibility classification.
+// validIncrement checks the exact next version for a compatibility classification:
+//   - Breaking: increment major and reset minor and patch to zero.
+//   - Additive: increment minor and reset patch to zero.
+//   - Operational: increment patch without changing major or minor.
+//
+// Skipped versions and other classifications are rejected; published version syntax is a caller prerequisite.
 func validIncrement(before, after string, compatibility Compatibility) bool {
 	major, minor, patch, ok := versionParts(before)
 	if !ok {

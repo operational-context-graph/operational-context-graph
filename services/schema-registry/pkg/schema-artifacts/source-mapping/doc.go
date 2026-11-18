@@ -8,10 +8,11 @@
 // [Parse] checks descriptor shape, supported format version, lexical selectors, engine metadata, and transformation
 // cardinalities. It neither resolves schema references nor verifies resources.
 //
-// [Validate] additionally checks descriptor bytes, resource integrity, program ownership, dependencies, and schema
-// selection agreement. [ValidateParsed] skips parsing when a caller already holds a descriptor corresponding to the
-// artifact's exact payload bytes. [ValidateRelease] applies these checks to multiple distinct mapping identities while
-// allowing shared input schemas.
+// [Validate] additionally checks descriptor bytes, resource integrity, program ownership, dependencies, and selected
+// schema revisions.
+// [ValidateParsed] skips parsing when a caller already holds a descriptor corresponding to the artifact's exact payload
+// bytes. [ValidateRelease] applies these checks to multiple distinct mapping identities while allowing shared input
+// schemas.
 //
 // # Schema release context
 //

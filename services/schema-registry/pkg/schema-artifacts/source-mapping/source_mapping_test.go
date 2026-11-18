@@ -261,7 +261,7 @@ func TestParseMetadataFailures(t *testing.T) {
 	}
 }
 
-// TestValidateReleaseSelectors checks containing-release agreement and source and target resolution through ancestors.
+// TestValidateReleaseSelectors checks selected revisions in the containing release and source and target resolution through ancestors.
 func TestValidateReleaseSelectors(t *testing.T) {
 	for _, test := range []struct {
 		name   string

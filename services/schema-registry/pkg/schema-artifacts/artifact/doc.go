@@ -11,7 +11,7 @@
 // supplied documents without network or filesystem fallback.
 //
 // Source-mapping descriptor semantics and program bindings are provided in the 'sourcemapping' subpackage. Release-wide
-// dependency resolution, historical immutability, and catalog agreement are provided in the 'manifest' subpackage.
+// dependency resolution, historical immutability, and catalog target validation are provided in the 'manifest' subpackage.
 //
 // Constructing an [Artifact] does not validate it or make its slices and maps immutable. Callers MUST keep metadata
 // and bytes consistent while validating or sharing a revision.

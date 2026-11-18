@@ -22,7 +22,7 @@ import (
 // testOrigin supplies the Registry origin shared by manifest conformance fixtures and their byte closures.
 const testOrigin = "https://registry.example.test"
 
-// TestParseAndValidateConformanceFixture checks parsed selection agreement, complete closure validation, and authoritative byte preservation.
+// TestParseAndValidateConformanceFixture checks matching parsed selections, complete closure validation, and authoritative byte preservation.
 func TestParseAndValidateConformanceFixture(t *testing.T) {
 	data := fixture(t, "valid-initial.json")
 	parsed, err := Parse(data)

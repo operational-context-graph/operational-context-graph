@@ -14,15 +14,14 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
-// extensionPattern requires dot-separated namespace labels for publisher extension keys.
+// extensionPattern matches lowercase, dot-separated namespace labels for publisher extension keys.
 var extensionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`)
 
-// ParseFromFile reads a version 1 schema release manifest from the given file path.
+// ParseFromFile accepts a release manifest file that satisfies every representation and metadata requirement of [Parse].
 //
-// The file MUST contain JCS canonical JSON, without a byte order mark or trailing newline.
 // Callers MUST restrict untrusted paths when filesystem access requires a boundary.
 //
-// It reads the entire file before [Parse] enforces the manifest byte limit.
+// The manifest byte limit does not bound the initial file read.
 // Read errors wrap the underlying filesystem error; content errors follow [Parse]'s error behavior.
 func ParseFromFile(path string) (Manifest, error) {
 	// #nosec G304 -- this file-loading API intentionally reads the caller-selected path.
@@ -33,8 +32,39 @@ func ParseFromFile(path string) (Manifest, error) {
 	return Parse(data)
 }
 
-// Parse strictly decodes a version 1 schema release manifest and requires submitted bytes to be JCS.
-// It checks structure, lexical forms, and ordering, but does not resolve bytes or predecessor-dependent changes.
+// Parse checks the representation and metadata of a schema release manifest.
+//
+// For the JSON representation, it checks that:
+//   - The document is a UTF-8 Internet JSON (I-JSON) object without duplicate member names.
+//   - Submitted bytes equal their JSON Canonicalization Scheme (JCS) serialization, without a byte order mark or trailing newline.
+//   - Document size, nesting, object members, array entries, and strings stay within the Registry's parsing limits.
+//   - Numbers fit finite binary64, and integral values lie between -9007199254740991 and 9007199254740991.
+//
+// For format declarations and provenance, it checks that:
+//   - Format-defined objects contain only known fields, with required fields and non-empty strings present.
+//   - The format version is 1.0.0.
+//   - Published schema versions use MAJOR.MINOR.PATCH without leading zeroes or suffixes.
+//   - Repository and document identifiers are absolute, within the URI byte limit, and without non-empty queries or fragments.
+//   - Git commits contain 40 or 64 lowercase hexadecimal digits.
+//
+// For artifact selections and byte descriptors, it checks that:
+//   - The artifact array is non-empty, and selections have valid creation versions and kind-specific fields.
+//   - Logical types match [a-z0-9]+(?:-[a-z0-9]+)* within the identifier byte limit.
+//   - Revisions use bounded RFC 3986 unreserved characters, excluding the values "." and "..".
+//   - Primary payload digests use sha-256: followed by 64 lowercase hexadecimal digits, and sizes are non-negative integers.
+//   - Primary bundle paths use slash separators, without leading slashes, backslashes, or empty, dot, or parent segments.
+//   - Payload and resource bundle paths are unique across the release.
+//
+// For bindings, catalogs, changes, and extensions, it checks that:
+//   - Bindings select at least one context.
+//   - Storage entries select schemas and non-empty lists of registered stores.
+//   - Change entries use supported operations and impacts with operation-appropriate revision selectors.
+//   - Extension names use lowercase, dot-separated reverse-domain syntax.
+//   - Format-defined arrays have strictly increasing UTF-16 sort keys, excluding duplicate keys.
+//
+// These checks do not establish descriptor integrity, complete resource metadata validity, or reference resolution.
+// They do not establish release lineage, historical immutability, or the accuracy of declared changes.
+// Extension namespace ownership and extension semantics are not checked.
 //
 // The data contains manifest bytes only, not a bundle or embedded artifact payloads.
 // On success, Raw owns a copy of data and selected artifacts contain metadata without payload or resource bytes.
@@ -106,7 +136,13 @@ func Parse(data []byte) (Manifest, error) {
 	return m, nil
 }
 
-// parsePrevious accepts null or an exact predecessor object with valid version and digest spellings.
+// parsePrevious checks the predecessor declaration, accepting null for an initial release.
+// For a predecessor object, it checks that:
+//   - Only schemaVersion and manifestDigest are present, and neither field is missing.
+//   - The version uses published MAJOR.MINOR.PATCH syntax.
+//   - The digest uses sha-256: followed by 64 lowercase hexadecimal digits.
+//
+// The predecessor's existence and position in release history are not checked.
 func parsePrevious(raw any) (*PreviousRelease, error) {
 	if raw == nil {
 		return nil, nil
@@ -132,7 +168,8 @@ func parsePrevious(raw any) (*PreviousRelease, error) {
 	return &PreviousRelease{version, digest}, nil
 }
 
-// parseSource decodes the required repository and commit fields while rejecting unknown provenance fields.
+// parseSource checks that source is an object containing only non-empty repository and commit strings.
+// URI and Git object identifier syntax are checked by [Manifest.validateStructural], not here.
 func parseSource(raw any) (Source, error) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -152,7 +189,12 @@ func parseSource(raw any) (Source, error) {
 	return Source{repository, commit}, nil
 }
 
-// parseArtifacts decodes bounded release selections and rejects unknown artifact fields before structural validation.
+// parseArtifacts checks artifact entry shapes. It checks that:
+//   - The input is a bounded array of objects with registered kinds and all required metadata fields.
+//   - Entries contain no unknown fields or empty metadata strings.
+//   - Resources, dependencies, descriptors, and extensions pass their respective parsing checks.
+//
+// Logical identity syntax, kind-specific field constraints, ordering, and uniqueness are not checked here.
 func parseArtifacts(raw any) ([]artifactmodel.Artifact, error) {
 	values, err := array(raw, "artifacts")
 	if err != nil {
@@ -208,7 +250,13 @@ func parseArtifacts(raw any) ([]artifactmodel.Artifact, error) {
 	return result, nil
 }
 
-// parseDescriptor decodes byte metadata and a bundle path without loading or hashing the described bytes.
+// parseDescriptor checks the shape of a byte descriptor. It checks that:
+//   - The object contains exactly mediaType, digest, size, and bundlePath.
+//   - String fields are non-empty.
+//   - Size has non-negative base-10 integer syntax and fits int64.
+//
+// Media type, digest, and path syntax are not checked here.
+// The declared size and digest are not compared with actual bytes.
 func parseDescriptor(raw any) (artifactmodel.Descriptor, error) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -236,7 +284,11 @@ func parseDescriptor(raw any) (artifactmodel.Descriptor, error) {
 	return artifactmodel.Descriptor{MediaType: media, Digest: digest, Size: size, BundlePath: path}, nil
 }
 
-// parseResources decodes bounded named-resource metadata without retaining resource bytes.
+// parseResources checks resource entry shapes. It checks that:
+//   - The input is a bounded array of resource objects.
+//   - Each resource has non-empty name and role strings and passes the byte descriptor parsing checks.
+//
+// Unknown fields are rejected; name uniqueness, role syntax, descriptor integrity, and program bindings are not checked here.
 func parseResources(raw any) ([]artifactmodel.Resource, error) {
 	values, err := array(raw, "resources")
 	if err != nil {
@@ -268,7 +320,8 @@ func parseResources(raw any) ([]artifactmodel.Resource, error) {
 	return result, nil
 }
 
-// parseResourceDescriptor extracts only byte-descriptor fields from a resource object containing additional name and role fields.
+// parseResourceDescriptor checks a resource's byte descriptor fields using [parseDescriptor].
+// Additional resource fields are not checked here.
 func parseResourceDescriptor(object map[string]any) (artifactmodel.Descriptor, error) {
 	return parseDescriptor(map[string]any{
 		"mediaType":  object["mediaType"],
@@ -278,7 +331,12 @@ func parseResourceDescriptor(object map[string]any) (artifactmodel.Descriptor, e
 	})
 }
 
-// parseDependencies decodes bounded exact-revision references with registered artifact kinds.
+// parseDependencies checks dependency entry shapes. It checks that:
+//   - The input is a bounded array of objects containing only kind, artifactType, and artifactRevision.
+//   - Kinds are schema, context, or source-mapping.
+//   - Logical type and revision strings are present and non-empty.
+//
+// Identifier syntax, uniqueness, ordering, and target selection are not checked here.
 func parseDependencies(raw any) ([]artifactmodel.Dependency, error) {
 	values, err := array(raw, "dependencies")
 	if err != nil {
@@ -308,7 +366,12 @@ func parseDependencies(raw any) ([]artifactmodel.Dependency, error) {
 	return result, nil
 }
 
-// parseBindings decodes bounded schema-context associations and requires at least one context per binding.
+// parseBindings checks schema-context binding shapes. It checks that:
+//   - The input is a bounded array of objects containing only schemaRevision and contextRevisions.
+//   - Each binding has a non-empty schema revision.
+//   - Each context revision array is bounded and non-empty, with non-empty string elements.
+//
+// Revision syntax, uniqueness, ordering, and selected artifact kinds are not checked here.
 func parseBindings(raw any) ([]Binding, error) {
 	values, err := array(raw, "schemaContextBindings")
 	if err != nil {
@@ -339,7 +402,11 @@ func parseBindings(raw any) ([]Binding, error) {
 	return result, nil
 }
 
-// parseURIs decodes bounded document-resolution entries, preserving an absent resource selector as the primary payload.
+// parseURIs checks URI catalog entry shapes. It checks that:
+//   - The input is a bounded array of objects containing uri, artifactRevision, and an optional resource string.
+//   - Required fields are present, all present fields are non-empty strings, and no unknown fields occur.
+//
+// An absent resource selects the primary payload; identifier syntax, uniqueness, and target existence are not checked here.
 func parseURIs(raw any) ([]URIEntry, error) {
 	values, err := array(raw, "uriCatalog")
 	if err != nil {
@@ -371,7 +438,11 @@ func parseURIs(raw any) ([]URIEntry, error) {
 	return result, nil
 }
 
-// parseStorage decodes bounded logical schema-store assignments before registered-store and placement validation.
+// parseStorage checks storage catalog entry shapes. It checks that:
+//   - The input is a bounded array of objects containing only kind, artifactType, and stores.
+//   - Kinds are registered, artifactType is a non-empty string, and stores is a bounded array of non-empty strings.
+//
+// Store registration, non-empty assignments, schema classification, uniqueness, and ordering are not checked here.
 func parseStorage(raw any) ([]StorageEntry, error) {
 	values, err := array(raw, "storageCatalog")
 	if err != nil {
@@ -406,7 +477,12 @@ func parseStorage(raw any) ([]StorageEntry, error) {
 	return result, nil
 }
 
-// parseChanges decodes a complete change summary and validates its compatibility value and individual change shapes.
+// parseChanges checks the change summary shape. It checks that:
+//   - All four change arrays are present and their entries pass the respective change parsing checks.
+//   - Compatibility is initial, breaking, additive, or operational.
+//   - The optional summary is a non-empty string, and no unknown fields occur.
+//
+// Ordering, correspondence to the predecessor, aggregate impact, and the schema version increment are not checked here.
 func parseChanges(raw any) (*Changes, error) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -441,7 +517,9 @@ func parseChanges(raw any) (*Changes, error) {
 	return changes, nil
 }
 
-// parseArtifactChanges enforces registered kinds, supported impacts, and operation-specific revision fields.
+// parseArtifactChanges checks artifact change entries. It checks that:
+//   - The array is bounded and entries have registered kinds, valid logical types, and no unknown fields.
+//   - Each change passes [validateArtifactChange], including revision selectors and breaking impact for removals.
 func parseArtifactChanges(raw any) ([]ArtifactChange, error) {
 	values, err := array(raw, "artifact changes")
 	if err != nil {
@@ -483,7 +561,11 @@ func parseArtifactChanges(raw any) ([]ArtifactChange, error) {
 	return result, nil
 }
 
-// parseBindingChanges accepts bounded add or remove entries with supported impacts and non-empty revision selectors.
+// parseBindingChanges checks binding change entries. It checks that:
+//   - The bounded array contains only add or remove entries with operation, schemaRevision, contextRevision, and impact fields.
+//   - Revisions are non-empty strings, and impacts are breaking, additive, or operational.
+//
+// Revision syntax, reference resolution, and whether the impact matches the actual change are not checked here.
 func parseBindingChanges(raw any) ([]BindingChange, error) {
 	values, err := array(raw, "binding changes")
 	if err != nil {
@@ -519,7 +601,12 @@ func parseBindingChanges(raw any) ([]BindingChange, error) {
 	return result, nil
 }
 
-// parseURIChanges checks absolute identifiers, revision transitions, optional resource names, and supported impacts.
+// parseURIChanges checks URI change entries. It checks that:
+//   - The array is bounded and entries have absolute document identifiers and no unknown fields.
+//   - Present revisions and resource names have valid identifier syntax, and targets pass [validURIChangeShape].
+//   - Impacts are breaking, additive, or operational.
+//
+// Impact accuracy and target existence are not checked here.
 func parseURIChanges(raw any) ([]URIChange, error) {
 	values, err := array(raw, "URI changes")
 	if err != nil {
@@ -564,7 +651,12 @@ func parseURIChanges(raw any) ([]URIChange, error) {
 	return result, nil
 }
 
-// validURIChangeShape compares complete targets, including the absent-resource payload selector.
+// validURIChangeShape checks operation-specific URI targets. It checks that:
+//   - Add entries have only an after target with a valid revision.
+//   - Remove entries have only a before target with a valid revision.
+//   - Updates have valid revisions on both sides and change the revision, resource selector, or both.
+//
+// An empty resource selects the primary payload; resource-name syntax is not checked here.
 func validURIChangeShape(item URIChange) bool {
 	switch item.Operation {
 	case OperationAdd:
@@ -579,7 +671,11 @@ func validURIChangeShape(item URIChange) bool {
 	}
 }
 
-// parseStorageChanges accepts bounded add or remove entries with registered stores, artifact kinds, and supported impacts.
+// parseStorageChanges checks storage change entries. It checks that:
+//   - The bounded array contains add or remove entries with registered kinds and stores and no unknown fields.
+//   - Logical types are non-empty strings, and impacts are breaking, additive, or operational.
+//
+// Logical type syntax, schema selection, and whether the impact matches the actual change are not checked here.
 func parseStorageChanges(raw any) ([]StorageChange, error) {
 	values, err := array(raw, "storage changes")
 	if err != nil {
@@ -618,7 +714,8 @@ func parseStorageChanges(raw any) ([]StorageChange, error) {
 	return result, nil
 }
 
-// parseExtensions requires a bounded object whose publisher-defined keys use dot-separated namespace labels.
+// parseExtensions checks that extension data is a bounded object with lowercase, dot-separated reverse-domain member names.
+// Namespace ownership, extension semantics, and whether extensions preserve core semantics are not checked.
 func parseExtensions(raw any) (map[string]any, error) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -635,7 +732,7 @@ func parseExtensions(raw any) (map[string]any, error) {
 	return object, nil
 }
 
-// requiredString retrieves a present, non-empty JSON string without applying field-specific lexical rules.
+// requiredString checks that a field is a present, non-empty JSON string without imposing field-specific lexical rules.
 func requiredString(object map[string]any, name string) (string, error) {
 	value, ok := object[name].(string)
 	if !ok || value == "" {
@@ -644,7 +741,7 @@ func requiredString(object map[string]any, name string) (string, error) {
 	return value, nil
 }
 
-// requiredEnum decodes a string; callers validate its field-specific allowed values.
+// requiredEnum checks that a field is a present, non-empty JSON string, not membership in its allowed value set.
 func requiredEnum[T ~string](object map[string]any, name string) (T, error) {
 	value, err := requiredString(object, name)
 	return T(value), err
@@ -663,7 +760,7 @@ func optionalString(object map[string]any, name string) (string, error) {
 	return text, nil
 }
 
-// array requires a JSON array within the manifest collection limit and names the field in shape errors.
+// array checks that a value is a JSON array with at most schemaartifacts.MaxArrayEntries elements; empty arrays are accepted.
 func array(raw any, name string) ([]any, error) {
 	value, ok := raw.([]any)
 	if !ok {
@@ -675,7 +772,7 @@ func array(raw any, name string) ([]any, error) {
 	return value, nil
 }
 
-// stringsArray decodes a bounded array of non-empty strings without applying element-specific lexical rules.
+// stringsArray checks for a bounded array of non-empty strings, without imposing lexical rules, uniqueness, or ordering.
 func stringsArray(raw any, name string) ([]string, error) {
 	values, err := array(raw, name)
 	if err != nil {
@@ -692,7 +789,7 @@ func stringsArray(raw any, name string) ([]string, error) {
 	return result, nil
 }
 
-// kind retrieves a required string and rejects values outside the version 1 artifact-kind registry.
+// kind checks that a field is a present string equal to schema, context, or source-mapping.
 func kind(object map[string]any, name string) (artifactmodel.Kind, error) {
 	value, err := requiredString(object, name)
 	if err != nil {
@@ -705,7 +802,8 @@ func kind(object map[string]any, name string) (artifactmodel.Kind, error) {
 	return kind, nil
 }
 
-// optionalSchemaClass decodes an optional classification; artifact-kind validation checks its allowed values and presence.
+// optionalSchemaClass checks that a classification is a non-empty string when present; absent classifications are accepted.
+// Registered classifications and kind-specific presence requirements are not checked here.
 func optionalSchemaClass(object map[string]any, name string) (artifactmodel.SchemaClass, error) {
 	value, err := optionalString(object, name)
 	if err != nil {
@@ -714,7 +812,8 @@ func optionalSchemaClass(object map[string]any, name string) (artifactmodel.Sche
 	return artifactmodel.SchemaClass(value), nil
 }
 
-// number retrieves a required non-negative integer from a strict JSON number representation.
+// number checks that a field is a present JSON number with non-negative base-10 integer syntax that fits int64.
+// The I-JSON safe-integer bound is a prerequisite of strict JSON parsing, not a check performed here.
 func number(object map[string]any, name string) (int64, error) {
 	raw, ok := object[name]
 	if !ok {

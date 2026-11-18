@@ -42,12 +42,23 @@ type documentUse struct {
 	context bool
 }
 
-// documentCatalog builds offline JSON documents while checking ownership and dependencies.
+// documentCatalog checks runtime JSON Schema and JSON-LD references against the release's URI catalog.
+// For document resolution and dependencies, it checks that:
+//
+//   - Runtime document references resolve within the catalog, and absolute external document references have explicit catalog keys.
+//   - Cross-artifact references have exact kind, logical type, and revision dependencies on the owning artifact.
+//   - URI and IRI encoding aliases select the same artifact revision and resource.
+//   - Referenced supporting resources are JSON documents, not opaque program resources.
+//
+// For schema identifiers, dialects, and context references, it checks that:
+//
+//   - Schema $id values are strings without fragments and identify their owning payload or resource in the catalog.
+//   - Recognized standard dialects are Draft 2020-12, and custom dialects resolve through the catalog.
+//   - Remote contexts, imports, and term-scoped contexts resolve; vocabulary and term IRIs are not document lookups.
+//
 // Declared manifest references and selected artifact bytes MUST already be validated.
-// Internal URI spellings do not replace exact manifest keys.
-// Program resources remain opaque, even with JSON media types.
-// It records schema usage separately from document media types.
-// It neither fetches documents nor changes caller-owned bytes or metadata.
+// Full payload syntax validation is separate; no documents are fetched and caller-owned bytes and metadata remain unchanged.
+// The returned catalog records schema use independently of declared media types for historical immutability checks.
 // Validation errors wrap [ErrInvalid].
 func (m Manifest) documentCatalog(selected map[artifact.Dependency]artifact.Artifact) (*releaseCatalog, error) {
 	documents := make(map[documentKey]releaseDocument)

@@ -10,12 +10,18 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 )
 
-// Canonicalize sorts format-defined manifest arrays and returns RFC 8785 UTF-8 bytes. It rejects duplicate members,
-// invalid structure, and profile violations without repairing or deduplicating entries. It preserves extension arrays
-// and never loads or reserializes artifact payloads, including ordered mapping transformations. Callers MUST separately
-// validate the release closure and application response serviceability.
+// Canonicalize returns RFC 8785 UTF-8 bytes and checks the resulting manifest using [Parse].
+// Its checks cover:
 //
-// The data MAY contain whitespace and unsorted manifest collections, but MUST contain a bounded JSON object.
+//   - A bounded input JSON object without duplicate members.
+//   - Known fields, required metadata, lexical forms, and Registry parsing limits.
+//   - Unique format-defined sort keys and all other metadata checks described by [Parse].
+//
+// Input can have surrounding whitespace and unsorted format-defined arrays.
+// Output arrays use their prescribed UTF-16 sort keys; extension arrays and string values retain their original meaning.
+// Invalid metadata is not repaired, entries are not deduplicated, and artifact payloads are not loaded or rewritten.
+// Callers MUST separately validate release closure, history, and application response serviceability.
+//
 // The returned bytes pass [Parse]; Canonicalize does not modify data.
 func Canonicalize(data []byte) ([]byte, error) {
 	document, err := strictjson.Object(data)

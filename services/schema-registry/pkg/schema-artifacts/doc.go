@@ -13,9 +13,20 @@
 //
 // # Validation boundaries
 //
-// Parsing a manifest checks its representation and metadata, not the availability or integrity of selected artifact
-// bytes. Full manifest validation requires caller-supplied artifact bytes, the Registry origin, and previously
-// validated release history. Validation does not retrieve missing artifacts, discover predecessors, or execute
-// mapping programs. Applications MUST separately enforce their filesystem boundaries, aggregate resource budgets,
-// and response representation limits.
+// Schema release manifest parsing checks canonical UTF-8 JSON, known fields, required metadata, and strictly ordered
+// format-defined arrays. It does not establish complete descriptor validity, reference resolution, or selected artifact
+// byte integrity. Full validation requires caller-supplied artifact bytes, the Registry origin, and previously validated
+// release history.
+//
+// Full validation checks:
+//
+//   - Descriptor digests and sizes against exact bytes, and dependencies and catalog targets against the release's
+//     selected artifacts.
+//   - Binding targets, class-appropriate storage placement, and program resource names and digests.
+//   - Revision immutability and predecessor versions and digests.
+//   - Present change summaries against the deterministic predecessor comparison and the corresponding schema version
+//     increment.
+//
+// Validation does not retrieve missing artifacts, discover predecessors, verify Git provenance, or execute source mapping
+// programs.
 package schemaartifacts

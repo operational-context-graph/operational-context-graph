@@ -7,9 +7,15 @@ import (
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
-// validateLineage checks the immediate predecessor binding and rejects repeated schema versions.
+// validateLineage checks predecessor bindings against the supplied history. It checks that:
+//
+//   - An empty history has a null predecessor.
+//   - Otherwise, previousRelease matches the latest supplied release's schema version and exact manifest digest.
+//   - Historical schema versions are distinct, and the candidate version does not occur in history.
+//
 // History MUST contain trusted, previously validated releases in oldest-first order.
-// An empty history requires an initial release with no predecessor. Violations wrap [ErrInvalid].
+// Historical chain validity, digest integrity, and version increments are not checked here.
+// Violations wrap [ErrInvalid].
 func (m Manifest) validateLineage(history []Release) error {
 	if len(history) == 0 {
 		if m.PreviousRelease != nil {
@@ -66,8 +72,14 @@ func indexHistory(history []Release) historyIndex {
 	return index
 }
 
-// validateReuse rejects changed revision metadata, reassigned canonical URIs, and reuse of retired
-// logical identities. It checks history, not candidate-local uniqueness or byte integrity.
+// validateReuse checks revision reuse against historical selections. It checks that:
+//
+//   - Reused revisions preserve logical identity, conditional fields, creation version, canonical URI, and extensions.
+//   - Payload descriptors, named resources, and dependencies remain identical, except for release-specific bundle paths.
+//   - Historical canonical URIs do not identify different revisions.
+//   - Retired kind/type pairs do not reappear.
+//
+// Candidate-local uniqueness, byte integrity, and creation versions for new revisions are not checked here.
 // Violations wrap [ErrInvalid].
 func (h historyIndex) validateReuse(selection artifactmodel.Artifact) error {
 	if revision, exists := h.canonical[selection.CanonicalURI]; exists && revision != selection.Revision {
@@ -82,10 +94,15 @@ func (h historyIndex) validateReuse(selection artifactmodel.Artifact) error {
 	return nil
 }
 
-// validateHistoricalURIs rejects changed content behind historical canonical URIs and schema keys.
-// It compares media type, digest, and size. Changed JSON aliases require historical document-usage proof.
+// validateHistoricalURIs checks content stability for historical URI catalog keys. It checks that:
+//
+//   - Historical canonical URIs retain their media type, digest, and size when still cataloged.
+//   - Keys previously selecting application/schema+json documents retain those descriptor values.
+//   - Changed JSON aliases have no historical schema use, regardless of artifact kind or declared JSON media type.
+//
+// Context-only aliases can select different content; removed aliases and non-JSON, non-canonical aliases are not restricted here.
 // Previously validated history and exact historical bytes MUST be supplied through context.
-// Context-only aliases may select different revisions. Reference validation reports absent targets.
+// Current reference resolution is not checked here.
 func (m Manifest) validateHistoricalURIs(context Context) error {
 	currentByRevision := make(map[string]artifactmodel.Artifact, len(m.Artifacts))
 	for _, a := range m.Artifacts {
