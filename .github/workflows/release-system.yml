@@ -116,7 +116,7 @@ jobs:
             | cut -c1-10 \
             | tr -d '-')
           DEV_TAG="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
-          src="${REGISTRY}/operational-context-graph/operational-context-graph:${DEV_TAG}"
+          src="${REGISTRY}/operational-context-graph-helm/operational-context-graph:${DEV_TAG}"
           crane tag "${src}" "${VERSION}"
           echo "Aliased Helm chart ${src} → ${VERSION}"
 
@@ -210,7 +210,7 @@ jobs:
         run: |
           ocm transfer component-version \
             ctf::./bin/ctf// \
-            "oci::${REGISTRY}/operational-context-graph-bundle"
+            "oci::${REGISTRY}/operational-context-graph"
 
       - name: Upload OCM CTF artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -242,7 +242,7 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           helm pull \
-            "oci://${REGISTRY}/operational-context-graph/operational-context-graph" \
+            "oci://${REGISTRY}/operational-context-graph-helm/operational-context-graph" \
             --version "${VERSION}"
           ls -la "operational-context-graph-${VERSION}.tgz"
       - name: Upload Helm chart artifact

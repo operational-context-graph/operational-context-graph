@@ -236,7 +236,7 @@ jobs:
             --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
           helm push "operational-context-graph-${HELM_VERSION}.tgz" \
-            "oci://${REGISTRY}/operational-context-graph"
+            "oci://${REGISTRY}/operational-context-graph-helm"
 
   publish-ocm-bundle:
     name: Publish Dev OCM Bundle
@@ -327,5 +327,5 @@ jobs:
         run: |
           ocm transfer component-version \
             ctf::./bin/ctf// \
-            "oci::${REGISTRY}/operational-context-graph-bundle"
-          echo "Pushed OCM bundle to ${REGISTRY}/operational-context-graph-bundle (${VERSION})"
+            "oci::${REGISTRY}/operational-context-graph"
+          echo "Pushed OCM bundle to ${REGISTRY}/operational-context-graph (${VERSION})"

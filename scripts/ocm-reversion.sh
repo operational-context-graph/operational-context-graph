@@ -65,7 +65,7 @@ echo "preflight: OK (DEV_VERSION=${DEV_VERSION} RELEASE_VERSION=${RELEASE_VERSIO
 # Stage 1: fetch — transfer dev CTF from OCI registry to local CTF
 # ---------------------------------------------------------------------------
 
-SOURCE_REF="oci::${SOURCE_REGISTRY}/operational-context-graph-bundle"
+SOURCE_REF="oci::${SOURCE_REGISTRY}/operational-context-graph"
 DEV_CTF_DIR="bin/dev-ctf"
 DEV_CTF="ctf::./bin/dev-ctf//"
 
