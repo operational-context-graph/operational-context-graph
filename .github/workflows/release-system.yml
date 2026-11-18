@@ -80,7 +80,7 @@ jobs:
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
-      packages: write
+      packages: write  # required: crane tag retags the dev Helm chart in GHCR to the release version
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

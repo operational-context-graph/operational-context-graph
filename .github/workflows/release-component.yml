@@ -84,7 +84,7 @@ jobs:
       needs.detect.outputs.has_dockerfile == 'true'
     permissions:
       contents: read
-      packages: write
+      packages: write  # required: crane tag retags the dev container image in GHCR to the release version
     steps:
       - name: Install crane
         env:

@@ -65,8 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read  # GITHUB_TOKEN is only used for gh api user lookup; App token carries write
+      pull-requests: read
     steps:
       - name: Generate GitHub App token
         id: app-token
