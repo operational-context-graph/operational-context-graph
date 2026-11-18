@@ -122,7 +122,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: git push origin "release/${VERSION}"
 
-      - name: Commit subchart image tag pins via GitHub API
+      - name: Commit subchart image tag pins
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ inputs.version }}
@@ -149,7 +149,7 @@ jobs:
             done
           fi
 
-      - name: Commit changelog via GitHub API
+      - name: Commit changelog
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ inputs.version }}

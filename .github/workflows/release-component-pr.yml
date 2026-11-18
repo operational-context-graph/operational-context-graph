@@ -149,7 +149,7 @@ jobs:
       - name: Push release branch
         run: git push origin "$BRANCH"
 
-      - name: Commit changelog via GitHub API
+      - name: Commit changelog
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENT_PATH: ${{ inputs.component_path }}
