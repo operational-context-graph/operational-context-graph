@@ -42,6 +42,34 @@ type documentUse struct {
 	context bool
 }
 
+// catalogBuilder holds documents, URI indexes, and pending uses while validating a release catalog.
+// Each builder belongs to one documentCatalog call and does not mutate caller-owned documents.
+type catalogBuilder struct {
+	// documents indexes parsed documents by byte identity.
+	documents map[documentKey]releaseDocument
+	// entries includes explicit catalog keys and their encoding aliases.
+	entries map[string]documentKey
+	// declared contains only explicit manifest keys, excluding generated encoding aliases.
+	declared map[string]documentKey
+	// catalog contains loader documents, including normalized embedded schemas.
+	catalog map[string]any
+	// schemas records byte identities traversed as schemas, regardless of media type.
+	schemas map[documentKey]bool
+	// uses is a work queue that grows as traversal discovers references.
+	uses []documentUse
+}
+
+// newCatalogBuilder allocates release-local state with capacity for the declared URI catalog.
+func newCatalogBuilder(catalogSize int) *catalogBuilder {
+	return &catalogBuilder{
+		documents: make(map[documentKey]releaseDocument),
+		entries:   make(map[string]documentKey, catalogSize),
+		declared:  make(map[string]documentKey, catalogSize),
+		catalog:   make(map[string]any, catalogSize),
+		schemas:   make(map[documentKey]bool),
+	}
+}
+
 // documentCatalog checks runtime JSON Schema and JSON-LD references against the release's URI catalog.
 // For document resolution and dependencies, it checks that:
 //
@@ -61,22 +89,32 @@ type documentUse struct {
 // The returned catalog records schema use independently of declared media types for historical immutability checks.
 // Validation errors wrap [ErrInvalid].
 func (m Manifest) documentCatalog(selected map[artifact.Dependency]artifact.Artifact) (*releaseCatalog, error) {
-	documents := make(map[documentKey]releaseDocument)
-	entries := make(map[string]documentKey, len(m.URICatalog))
-	declared := make(map[string]documentKey, len(m.URICatalog))
-	catalog := make(map[string]any, len(m.URICatalog))
-	schemas := make(map[documentKey]bool)
-	var uses []documentUse
+	builder := newCatalogBuilder(len(m.URICatalog))
+	if err := builder.loadDocuments(m, selected); err != nil {
+		return nil, err
+	}
+	if err := builder.indexCatalog(m); err != nil {
+		return nil, err
+	}
+	if err := builder.validateUses(); err != nil {
+		return nil, err
+	}
+	return &releaseCatalog{documents: builder.catalog, schemas: builder.schemas}, nil
+}
+
+// loadDocuments parses selected payloads and supporting JSON resources, then seeds primary document uses.
+// Declared release manifest references and selected artifact bytes MUST already be validated.
+func (b *catalogBuilder) loadDocuments(m Manifest, selected map[artifact.Dependency]artifact.Artifact) error {
 	for _, a := range m.Artifacts {
 		bound := selected[artifact.Dependency{Kind: a.Kind, Type: a.Type, Revision: a.Revision}]
 		value, err := strictjson.Parse(bound.PayloadBytes)
 		if err != nil {
-			return nil, fmt.Errorf("%w: catalog payload JSON: %w", ErrInvalid, err)
+			return fmt.Errorf("%w: catalog payload JSON: %w", ErrInvalid, err)
 		}
 		key := documentKey{revision: a.Revision}
-		documents[key] = releaseDocument{owner: bound, value: value}
+		b.documents[key] = releaseDocument{owner: bound, value: value}
 		if a.Kind == artifact.KindSchema || a.Kind == artifact.KindContext {
-			uses = append(uses, documentUse{key: key, uri: a.CanonicalURI, context: a.Kind == artifact.KindContext})
+			b.uses = append(b.uses, documentUse{key: key, uri: a.CanonicalURI, context: a.Kind == artifact.KindContext})
 		}
 		for _, resource := range bound.Resources {
 			// Even JSON-typed programs remain opaque.
@@ -86,21 +124,27 @@ func (m Manifest) documentCatalog(selected map[artifact.Dependency]artifact.Arti
 			}
 			value, err := strictjson.Parse(resource.Bytes)
 			if err != nil {
-				return nil, fmt.Errorf("%w: catalog resource JSON: %w", ErrInvalid, err)
+				return fmt.Errorf("%w: catalog resource JSON: %w", ErrInvalid, err)
 			}
-			documents[documentKey{a.Revision, resource.Name}] = releaseDocument{owner: bound, value: value}
+			b.documents[documentKey{a.Revision, resource.Name}] = releaseDocument{owner: bound, value: value}
 		}
 	}
+	return nil
+}
+
+// indexCatalog registers explicit URI keys and resource uses before adding encoding aliases.
+// Documents MUST be loaded first; conflicting aliases return an error wrapping [ErrInvalid].
+func (b *catalogBuilder) indexCatalog(m Manifest) error {
 	for _, entry := range m.URICatalog {
 		key := documentKey{entry.ArtifactRevision, entry.Resource}
-		entries[entry.URI] = key
-		declared[entry.URI] = key
-		if doc, ok := documents[key]; ok {
-			catalog[entry.URI] = doc.value
+		b.entries[entry.URI] = key
+		b.declared[entry.URI] = key
+		if doc, ok := b.documents[key]; ok {
+			b.catalog[entry.URI] = doc.value
 			if entry.Resource != "" {
 				for _, r := range doc.owner.Resources {
 					if r.Name == entry.Resource && (r.MediaType == artifact.SchemaMediaType || r.MediaType == artifact.ContextMediaType) {
-						uses = append(uses, documentUse{key: key, uri: entry.URI, context: r.MediaType == artifact.ContextMediaType})
+						b.uses = append(b.uses, documentUse{key: key, uri: entry.URI, context: r.MediaType == artifact.ContextMediaType})
 					}
 				}
 			}
@@ -112,126 +156,148 @@ func (m Manifest) documentCatalog(selected map[artifact.Dependency]artifact.Arti
 		parsed, _ := url.Parse(entry.URI) // Structural validation already checks this identifier.
 		encoded := parsed.String()
 		key := documentKey{entry.ArtifactRevision, entry.Resource}
-		if other, exists := entries[encoded]; exists && other != key {
-			return nil, invalid("URI catalog encoding aliases disagree")
+		if other, exists := b.entries[encoded]; exists && other != key {
+			return invalid("URI catalog encoding aliases disagree")
 		}
-		entries[encoded] = key
-		if doc, ok := documents[key]; ok {
-			catalog[encoded] = doc.value
+		b.entries[encoded] = key
+		if doc, ok := b.documents[key]; ok {
+			b.catalog[encoded] = doc.value
 		}
 	}
+	return nil
+}
+
+// validateUses processes pending and discovered uses in insertion order, stopping at the first error.
+// Documents and URI indexes MUST be populated first; each distinct documentUse is processed once.
+func (b *catalogBuilder) validateUses() error {
 	seen := make(map[documentUse]bool)
-	for index := 0; index < len(uses); index++ {
-		use := uses[index]
+	//nolint:intrange // Recheck the queue length because traversal appends uses.
+	for index := 0; index < len(b.uses); index++ {
+		use := b.uses[index]
 		if seen[use] {
 			continue
 		}
 		seen[use] = true
 		if !use.context {
-			schemas[use.key] = true
+			b.schemas[use.key] = true
 		}
-		doc := documents[use.key]
-		value, base := doc.value, use.uri
-		if indexed, ok := catalog[use.uri]; ok {
-			value = indexed
-		}
-		if use.pointer != "" {
-			var err error
-			value, base, err = schemaPointer(value, use.pointer, use.uri)
-			if err != nil {
-				return nil, err
-			}
-		}
-		resolve := func(reference, base string) error {
-			uri, err := resolveURI(base, reference)
-			if err != nil {
-				return err
-			}
-			target, ok := entries[uri]
-			if !ok {
-				return fmt.Errorf("%w: JSON Schema or JSON-LD reference has no URI catalog entry %q", ErrInvalid, uri)
-			}
-			parsedRef, _ := url.Parse(reference) // resolveURI already validates this reference.
-			if parsedRef.IsAbs() && target != use.key {
-				document, _, _ := strings.Cut(reference, "#")
-				_, full := declared[reference]
-				_, documentDeclared := declared[document]
-				if !full && !documentDeclared {
-					return fmt.Errorf("%w: reference has no URI catalog entry %q", ErrInvalid, document)
-				}
-			}
-			if _, ok := documents[target]; !ok {
-				return invalid("reference target is not a supporting JSON document")
-			}
-			if target.revision != use.key.revision {
-				owner := documents[target].owner
-				dependency := artifact.Dependency{Kind: owner.Kind, Type: owner.Type, Revision: owner.Revision}
-				if !slices.Contains(doc.owner.Dependencies, dependency) {
-					return invalid("parsed reference lacks exact artifact dependency")
-				}
-			}
-			// Revisit explicit pointers and other document bases, but process each use only once.
-			parsedBase, _ := url.Parse(base)
-			fragment := parsedBase.ResolveReference(parsedRef).Fragment
-			pointer := ""
-			if strings.HasPrefix(fragment, "/") {
-				pointer = fragment
-			}
-			if target != use.key || uri != use.uri || pointer != "" {
-				uses = append(uses, documentUse{key: target, uri: uri, pointer: pointer, context: use.context})
-			}
-			return nil
-		}
-		if use.context {
-			object, _ := value.(map[string]any)
-			if err := walkContext(object["@context"], use.uri, resolve); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if err := walkSchema(value, base, func(node map[string]any, base string) error {
-			if dialect, ok := node["$schema"].(string); ok && builtInDialect(dialect) && strings.TrimSuffix(dialect, "#") != "https://json-schema.org/draft/2020-12/schema" {
-				return invalid("JSON Schema documents must use Draft 2020-12")
-			}
-			if _, hasID := node["$id"]; hasID {
-				id, ok := node["$id"].(string)
-				if !ok {
-					return invalid("JSON Schema identifier must be a string")
-				}
-				parsed, err := url.Parse(id)
-				if err != nil || parsed.Fragment != "" {
-					return invalid("JSON Schema identifier must not contain a fragment")
-				}
-				if parsed.IsAbs() && declared[id] != use.key {
-					return invalid("missing required URI catalog entry or schema identifier ownership mismatch")
-				}
-				if entries[base] != use.key {
-					return invalid("missing required URI catalog entry or schema identifier ownership mismatch")
-				}
-				// An embedded resource keeps its effective absolute ID when retrieved independently by that ID.
-				normalized := make(map[string]any, len(node))
-				maps.Copy(normalized, node)
-				normalized["$id"] = base
-				catalog[base] = normalized
-			}
-			for _, keyword := range []string{"$ref", "$dynamicRef", "$recursiveRef"} {
-				if reference, ok := node[keyword].(string); ok {
-					if err := resolve(reference, base); err != nil {
-						return err
-					}
-				}
-			}
-			if dialect, ok := node["$schema"].(string); ok && !builtInDialect(dialect) {
-				if err := resolve(dialect, base); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return nil, err
+		if err := b.validateUse(use); err != nil {
+			return err
 		}
 	}
-	return &releaseCatalog{documents: catalog, schemas: schemas}, nil
+	return nil
+}
+
+// validateUse selects a document or pointer target and traverses its schema or context references.
+// It prefers normalized catalog documents and preserves the retrieval base for context traversal.
+func (b *catalogBuilder) validateUse(use documentUse) error {
+	value, base := b.documents[use.key].value, use.uri
+	if indexed, ok := b.catalog[use.uri]; ok {
+		value = indexed
+	}
+	if use.pointer != "" {
+		var err error
+		value, base, err = schemaPointer(value, use.pointer, use.uri)
+		if err != nil {
+			return err
+		}
+	}
+	// resolve binds reference validation to the current document use.
+	resolve := func(reference, base string) error {
+		return b.resolveReference(use, reference, base)
+	}
+	if use.context {
+		object, _ := value.(map[string]any)
+		return walkContext(object["@context"], use.uri, resolve)
+	}
+	return walkSchema(value, base, func(node map[string]any, base string) error {
+		return b.validateSchemaNode(use, node, base)
+	})
+}
+
+// resolveReference checks catalog membership, explicit declarations, document eligibility, and exact artifact dependencies.
+// It queues referenced uses with their retrieval base, pointer, and traversal language intact.
+func (b *catalogBuilder) resolveReference(use documentUse, reference, base string) error {
+	uri, err := resolveURI(base, reference)
+	if err != nil {
+		return err
+	}
+	target, ok := b.entries[uri]
+	if !ok {
+		return fmt.Errorf("%w: JSON Schema or JSON-LD reference has no URI catalog entry %q", ErrInvalid, uri)
+	}
+	parsedRef, _ := url.Parse(reference) // resolveURI already validates this reference.
+	if parsedRef.IsAbs() && target != use.key {
+		document, _, _ := strings.Cut(reference, "#")
+		_, full := b.declared[reference]
+		_, documentDeclared := b.declared[document]
+		if !full && !documentDeclared {
+			return fmt.Errorf("%w: reference has no URI catalog entry %q", ErrInvalid, document)
+		}
+	}
+	if _, ok := b.documents[target]; !ok {
+		return invalid("reference target is not a supporting JSON document")
+	}
+	if target.revision != use.key.revision {
+		owner := b.documents[target].owner
+		dependency := artifact.Dependency{Kind: owner.Kind, Type: owner.Type, Revision: owner.Revision}
+		if !slices.Contains(b.documents[use.key].owner.Dependencies, dependency) {
+			return invalid("parsed reference lacks exact artifact dependency")
+		}
+	}
+	// Revisit explicit pointers and other document bases, but process each use only once.
+	parsedBase, _ := url.Parse(base)
+	fragment := parsedBase.ResolveReference(parsedRef).Fragment
+	pointer := ""
+	if strings.HasPrefix(fragment, "/") {
+		pointer = fragment
+	}
+	if target != use.key || uri != use.uri || pointer != "" {
+		b.uses = append(b.uses, documentUse{key: target, uri: uri, pointer: pointer, context: use.context})
+	}
+	return nil
+}
+
+// validateSchemaNode checks dialects and identifier ownership, then resolves schema references against the effective base.
+// It indexes shallow copies of identified nodes with absolute identifiers, leaving the original nodes unchanged.
+func (b *catalogBuilder) validateSchemaNode(use documentUse, node map[string]any, base string) error {
+	if dialect, ok := node["$schema"].(string); ok && builtInDialect(dialect) && strings.TrimSuffix(dialect, "#") != "https://json-schema.org/draft/2020-12/schema" {
+		return invalid("JSON Schema documents must use Draft 2020-12")
+	}
+	if _, hasID := node["$id"]; hasID {
+		id, ok := node["$id"].(string)
+		if !ok {
+			return invalid("JSON Schema identifier must be a string")
+		}
+		parsed, err := url.Parse(id)
+		if err != nil || parsed.Fragment != "" {
+			return invalid("JSON Schema identifier must not contain a fragment")
+		}
+		if parsed.IsAbs() && b.declared[id] != use.key {
+			return invalid("missing required URI catalog entry or schema identifier ownership mismatch")
+		}
+		if b.entries[base] != use.key {
+			return invalid("missing required URI catalog entry or schema identifier ownership mismatch")
+		}
+		// An embedded resource keeps its effective absolute ID when retrieved independently by that ID.
+		normalized := make(map[string]any, len(node))
+		maps.Copy(normalized, node)
+		normalized["$id"] = base
+		b.catalog[base] = normalized
+	}
+	for _, keyword := range []string{"$ref", "$dynamicRef", "$recursiveRef"} {
+		if reference, ok := node[keyword].(string); ok {
+			if err := b.resolveReference(use, reference, base); err != nil {
+				return err
+			}
+		}
+	}
+	if dialect, ok := node["$schema"].(string); ok && !builtInDialect(dialect) {
+		if err := b.resolveReference(use, dialect, base); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // schemaPointer returns an explicitly referenced value and its enclosing schema identifier scope.
