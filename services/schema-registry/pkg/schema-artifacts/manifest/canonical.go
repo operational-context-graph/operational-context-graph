@@ -1,0 +1,106 @@
+package manifest
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/gowebpki/jcs"
+
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
+)
+
+// Canonicalize returns RFC 8785 UTF-8 bytes and checks the resulting manifest using [Parse].
+// Its checks cover:
+//
+//   - A bounded input JSON object without duplicate members.
+//   - Known fields, required metadata, lexical forms, and Registry parsing limits.
+//   - Unique format-defined sort keys and all other metadata checks described by [Parse].
+//
+// Input can have surrounding whitespace and unsorted format-defined arrays.
+// Output arrays use their prescribed UTF-16 sort keys; extension arrays and string values retain their original meaning.
+// Invalid metadata is not repaired, entries are not deduplicated, and artifact payloads are not loaded or rewritten.
+// Callers MUST separately validate release closure, history, and application response serviceability.
+//
+// The returned bytes pass [Parse]; Canonicalize does not modify data.
+func Canonicalize(data []byte) ([]byte, error) {
+	document, err := strictjson.Object(data)
+	if err != nil {
+		if errors.Is(err, strictjson.ErrUnicode) {
+			return nil, fmt.Errorf("%w: canonicalize manifest: %w", ErrInvalid, err)
+		}
+		return nil, fmt.Errorf("canonicalize manifest: %w", err)
+	}
+	// Validate the submitted JCS representation before re-encoding decoded values.
+	if _, canonicalErr := jcs.Transform(data); canonicalErr != nil {
+		return nil, fmt.Errorf("%w: canonicalize manifest: %w", ErrInvalid, canonicalErr)
+	}
+	// JCS orders object members, not arrays; sort only collections whose order the manifest format defines.
+	sortObjects(document, "artifacts", "kind", "artifactType")
+	artifacts, _ := document["artifacts"].([]any)
+	for _, value := range artifacts {
+		item, _ := value.(map[string]any)
+		sortObjects(item, "resources", "role", "name")
+		sortObjects(item, "dependencies", "kind", "artifactType", "artifactRevision")
+	}
+	sortObjects(document, "schemaContextBindings", "schemaRevision")
+	bindings, _ := document["schemaContextBindings"].([]any)
+	for _, value := range bindings {
+		item, _ := value.(map[string]any)
+		sortStrings(item, "contextRevisions")
+	}
+	sortObjects(document, "uriCatalog", "uri")
+	sortObjects(document, "storageCatalog", "kind", "artifactType")
+	storage, _ := document["storageCatalog"].([]any)
+	for _, value := range storage {
+		item, _ := value.(map[string]any)
+		sortStrings(item, "stores")
+	}
+	if changes, ok := document["changes"].(map[string]any); ok {
+		sortObjects(changes, "artifacts", "kind", "artifactType", "operation")
+		sortObjects(changes, "schemaContextBindings", "schemaRevision", "contextRevision", "operation")
+		sortObjects(changes, "uriCatalog", "uri", "operation")
+		sortObjects(changes, "storageCatalog", "kind", "artifactType", "store", "operation")
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("encode manifest: %w", err)
+	}
+	canonical, err := jcs.Transform(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize manifest: %w", err)
+	}
+	// Sorting is not validation: reparse to reject malformed entries and duplicate format-defined sort keys.
+	if _, err := Parse(canonical); err != nil {
+		return nil, err
+	}
+	return canonical, nil
+}
+
+// sortObjects only orders decoded arrays. Parse subsequently rejects invalid element shapes and duplicate sort keys.
+func sortObjects(object map[string]any, field string, keys ...string) {
+	values, _ := object[field].([]any)
+	slices.SortStableFunc(values, func(left, right any) int {
+		a, _ := left.(map[string]any)
+		b, _ := right.(map[string]any)
+		for _, key := range keys {
+			x, _ := a[key].(string)
+			y, _ := b[key].(string)
+			if order := compareUTF16(x, y); order != 0 {
+				return order
+			}
+		}
+		return 0
+	})
+}
+
+// sortStrings preserves string values, including their Unicode normalization forms.
+func sortStrings(object map[string]any, field string) {
+	values, _ := object[field].([]any)
+	slices.SortStableFunc(values, func(left, right any) int {
+		a, _ := left.(string)
+		b, _ := right.(string)
+		return compareUTF16(a, b)
+	})
+}

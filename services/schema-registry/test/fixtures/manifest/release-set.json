@@ -1,0 +1,207 @@
+{
+  "format": "schema-registry-release-corpus-1",
+  "origin": "https://registry.example.test",
+  "schema": "https://example.test/manifest-1.0.0",
+  "source": {
+    "repository": "https://git.example.test/model",
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "releases": [
+    {
+      "name": "multi-candidate",
+      "version": "1.0.0",
+      "compatibility": "initial",
+      "artifacts": [
+        {
+          "kind": "context",
+          "type": "common",
+          "revision": "context-r1",
+          "payload": "{\"@context\":{}}"
+        },
+        {
+          "kind": "schema",
+          "type": "edge",
+          "revision": "edge-r1",
+          "class": "edge-type",
+          "payload": "false",
+          "stores": [
+            "data-center-inventory",
+            "telemetry-store"
+          ],
+          "contexts": [
+            "context-r1"
+          ]
+        },
+        {
+          "kind": "schema",
+          "type": "entity",
+          "revision": "entity-r1",
+          "class": "entity-type",
+          "payload": "{\"$id\":\"https://registry.example.test/v1/resources/schema/entity/entity-r1\",\"type\":\"object\"}",
+          "stores": [
+            "insights-repository"
+          ],
+          "contexts": [
+            "context-r1"
+          ]
+        },
+        {
+          "kind": "schema",
+          "type": "identifier",
+          "revision": "identifier-r1",
+          "class": "identifier-type",
+          "payload": "true",
+          "stores": [
+            "recorded-actions-repository"
+          ]
+        },
+        {
+          "kind": "schema",
+          "type": "source",
+          "revision": "source-r1",
+          "class": "source-record",
+          "payload": "true"
+        },
+        {
+          "kind": "source-mapping",
+          "type": "mapping-a",
+          "revision": "mapping-a-r1",
+          "targetVersion": "1.0.0",
+          "payloadFile": "mapping-a.json",
+          "resources": [
+            {
+              "name": "a.bin",
+              "role": "program",
+              "mediaType": "application/octet-stream",
+              "content": "AP8="
+            },
+            {
+              "name": "condition.bin",
+              "role": "program",
+              "mediaType": "application/vnd.example.condition",
+              "content": "b3BhcXVlIGNvbmRpdGlvbg=="
+            },
+            {
+              "name": "z.bin",
+              "role": "program",
+              "mediaType": "application/vnd.example.program",
+              "content": ""
+            }
+          ],
+          "dependencies": [
+            "edge",
+            "entity",
+            "identifier",
+            "source"
+          ]
+        },
+        {
+          "kind": "source-mapping",
+          "type": "mapping-b",
+          "revision": "mapping-b-r1",
+          "targetVersion": "1.0.0",
+          "payloadFile": "mapping-b.json",
+          "resources": [
+            {
+              "name": "a.bin",
+              "role": "program",
+              "mediaType": "application/octet-stream",
+              "content": "AP8="
+            },
+            {
+              "name": "condition.bin",
+              "role": "program",
+              "mediaType": "application/vnd.example.condition",
+              "content": "b3BhcXVlIGNvbmRpdGlvbg=="
+            }
+          ],
+          "dependencies": [
+            "edge",
+            "entity",
+            "source"
+          ]
+        },
+        {
+          "kind": "source-mapping",
+          "type": "mapping-c",
+          "revision": "mapping-c-r1",
+          "targetVersion": "1.0.0",
+          "payloadFile": "mapping-c.json",
+          "resources": [
+            {
+              "name": "a.bin",
+              "role": "program",
+              "mediaType": "application/octet-stream",
+              "content": "AP8="
+            }
+          ],
+          "dependencies": [
+            "entity",
+            "source"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "existing-source-addition",
+      "parent": "multi-candidate",
+      "version": "2.0.0",
+      "compatibility": "breaking",
+      "artifacts": [
+        {
+          "kind": "source-mapping",
+          "type": "mapping-d",
+          "revision": "mapping-d-r1",
+          "targetVersion": "1.0.0",
+          "payloadFile": "mapping-d.json",
+          "resources": [
+            {
+              "name": "a.bin",
+              "role": "program",
+              "mediaType": "application/octet-stream",
+              "content": "AP8="
+            }
+          ],
+          "dependencies": [
+            "entity",
+            "source"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "new-source-addition",
+      "parent": "multi-candidate",
+      "version": "1.1.0",
+      "compatibility": "additive",
+      "artifacts": [
+        {
+          "kind": "schema",
+          "type": "source-new",
+          "revision": "source-new-r1",
+          "class": "source-record",
+          "payload": "true"
+        },
+        {
+          "kind": "source-mapping",
+          "type": "mapping-e",
+          "revision": "mapping-e-r1",
+          "targetVersion": "1.0.0",
+          "payloadFile": "mapping-e.json",
+          "resources": [
+            {
+              "name": "a.bin",
+              "role": "program",
+              "mediaType": "application/octet-stream",
+              "content": "AP8="
+            }
+          ],
+          "dependencies": [
+            "entity",
+            "source-new"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://example.test/mapping-1.0.0",
+  "formatVersion": "1.0.0",
+  "id": "mapping-a",
+  "sourceSchema": {"id": "source", "revision": "source-r1"},
+  "engine": {"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"},
+  "programs": {
+    "condition": {"programRef": "condition.bin", "programDigest": "sha-256:cce366e46ccd4ed2739c957a832af904ba1207d8cd178eea50ac8c615ff1d851"},
+    "transformations": [
+      {"programRef": "z.bin", "programDigest": "sha-256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "targetSchema": {"id": "entity", "revision": "entity-r1"}, "cardinality": "one"},
+      {"programRef": "a.bin", "programDigest": "sha-256:06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8", "targetSchema": {"id": "edge", "version": "1.0.0"}, "cardinality": "many"},
+      {"programRef": "a.bin", "programDigest": "sha-256:06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8", "targetSchema": {"id": "identifier", "revision": "identifier-r1"}, "cardinality": "one"},
+      {"programRef": "a.bin", "programDigest": "sha-256:06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8", "targetSchema": {"id": "edge", "revision": "edge-r1"}, "cardinality": "many"}
+    ]
+  }
+}

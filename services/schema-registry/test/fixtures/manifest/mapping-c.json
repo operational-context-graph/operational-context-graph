@@ -1,0 +1,8 @@
+{
+  "$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": "mapping-c",
+  "sourceSchema": {"id": "source", "revision": "source-r1"},
+  "engine": {"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"},
+  "programs": {"transformations": [
+    {"programRef": "a.bin", "programDigest": "sha-256:06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8", "targetSchema": {"id": "entity", "revision": "entity-r1"}, "cardinality": "one"}
+  ]}
+}
