@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
@@ -83,13 +82,7 @@ func LoadFromFile(path string) (*Config, error) {
 	if err := k.Load(env.Provider(".", env.Opt{Prefix: envPrefix, TransformFunc: transform}), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
 	}
-	if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{
-		Tag: "koanf",
-		DecoderConfig: &mapstructure.DecoderConfig{
-			Result: cfg, WeaklyTypedInput: true,
-			DecodeHook: mapstructure.ComposeDecodeHookFunc(mapstructure.StringToTimeDurationHookFunc()),
-		},
-	}); err != nil {
+	if err := k.Unmarshal("", cfg); err != nil {
 		return nil, fmt.Errorf("decode configuration: %w", err)
 	}
 	if err := validate(cfg); err != nil {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,32 @@ func TestLoadPrecedenceAndRedaction(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, cfg.Admission.MaxInFlight)
 	assert.NotContains(t, values(cfg.Redacted()), "password")
+}
+
+func TestLoadConvertsConfigurationValues(t *testing.T) {
+	for _, source := range []string{"yaml", "environment"} {
+		t.Run(source, func(t *testing.T) {
+			contents := validConfig
+			if source == "yaml" {
+				contents = strings.Replace(contents, "port: 8081", "port: '9090'\n  read_timeout: 250ms", 1)
+				contents = strings.Replace(contents, "database:\n", "database:\n  production: 'true'\n  pool_max_connections: '12'\n  query_timeout: 2s\n", 1)
+			} else {
+				t.Setenv("OCG_SCHEMA_INTROSPECTION_SERVER__PORT", "9090")
+				t.Setenv("OCG_SCHEMA_INTROSPECTION_SERVER__READ_TIMEOUT", "250ms")
+				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__PRODUCTION", "true")
+				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__POOL_MAX_CONNECTIONS", "12")
+				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__QUERY_TIMEOUT", "2s")
+			}
+			cfg, err := LoadFromFile(writeConfig(t, contents))
+			require.NoError(t, err)
+			assert.Equal(t, 9090, cfg.Server.Port)
+			assert.Equal(t, 250*time.Millisecond, cfg.Server.ReadTimeout)
+			assert.True(t, cfg.Database.Production)
+			assert.Equal(t, int32(12), cfg.Database.PoolMaxConnections)
+			assert.Equal(t, 2*time.Second, cfg.Database.QueryTimeout)
+			assert.Equal(t, 60*time.Second, cfg.Server.IdleTimeout)
+		})
+	}
 }
 
 func TestLoadRequiresNoCursorConfiguration(t *testing.T) {
