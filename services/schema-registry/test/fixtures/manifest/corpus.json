@@ -1,0 +1,89 @@
+{
+  "format": "schema-registry-conformance-corpus-1",
+  "fixtures": [
+    {
+      "file": "valid-initial.json",
+      "phase": "phase-2",
+      "classification": "valid"
+    },
+    {
+      "file": "invalid-structural-unknown-field.json",
+      "phase": "phase-2",
+      "classification": "format-unknown-field",
+      "errorContains": "manifest fields"
+    },
+    {
+      "file": "invalid-canonical-trailing-newline.json",
+      "phase": "phase-2",
+      "classification": "canonical-trailing-newline",
+      "errorContains": "trailing newline",
+      "raw": true
+    },
+    {
+      "file": "valid-initial-with-extension.json",
+      "phase": "phase-2",
+      "classification": "valid"
+    },
+    {
+      "file": "invalid-format-duplicate-member.json",
+      "phase": "phase-2",
+      "classification": "format-duplicate-member",
+      "errorContains": "duplicate JSON object member"
+    },
+    {
+      "file": "invalid-format-syntax.json",
+      "phase": "phase-2",
+      "classification": "format-malformed-json",
+      "errorContains": "malformed JSON"
+    },
+    {
+      "file": "invalid-canonical-bom.json",
+      "phase": "phase-2",
+      "classification": "canonical-bom",
+      "errorContains": "byte order mark",
+      "raw": true
+    },
+    {
+      "file": "invalid-canonical-member-order.json",
+      "phase": "phase-2",
+      "classification": "canonical-member-order",
+      "errorContains": "not JCS canonical"
+    },
+    {
+      "file": "invalid-serviceability-missing-required.json",
+      "phase": "phase-2",
+      "classification": "serviceability-missing-required",
+      "errorContains": "schemaVersion must be non-empty string"
+    },
+    {
+      "file": "invalid-serviceability-version.json",
+      "phase": "phase-2",
+      "classification": "serviceability-invalid-version",
+      "errorContains": "invalid format declaration"
+    },
+    {
+      "file": "invalid-serviceability-digest.json",
+      "phase": "phase-2",
+      "classification": "serviceability-invalid-digest",
+      "errorContains": "invalid payload descriptor"
+    },
+    {
+      "file": "invalid-serviceability-path.json",
+      "phase": "phase-2",
+      "classification": "serviceability-invalid-path",
+      "errorContains": "invalid payload descriptor"
+    },
+    {
+      "file": "invalid-serviceability-selector.json",
+      "phase": "phase-2",
+      "classification": "serviceability-invalid-selector",
+      "errorContains": "invalid artifact kind"
+    },
+    {
+      "file": "invalid-serviceability-store.json",
+      "phase": "phase-2",
+      "classification": "serviceability-invalid-store",
+      "errorContains": "invalid store"
+    }
+  ]
+}

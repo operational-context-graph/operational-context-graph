@@ -1,0 +1,13 @@
+{
+  "format": "schema-registry-document-references-1",
+  "cases": [
+    {"id":"owned-schema","kind":"schema","mediaType":"application/schema+json","payload":{"$ref":"https://example.test/support"},"support":{"type":"string"}},
+    {"id":"generic-schema","kind":"schema","mediaType":"application/json","payload":{"$ref":"https://example.test/support"},"support":{"type":"string"}},
+    {"id":"pointer-container","kind":"schema","mediaType":"application/json","payload":{"$ref":"https://example.test/support#/schema"},"support":{"schema":{"type":"string"}}},
+    {"id":"owned-context","kind":"context","mediaType":"application/ld+json;profile=\"http://www.w3.org/ns/json-ld#context\"","payload":{"@context":[{},"https://example.test/support"]},"support":{"@context":{"name":"https://vocab.example/name"}}},
+    {"id":"late-resource-reference","kind":"schema","mediaType":"application/json","payload":{"$ref":"https://example.test/support#/schema"},"support":{"schema":{"$ref":"https://unavailable.invalid/later"}},"errorContains":"no URI catalog entry"},
+    {"id":"invalid-resource-id-type","kind":"schema","mediaType":"application/schema+json","payload":{"$ref":"https://example.test/support"},"support":{"$id":42},"errorContains":"identifier must be a string"},
+    {"id":"invalid-resource-id-fragment","kind":"schema","mediaType":"application/schema+json","payload":{"$ref":"https://example.test/support"},"support":{"$id":"https://example.test/support#invalid"},"errorContains":"identifier must not contain a fragment"},
+    {"id":"unsupported-resource-dialect","kind":"schema","mediaType":"application/json","payload":{"$ref":"https://example.test/support"},"support":{"$schema":"http://json-schema.org/draft-04/schema","id":"https://example.test/legacy"},"errorContains":"must use Draft 2020-12"}
+  ]
+}

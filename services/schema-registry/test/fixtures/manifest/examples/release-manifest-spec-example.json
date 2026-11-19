@@ -1,0 +1,221 @@
+{
+  "$schema": "https://schemas.example.org/ocg/schema-release-manifest-1.0.json",
+  "formatVersion": "1.0.0",
+  "schemaVersion": "2.4.0",
+  "previousRelease": {
+    "schemaVersion": "2.3.1",
+    "manifestDigest": "sha-256:8a3105c7d52e131a8666bc285b3d5bd59b8c30d22a20e88e2f24dad9f48ee4a4"
+  },
+  "source": {
+    "repository": "https://git.example.org/ocg/schema-model",
+    "commit": "9c4051d7a4be1234567890abcdef1234567890ab"
+  },
+  "artifacts": [
+    {
+      "kind": "context",
+      "artifactType": "device",
+      "artifactRevision": "01K4Q7YD0SZWT51M15FJ9C4QSD",
+      "createdUnderSchemaVersion": "2.3.1",
+      "canonicalUri": "https://schemas.example.org/resources/context/device/01K4Q7YD0SZWT51M15FJ9C4QSD",
+      "payload": {
+        "mediaType": "application/ld+json;profile=\"http://www.w3.org/ns/json-ld#context\"",
+        "digest": "sha-256:04b3d13e85d30f5847d889e23d222f304ca70090113f344fcc34026b552a81ed",
+        "size": 1204,
+        "bundlePath": "artifacts/context/device/01K4Q7YD0SZWT51M15FJ9C4QSD.jsonld"
+      },
+      "resources": [],
+      "dependencies": []
+    },
+    {
+      "kind": "schema",
+      "artifactType": "device",
+      "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
+      "createdUnderSchemaVersion": "2.1.0",
+      "schemaClass": "entity-type",
+      "canonicalUri": "https://schemas.example.org/resources/schema/device/01K4Q7S2YV4B5MC7B8G8DCDR5F",
+      "payload": {
+        "mediaType": "application/schema+json",
+        "digest": "sha-256:c14ae46a31d223a7030ed3f04e8944d634eefcab35f84b357f11d9a02d884a01",
+        "size": 4812,
+        "bundlePath": "artifacts/schema/device/01K4Q7S2YV4B5MC7B8G8DCDR5F.json"
+      },
+      "resources": [],
+      "dependencies": []
+    },
+    {
+      "kind": "schema",
+      "artifactType": "example-cmdb-device",
+      "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
+      "createdUnderSchemaVersion": "2.4.0",
+      "schemaClass": "source-record",
+      "canonicalUri": "https://schemas.example.org/resources/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE",
+      "payload": {
+        "mediaType": "application/schema+json",
+        "digest": "sha-256:93be731e9d96b015174477dba55fc5cf3a00cf3627ee75cd6cb73a252127d5d6",
+        "size": 2711,
+        "bundlePath": "artifacts/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE.json"
+      },
+      "resources": [],
+      "dependencies": []
+    },
+    {
+      "kind": "schema",
+      "artifactType": "located-in",
+      "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "createdUnderSchemaVersion": "2.1.0",
+      "schemaClass": "edge-type",
+      "canonicalUri": "https://schemas.example.org/resources/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "payload": {
+        "mediaType": "application/schema+json",
+        "digest": "sha-256:d14ae46a31d223a7030ed3f04e8944d634eefcab35f84b357f11d9a02d884a01",
+        "size": 1824,
+        "bundlePath": "artifacts/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6.json"
+      },
+      "resources": [],
+      "dependencies": []
+    },
+    {
+      "kind": "source-mapping",
+      "artifactType": "example-cmdb-device",
+      "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
+      "createdUnderSchemaVersion": "2.4.0",
+      "targetSchemaVersion": "2.4.0",
+      "canonicalUri": "https://schemas.example.org/resources/source-mapping/example-cmdb-device/01K4Q82H6BP2R6M7MA9W5K3Q1T",
+      "payload": {
+        "mediaType": "application/vnd.apeiro.ocg.source-mapping.v1+json",
+        "digest": "sha-256:84de32c10d04a3cf9d0fe1b1f4d6e7a95360a64dd64c11da078307b8dd7785c3",
+        "size": 2370,
+        "bundlePath": "artifacts/source-mapping/example-cmdb-device/descriptor.json"
+      },
+      "resources": [
+        {
+          "name": "example-cmdb-device-condition.ocgdsl",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+ocgdsl",
+          "digest": "sha-256:2ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 348,
+          "bundlePath": "artifacts/source-mapping/example-cmdb-device/example-cmdb-device-condition.ocgdsl"
+        },
+        {
+          "name": "example-cmdb-device-location.json",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+          "digest": "sha-256:3ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 1024,
+          "bundlePath": "artifacts/source-mapping/example-cmdb-device/example-cmdb-device-location.json"
+        },
+        {
+          "name": "example-cmdb-device-transformation.json",
+          "role": "program",
+          "mediaType": "application/vnd.apeiro.ocg.source-mapping-program.v1+json",
+          "digest": "sha-256:1ca92891709e8c758f1ba20f86af44c2cb6540859f8b47d4b26184986f7f87a3",
+          "size": 1584,
+          "bundlePath": "artifacts/source-mapping/example-cmdb-device/example-cmdb-device-transformation.json"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "schema",
+          "artifactType": "device",
+          "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F"
+        },
+        {
+          "kind": "schema",
+          "artifactType": "example-cmdb-device",
+          "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"
+        },
+        {
+          "kind": "schema",
+          "artifactType": "located-in",
+          "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6"
+        }
+      ]
+    }
+  ],
+  "schemaContextBindings": [
+    {
+      "schemaRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F",
+      "contextRevisions": [
+        "01K4Q7YD0SZWT51M15FJ9C4QSD"
+      ]
+    }
+  ],
+  "uriCatalog": [
+    {
+      "uri": "https://schema.example.org/ocg/contexts/device",
+      "artifactRevision": "01K4Q7YD0SZWT51M15FJ9C4QSD"
+    },
+    {
+      "uri": "https://schemas.example.org/resources/context/device/01K4Q7YD0SZWT51M15FJ9C4QSD",
+      "artifactRevision": "01K4Q7YD0SZWT51M15FJ9C4QSD"
+    },
+    {
+      "uri": "https://schemas.example.org/resources/schema/device/01K4Q7S2YV4B5MC7B8G8DCDR5F",
+      "artifactRevision": "01K4Q7S2YV4B5MC7B8G8DCDR5F"
+    },
+    {
+      "uri": "https://schemas.example.org/resources/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE",
+      "artifactRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"
+    },
+    {
+      "uri": "https://schemas.example.org/resources/schema/located-in/01K4Q7T3ZW5C6ND8C9H9EDE4G6",
+      "artifactRevision": "01K4Q7T3ZW5C6ND8C9H9EDE4G6"
+    },
+    {
+      "uri": "https://schemas.example.org/resources/source-mapping/example-cmdb-device/01K4Q82H6BP2R6M7MA9W5K3Q1T",
+      "artifactRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T"
+    }
+  ],
+  "storageCatalog": [
+    {
+      "kind": "schema",
+      "artifactType": "device",
+      "stores": [
+        "data-center-inventory"
+      ]
+    },
+    {
+      "kind": "schema",
+      "artifactType": "located-in",
+      "stores": [
+        "data-center-inventory"
+      ]
+    }
+  ],
+  "changes": {
+    "summary": "Add the example CMDB device source schema and mapping.",
+    "compatibility": "additive",
+    "artifacts": [
+      {
+        "operation": "add",
+        "kind": "schema",
+        "artifactType": "example-cmdb-device",
+        "afterRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
+        "impact": "additive"
+      },
+      {
+        "operation": "add",
+        "kind": "source-mapping",
+        "artifactType": "example-cmdb-device",
+        "afterRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
+        "impact": "additive"
+      }
+    ],
+    "schemaContextBindings": [],
+    "uriCatalog": [
+      {
+        "operation": "add",
+        "uri": "https://schemas.example.org/resources/schema/example-cmdb-device/01K4Q80PQ2J6R0A7KX9N3FHTVE",
+        "afterRevision": "01K4Q80PQ2J6R0A7KX9N3FHTVE",
+        "impact": "additive"
+      },
+      {
+        "operation": "add",
+        "uri": "https://schemas.example.org/resources/source-mapping/example-cmdb-device/01K4Q82H6BP2R6M7MA9W5K3Q1T",
+        "afterRevision": "01K4Q82H6BP2R6M7MA9W5K3Q1T",
+        "impact": "additive"
+      }
+    ],
+    "storageCatalog": []
+  }
+}
