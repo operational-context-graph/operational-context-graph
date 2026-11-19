@@ -59,6 +59,8 @@ ignore-packages:
   - github.com/jackc/pgx/v5 # MIT
   - github.com/quic-go/quic-go # MIT
   - github.com/coreos/go-semver # Apache-2.0
+  - github.com/piprate/json-gold # Apache-2.0
+  - github.com/moby/patternmatcher # Apache-2.0
 
   # Node.js package manager
   - pnpm # MIT

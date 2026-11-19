@@ -3,8 +3,8 @@ SHELL := /usr/bin/env bash
 PROJECT_ROOT ?= ../..
 BUILD_DIR ?= $(CURDIR)/bin
 COVERAGE_DIR ?= $(CURDIR)/coverage
-GOVULNCHECK_VERSION ?= v1.9.0
-GOOSE_VERSION ?= v3.26.0
+GOVULNCHECK_VERSION ?= v1.10.0
+GOOSE_VERSION ?= v3.30.1
 TEST_PACKAGES ?= ./...
 TEST_ARGS ?=
 
@@ -42,12 +42,8 @@ coverage: ## Produce a coverage profile
 vet: ## Run go vet
 	go vet ./...
 
-lint: ## Run golangci-lint when available, otherwise go vet
-	if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		go vet ./...; \
-	fi
+lint: ## Run golangci-lint
+	golangci-lint run
 
 tidy: ## Tidy module dependencies
 	go mod tidy
