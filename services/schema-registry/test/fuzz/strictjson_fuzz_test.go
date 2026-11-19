@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/gowebpki/jcs"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
@@ -36,5 +38,29 @@ func FuzzStrictJSONParse(f *testing.F) {
 		roundTrip, err := strictjson.Parse(encoded)
 		require.NoError(t, err)
 		require.Equal(t, value, roundTrip)
+	})
+}
+
+// FuzzParseUnicode checks that successful parsing preserves the original JSON's Unicode values under independent JCS validation.
+func FuzzParseUnicode(f *testing.F) {
+	for _, seed := range []string{
+		`"\ud800"`, `"\udfff"`, `{"\ud800":true}`, `[{"nested":"\ud800"}]`,
+		`"\ud83d\ude00"`, `"\\ud800"`, `"\u005cud800"`, `"�"`, `"\ufffd"`,
+		`"\ufdd0"`, `"\udbff\udfff"`, `"\u"`, `"\`, `"é"`,
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		value, err := strictjson.Parse([]byte(input))
+		if err != nil {
+			return
+		}
+		canonical, err := jcs.Transform([]byte(input))
+		require.NoError(t, err, "successful parsing must not hide invalid Unicode")
+		encoded, err := json.Marshal(value)
+		require.NoError(t, err)
+		roundTrip, err := jcs.Transform(encoded)
+		require.NoError(t, err)
+		assert.Equal(t, canonical, roundTrip)
 	})
 }

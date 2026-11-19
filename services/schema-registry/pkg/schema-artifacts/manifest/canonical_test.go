@@ -201,6 +201,10 @@ func TestCanonicalizeInvalidInputs(t *testing.T) {
 		input := bytes.ReplaceAll(canonicalDocument(t, document), []byte("sentinel"), []byte(surrogate))
 		_, err := Canonicalize(input)
 		require.ErrorIs(t, err, ErrInvalid, "lone surrogates MUST NOT become replacement characters")
+		require.ErrorIs(t, err, strictjson.ErrMalformed)
+		_, err = Parse(input)
+		require.ErrorIs(t, err, ErrInvalid)
+		require.ErrorIs(t, err, strictjson.ErrMalformed)
 	}
 }
 

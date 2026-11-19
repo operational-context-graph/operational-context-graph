@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -79,6 +80,9 @@ func Parse(data []byte) (Manifest, error) {
 	// Reject duplicate members and profile violations before canonicalization can obscure the submitted representation.
 	value, err := strictjson.Object(data)
 	if err != nil {
+		if errors.Is(err, strictjson.ErrUnicode) {
+			return Manifest{}, fmt.Errorf("%w: parse manifest: %w", ErrInvalid, err)
+		}
 		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
 	}
 	// Equality preserves the publisher's authoritative bytes instead of silently accepting a normalized manifest.

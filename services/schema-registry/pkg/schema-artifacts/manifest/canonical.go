@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -26,9 +27,12 @@ import (
 func Canonicalize(data []byte) ([]byte, error) {
 	document, err := strictjson.Object(data)
 	if err != nil {
+		if errors.Is(err, strictjson.ErrUnicode) {
+			return nil, fmt.Errorf("%w: canonicalize manifest: %w", ErrInvalid, err)
+		}
 		return nil, fmt.Errorf("canonicalize manifest: %w", err)
 	}
-	// encoding/json replaces lone UTF-16 surrogates. Reject them before re-encoding decoded strings.
+	// Validate the submitted JCS representation before re-encoding decoded values.
 	if _, canonicalErr := jcs.Transform(data); canonicalErr != nil {
 		return nil, fmt.Errorf("%w: canonicalize manifest: %w", ErrInvalid, canonicalErr)
 	}

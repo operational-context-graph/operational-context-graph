@@ -12,6 +12,7 @@ import (
 
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -215,6 +216,19 @@ func TestValidateRejectsProgramBindingsAndSchemaMismatches(t *testing.T) {
 			test.mutate(&mapping, &context)
 			_, err := Validate(mapping, context)
 			assert.Error(t, err)
+		})
+	}
+}
+
+// TestParseRejectsInvalidEngineUnicode rejects invalid Unicode without silently replacing publisher metadata.
+func TestParseRejectsInvalidEngineUnicode(t *testing.T) {
+	mapping, _ := validMapping(t, nil)
+	for _, language := range []string{`\ud800`, `\udfff`, `\ufdd0`, `\udbff\udfff`} {
+		t.Run(language, func(t *testing.T) {
+			data := bytes.Replace(mapping.PayloadBytes, []byte("publisher language with spaces"), []byte(language), 1)
+			_, err := Parse(data)
+			require.ErrorIs(t, err, strictjson.ErrUnicode)
+			require.ErrorIs(t, err, strictjson.ErrMalformed)
 		})
 	}
 }

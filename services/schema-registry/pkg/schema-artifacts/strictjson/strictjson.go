@@ -21,6 +21,8 @@ var (
 	ErrTooLarge = errors.New("JSON input exceeds the byte limit")
 	// ErrMalformed identifies invalid syntax, encoding, or an unexpected JSON value shape.
 	ErrMalformed = errors.New("malformed JSON")
+	// ErrUnicode identifies invalid I-JSON Unicode and also matches ErrMalformed.
+	ErrUnicode = fmt.Errorf("%w: invalid I-JSON Unicode", ErrMalformed)
 	// ErrDuplicate identifies repeated member names within one JSON object.
 	ErrDuplicate = errors.New("duplicate JSON object member")
 	// ErrDepth identifies a value traversal that exceeds schemaartifacts.MaxJSONDepth.
@@ -53,6 +55,9 @@ func Parse(input []byte) (any, error) {
 	}
 	if !utf8.Valid(input) || bytes.HasPrefix(input, []byte{0xef, 0xbb, 0xbf}) {
 		return nil, fmt.Errorf("%w: invalid UTF-8 encoding", ErrMalformed)
+	}
+	if !validUnicode(input) {
+		return nil, ErrUnicode
 	}
 	decoder := json.NewDecoder(bytes.NewReader(input))
 	// Preserve numeric spelling so range checks run before any rounding to binary64 can hide an unsafe integer.
