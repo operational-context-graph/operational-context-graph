@@ -1,11 +1,15 @@
-SHELL := /usr/bin/env bash
+SHELL               := /usr/bin/env bash
+NAME                := $(notdir $(CURDIR))
 
-PROJECT_ROOT ?= ../..
-BUILD_DIR ?= $(CURDIR)/bin
-COVERAGE_DIR ?= $(CURDIR)/coverage
+PROJECT_ROOT        ?= ../..
+BUILD_DIR           ?= $(CURDIR)/bin
+SCRIPTS_DIR         := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../../scripts)
+COVERAGE_DIR        ?= $(CURDIR)/coverage
+COVERAGE_THRESHOLD  ?= 90
+TEST_PACKAGES       ?= ./...
+TEST_ARGS           ?=
+
 GOVULNCHECK_VERSION ?= v1.10.0
-TEST_PACKAGES ?= ./...
-TEST_ARGS ?=
 
 .PHONY: test test-unit test-integration test-benchmark coverage vet lint tidy vuln sbom
 
@@ -13,7 +17,8 @@ build: ## Build all Schema Registry commands
 	echo "dummy build"
 
 test: ## Run tests with race detection
-	go test $(TEST_PACKAGES) -race $(TEST_ARGS)
+	mkdir -p $(COVERAGE_DIR)
+	go test $(TEST_PACKAGES) -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out $(TEST_ARGS)
 
 test-unit: ## Run package unit tests with race detection
 	go test ./internal/... ./pkg/... -race $(TEST_ARGS)
@@ -24,9 +29,8 @@ test-integration: ## Run boundary integration tests with race detection
 test-benchmark: ## Run black-box benchmarks with allocation reporting
 	go test ./test/benchmark -bench=. -benchmem $(TEST_ARGS)
 
-coverage: ## Produce a coverage profile
-	mkdir -p $(COVERAGE_DIR)
-	go test ./... -race -coverprofile=$(COVERAGE_DIR)/schema-registry.out
+test-coverage: ## Produce a coverage profile
+	$(SCRIPTS_DIR)/check-coverage.sh $(COVERAGE_DIR)/$(NAME).out $(COVERAGE_THRESHOLD)
 
 vet: ## Run go vet
 	go vet ./...
