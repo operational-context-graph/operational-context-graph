@@ -4,7 +4,6 @@ PROJECT_ROOT ?= ../..
 BUILD_DIR ?= $(CURDIR)/bin
 COVERAGE_DIR ?= $(CURDIR)/coverage
 GOVULNCHECK_VERSION ?= v1.10.0
-GOOSE_VERSION ?= v3.30.1
 TEST_PACKAGES ?= ./...
 TEST_ARGS ?=
 
@@ -62,11 +61,11 @@ oss-license-check: ## Perform OSS license compliance check
 
 migrate-up: ## Apply Goose migrations using DATABASE_URL
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
-	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(DATABASE_URL)" up
+	go run github.com/pressly/goose/v3/cmd/goose -dir migrations postgres "$(DATABASE_URL)" up
 
 migrate-down: ## Roll back the latest Goose migration using DATABASE_URL
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
-	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(DATABASE_URL)" down
+	go run github.com/pressly/goose/v3/cmd/goose -dir migrations postgres "$(DATABASE_URL)" down
 
 clean: ## Clean all build, test, and static analysis artifacts
 	rm -rf $(BUILD_DIR)
