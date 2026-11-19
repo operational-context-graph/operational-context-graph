@@ -24,6 +24,8 @@ on:
       - ".grant.yml"
   workflow_dispatch: ~
 
+permissions: {}
+
 jobs:
   oss-grant-check:
     name: OSS Grant Check

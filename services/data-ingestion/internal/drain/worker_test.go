@@ -185,10 +185,11 @@ func TestWorker_StoreIsolation_OneStalledOneDrains(t *testing.T) {
 
 	// Healthy store drains despite the stalled one.
 	require.Eventually(t, func() bool { return ob.pendingCount("inventory") == 0 }, time.Second, 2*time.Millisecond)
-	// Stalled store's rows remain (pinned, never acknowledged): only telemetry's
-	// two rows are left in the outbox.
+	// Stalled store's rows remain pinned (never acknowledged). The telemetry
+	// worker may not have pinned its batch yet when inventory finishes, so wait.
+	require.Eventually(t, func() bool { return ob.pendingCount("telemetry") == 0 }, time.Second, 2*time.Millisecond,
+		"stalled store's rows are pinned, not pending")
 	assert.Equal(t, 2, ob.total())
-	assert.Equal(t, 0, ob.pendingCount("telemetry"), "stalled store's rows are pinned, not pending")
 }
 
 func TestWorker_ContextCancelMidWrite_LeavesBatchPinned(t *testing.T) {
