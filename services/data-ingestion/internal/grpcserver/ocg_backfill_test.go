@@ -448,13 +448,13 @@ func TestNewServer_BackfillServiceRegistered(t *testing.T) {
 	addr, cancel, errc := startServer(srv)
 	defer func() {
 		cancel()
-		<-errc
+		<-errc //nolint:errcheck // server shutdown error is intentionally discarded in test cleanup
 	}()
 	waitReady(t, addr)
 
 	conn, dialErr := dialInsecure(t, addr)
 	require.NoError(t, dialErr)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// A call to GetWatermark without connector identity returns UNAUTHENTICATED —
 	// any code other than Unimplemented confirms BackfillService is registered.
@@ -476,13 +476,13 @@ func TestBackfillStartGap_Concurrent(t *testing.T) {
 
 	const goroutines = 10
 	errs := make(chan error, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			_, err := srv.StartGap(ctxWithConnectorID("conn-1"), &ingestionv1.StartGapRequest{Partition: part})
 			errs <- err
 		}()
 	}
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		assert.NoError(t, <-errs)
 	}
 }
@@ -505,7 +505,7 @@ func TestBackfillCloseGap_Concurrent_WithIngest(t *testing.T) {
 	const goroutines = 10
 	errs := make(chan error, goroutines*2)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			_, err := srv.CloseGap(ctxWithConnectorID("conn-1"), &ingestionv1.CloseGapRequest{Partition: part})
 			errs <- err
@@ -519,9 +519,9 @@ func TestBackfillCloseGap_Concurrent_WithIngest(t *testing.T) {
 			errs <- err
 		}()
 	}
-	for i := 0; i < goroutines*2; i++ {
+	for range goroutines * 2 {
 		// any error is acceptable (race between close and advance); no panic is the assertion
-		<-errs
+		<-errs //nolint:errcheck // any error is acceptable in this concurrent race test
 	}
 }
 
@@ -541,7 +541,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 
 	const goroutines = 10
 	errs := make(chan error, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			_, err := srv.Ingest(ctxWithConnectorID("conn-1"), &ingestionv1.IngestRequest{
 				Messages: []*ingestionv1.MessageEnvelope{
@@ -551,7 +551,7 @@ func TestBackfillIngest_Concurrent(t *testing.T) {
 			errs <- err
 		}()
 	}
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		assert.NoError(t, <-errs)
 	}
 }

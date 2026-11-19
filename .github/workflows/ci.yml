@@ -1,5 +1,7 @@
 # Runs CI checks on every push and pull request targeting main.
-# On pushes to main, also builds and publishes dev images to GHCR after all checks pass.
+# On pushes to main, also builds and publishes dev images, Helm chart, and OCM bundle
+# to GHCR after all checks pass.
+#
 ---
 name: Continuous Integration
 
@@ -68,6 +70,7 @@ jobs:
     needs: build
     permissions:
       contents: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,7 +84,34 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
       - name: Run tests
-        run: make test-all
+        # COVERAGE_THRESHOLD=0 disables the coverage gate in make test-all.
+        # Coverage is checked separately below with continue-on-error so failures
+        # post a PR comment rather than blocking the run during ramp-up.
+        # Raise the threshold in the Makefile once baseline coverage is established.
+        run: make test-all COVERAGE_THRESHOLD=0
+      - name: Check coverage
+        id: coverage
+        run: make test-coverage-all
+        continue-on-error: true
+      - name: Post coverage comment
+        if: steps.coverage.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          threshold=$(grep -oP 'COVERAGE_THRESHOLD\s*:=\s*\K[0-9]+' Makefile)
+          body=$(bash scripts/coverage-comment.sh coverage "${threshold:-20}")
+          pr="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+          comment_id=$(gh api "repos/${repo}/issues/${pr}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- coverage-report -->"))] | last | .id // empty')
+          if [ -n "$comment_id" ]; then
+            gh api "repos/${repo}/issues/comments/${comment_id}" -X PATCH -f body="$body"
+          else
+            gh pr comment "$pr" --body "$body"
+          fi
+      - name: Fail if coverage failed
+        if: steps.coverage.outcome == 'failure'
+        run: exit 1
 
   # Lints all subcharts using chart-testing (ct lint). ct discovers each subchart via its ci/
   # directory and passes every ci/*.yaml file as --values to helm lint. See helm/README.md.
@@ -96,7 +126,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1 — PIN: resolve SHA from github.com
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0 — PIN: resolve SHA from github.com
         with:
           version: latest
       - name: Set up chart-testing
@@ -131,6 +161,9 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
+      packages: write  # required: pushes container images and attestations to GHCR
+      attestations: write
+      id-token: write
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -139,15 +172,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-packages: write
       - name: Resolve dev tag
         id: version
         run: |
@@ -161,11 +185,74 @@ jobs:
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
-          username: ${{ steps.app-token.outputs.app-slug }}
-          password: ${{ steps.app-token.outputs.token }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push all images
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
           push: true
+          provenance: true
+          sbom: true
         env:
           VERSION: ${{ steps.version.outputs.version }}
+
+  publish-helm:
+    name: Publish Dev Helm Chart
+    runs-on: ubuntu-latest
+    needs: [publish-dev, helm-lint]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write  # required: helm push publishes the chart to GHCR via OCI
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Helm
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to GHCR (Helm)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.repository_owner }}" \
+            --password-stdin
+      - name: Package and push Helm chart
+        env:
+          VERSION: ${{ needs.publish-dev.outputs.version }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          # helm package requires valid semver. dev.YYYYMMDD-SHA is not semver
+          # (no MAJOR.MINOR.PATCH base), so prefix with 0.0.0- to satisfy the parser.
+          # The OCI tag pushed to GHCR still uses VERSION unchanged.
+          HELM_VERSION="0.0.0-${VERSION}"
+          helm dependency update helm/
+          helm package helm/ \
+            --version "${HELM_VERSION}" \
+            --app-version "${VERSION}"
+          helm push "operational-context-graph-${HELM_VERSION}.tgz" \
+            "oci://${REGISTRY}"
+
+  # TODO: implement OCM bundle packaging (separate PR/branch).
+  # Placeholder wired into dependency graph so the system alias job
+  # does not need a second PR when OCM support lands.
+  publish-ocm-bundle:
+    name: Publish Dev OCM Bundle (placeholder)
+    runs-on: ubuntu-latest
+    needs: [publish-helm]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+    outputs:
+      digest: ${{ steps.placeholder.outputs.digest }}
+    steps:
+      - name: Placeholder - OCM bundle not yet implemented
+        id: placeholder
+        run: |
+          echo "TODO: implement OCM bundle packaging"
+          echo "digest=" >> "$GITHUB_OUTPUT"

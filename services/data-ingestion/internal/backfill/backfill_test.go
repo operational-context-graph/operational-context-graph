@@ -375,7 +375,7 @@ func TestAdvanceLive_LargePartitionKey(t *testing.T) {
 func TestAdvanceLive_LargeWatermark(t *testing.T) {
 	// Watermark ≥ 64 KB.
 	large := make(map[string]any)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		large[fmt.Sprintf("key%04d", i)] = string(make([]byte, 100))
 	}
 	d := &fakeDB{}
