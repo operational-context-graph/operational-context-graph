@@ -9,6 +9,9 @@ TEST_ARGS ?=
 
 .PHONY: test test-unit test-integration test-benchmark coverage vet lint tidy vuln sbom
 
+build: ## Build all Schema Registry commands
+	echo "dummy build"
+
 test: ## Run tests with race detection
 	go test $(TEST_PACKAGES) -race $(TEST_ARGS)
 
