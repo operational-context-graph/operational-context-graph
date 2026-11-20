@@ -10,9 +10,9 @@
 //	migrate          — apply all pending migrations (default, used in production)
 //	migrate -down    — roll back the most recently applied migration (dev only)
 //
-// Configuration is read from the same environment variables as the service
-// itself; see internal/config/config.go for the full list. The migration
-// files are read from /migrations inside the container image.
+// Required environment variables: DORIS_MIGRATE_DSN, DORIS_DATABASE.
+// The target database must already exist before this binary runs.
+// The migration files are read from /migrations inside the container image.
 package main
 
 import (
@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"time"
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
@@ -44,14 +43,14 @@ func main() {
 }
 
 func run(down bool) error {
-	cfg, err := config.Load()
+	cfg, err := config.LoadMigrate()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
 	dorissql.RegisterTimeArgs()
 
-	db, err := sql.Open("mysql", cfg.DorisDSN)
+	db, err := sql.Open("mysql", cfg.DorisMigrateDSN)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -63,22 +62,7 @@ func run(down bool) error {
 		return waitErr
 	}
 
-	dbName := os.Getenv("DORIS_DATABASE")
-	if dbName == "" {
-		return fmt.Errorf("DORIS_DATABASE environment variable is required")
-	}
-	if !validIdentifier(dbName) {
-		return fmt.Errorf("DORIS_DATABASE %q contains invalid characters: only letters, digits, underscores, and hyphens are allowed", dbName)
-	}
-
-	// Create the database before Goose initialises its version tracking table,
-	// which itself lives in the target database. The DSN intentionally has no
-	// database component so this connection can run DDL at the server level.
-	if _, dbErr := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS "+dbName); dbErr != nil { //nolint:gosec // dbName is validated to contain only safe identifier characters
-		return fmt.Errorf("create database: %w", dbErr)
-	}
-
-	store, err := database.NewStoreFromQuerier(dbName+".goose_db_version_telemetry_store", &dorismigrate.Querier{})
+	store, err := database.NewStoreFromQuerier(cfg.DorisDatabase+".goose_db_version_telemetry_store", &dorismigrate.Querier{})
 	if err != nil {
 		return fmt.Errorf("create store: %w", err)
 	}
@@ -96,7 +80,7 @@ func run(down bool) error {
 			return fmt.Errorf("roll back migration: %w", downErr)
 		}
 		if result != nil {
-			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration) //nolint:gosec // Version and Duration are Goose internals, not user input
+			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration)
 		} else {
 			log.Println("no migrations to roll back")
 		}
@@ -109,19 +93,12 @@ func run(down bool) error {
 	}
 
 	for _, r := range results {
-		log.Printf("migration %d applied (%s)", r.Source.Version, r.Duration) //nolint:gosec // Version and Duration are Goose internals, not user input
+		log.Printf("migration %d applied (%s)", r.Source.Version, r.Duration)
 	}
 	if len(results) == 0 {
 		log.Println("no pending migrations")
 	}
 	return nil
-}
-
-var identifierRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
-
-// validIdentifier reports whether s is a safe Doris identifier (letters, digits, underscores, hyphens).
-func validIdentifier(s string) bool {
-	return identifierRe.MatchString(s)
 }
 
 // waitForDoris polls until Doris accepts connections. sql.Open only validates
