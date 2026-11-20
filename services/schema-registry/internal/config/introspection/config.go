@@ -39,7 +39,7 @@ type ServerConfig struct {
 	ShutdownTimeout   time.Duration `koanf:"shutdown_timeout" validate:"gt=0"`
 }
 
-// DatabaseConfig configures verified PostgreSQL connections and bounded read transactions.
+// DatabaseConfig configures user-selected PostgreSQL transport and bounded read transactions.
 type DatabaseConfig struct {
 	URL                string `koanf:"url" validate:"required"`
 	Production         bool   `koanf:"production"`
@@ -130,7 +130,7 @@ func validate(cfg *Config) error {
 	return nil
 }
 
-// validateDatabase requires an absolute PostgreSQL URL, verified peers, and usable pool capacity.
+// validateDatabase requires an absolute PostgreSQL URL and usable pool capacity, without assessing SSL policy.
 func validateDatabase(cfg DatabaseConfig) error {
 	parsed, err := url.Parse(cfg.URL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User == nil || parsed.User.Username() == "" {
@@ -144,10 +144,6 @@ func validateDatabase(cfg DatabaseConfig) error {
 	}
 	if cfg.ReservedConnections >= cfg.PoolMaxConnections {
 		return fmt.Errorf("validate configuration: database reserved connections exhaust the pool")
-	}
-	if parsed.Query().Get("sslmode") != "verify-full" {
-		// Development mode does not relax certificate or hostname verification.
-		return fmt.Errorf("validate configuration: database connections require sslmode=verify-full")
 	}
 	return nil
 }

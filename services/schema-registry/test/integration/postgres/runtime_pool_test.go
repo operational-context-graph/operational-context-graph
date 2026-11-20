@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -43,7 +42,8 @@ Container-backed checks remain outside Docker-free unit-test packages.
 The suite generates temporary credentials and certificates instead of storing secrets in source files.
 Certificate files use restrictive permissions.
 The certificate matches the Docker host resolved by Testcontainers, including configured host overrides.
-Connection configuration enables verify-full without replacing the resolved host or port.
+The verified-TLS fixture selects verify-full without replacing the resolved host or port.
+Fixture transport settings are not service-level security requirements.
 
 Lifecycle assertions use the public storage interface rather than retaining manually acquired connections across assertions.
 Startup and role-restoration work use bounded contexts.
@@ -63,7 +63,7 @@ type runtimePoolSuite struct {
 	config    introspection.DatabaseConfig
 }
 
-// TestRuntimePoolSuite runs the public runtime-pool lifecycle checks against verified PostgreSQL connections.
+// TestRuntimePoolSuite checks plaintext and URL-selected TLS through the public runtime-pool lifecycle.
 func TestRuntimePoolSuite(t *testing.T) { suite.Run(t, new(runtimePoolSuite)) }
 
 // SetupSuite creates host-matching certificates, starts PostgreSQL, and applies Goose migrations within a bounded deadline.
@@ -79,7 +79,8 @@ func (s *runtimePoolSuite) SetupSuite() {
 	caPath, certPath, keyPath := runtimeTLSFiles(t, host)
 	directory := filepath.Dir(caPath)
 	configPath := filepath.Join(directory, "postgresql.conf")
-	require.NoError(t, os.WriteFile(configPath, []byte("listen_addresses='*'\nssl=on\nssl_min_protocol_version='TLSv1.3'\nssl_ca_file='/tmp/testcontainers-go/postgres/ca_cert.pem'\nssl_cert_file='/tmp/testcontainers-go/postgres/server.cert'\nssl_key_file='/tmp/testcontainers-go/postgres/server.key'\n"), 0o600))
+	// TLS 1.2-only fixtures catch any service-level TLS 1.3 pin while also accepting plaintext clients.
+	require.NoError(t, os.WriteFile(configPath, []byte("listen_addresses='*'\nssl=on\nssl_min_protocol_version='TLSv1.2'\nssl_max_protocol_version='TLSv1.2'\nssl_ca_file='/tmp/testcontainers-go/postgres/ca_cert.pem'\nssl_cert_file='/tmp/testcontainers-go/postgres/server.cert'\nssl_key_file='/tmp/testcontainers-go/postgres/server.key'\n"), 0o600))
 	// Credentials exist only for this disposable server and never enter source files.
 	password := make([]byte, 32)
 	_, err = rand.Read(password)
@@ -112,45 +113,87 @@ func (s *runtimePoolSuite) TearDownSuite() {
 	}
 }
 
-// TestOpenReadyStoreAndClose checks startup, concurrent readiness, store construction, and shared pool closure.
-// Empty registry reads return the expected error before assertions run, releasing their transaction and connection.
-// Closing the runtime pool makes both readiness and store acquisition fail.
+// TestOpenReadyStoreAndClose checks service-owned pool wiring with plaintext and verified TLS 1.2 connections.
+// Both transports cover startup, readiness without an active release, a store read, and shared pool closure.
 func (s *runtimePoolSuite) TestOpenReadyStoreAndClose() {
+	for _, mode := range []string{"disable", "verify-full"} {
+		s.Run("sslmode="+mode, func() {
+			t := s.T()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			target, err := url.Parse(s.config.URL)
+			require.NoError(t, err)
+
+			parameters := target.Query()
+			parameters.Set("sslmode", mode)
+			applicationName := "runtime-lifecycle-" + rand.Text()
+			parameters.Set("application_name", applicationName)
+			target.RawQuery = parameters.Encode()
+			cfg := s.config
+			cfg.URL = target.String()
+			pool, err := storage.Open(ctx, cfg)
+			require.NoError(t, err)
+
+			defer pool.Close()
+			require.NoError(t, pool.Ready(ctx))
+
+			store, err := pool.Store(storage.Timeouts{
+				Acquire: time.Second, Query: time.Second, Statement: time.Second,
+				Lock: time.Second, IdleInTransaction: time.Second,
+			})
+			require.NoError(t, err)
+			require.ErrorIs(t, store.Read(ctx, func(context.Context, *storage.Snapshot) error {
+				assert.Fail(t, "empty registry must not invoke the read callback")
+				return nil
+			}), storage.ErrNoActiveRelease)
+			s.assertRuntimeTransport(ctx, applicationName, mode == "verify-full")
+
+			pool.Close()
+			require.ErrorContains(t, pool.Ready(ctx), "acquire readiness connection")
+			require.ErrorContains(t, store.Read(ctx, func(context.Context, *storage.Snapshot) error { return nil }), "acquire read connection")
+		})
+	}
+}
+
+// assertRuntimeTransport verifies the actual server-observed transport rather than inferring it from URL configuration.
+func (s *runtimePoolSuite) assertRuntimeTransport(ctx context.Context, applicationName string, encrypted bool) {
+	s.T().Helper()
+	var connections int
+	var transportMatches, allTLS12 bool
+	err := s.admin.QueryRow(ctx, `
+		SELECT count(*), coalesce(bool_and(ssl = $2), false), coalesce(bool_and(version = 'TLSv1.2'), false)
+		FROM pg_stat_activity JOIN pg_stat_ssl USING (pid)
+		WHERE application_name = $1`, applicationName, encrypted).Scan(&connections, &transportMatches, &allTLS12)
+	s.Require().NoError(err)
+	s.Positive(connections)
+	s.True(transportMatches)
+	if encrypted {
+		s.True(allTLS12)
+	}
+}
+
+// TestRequestedVerificationFailure checks that the runtime pool retains the user's certificate trust policy.
+func (s *runtimePoolSuite) TestRequestedVerificationFailure() {
 	t := s.T()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pool, err := storage.Open(ctx, s.config)
+
+	target, err := url.Parse(s.config.URL)
 	require.NoError(t, err)
-	defer pool.Close()
-	require.NoError(t, pool.Ready(ctx))
-	store, err := pool.Store(storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
-	require.NoError(t, err)
-	require.NotNil(t, store)
-	// Scoped reads release transactions and connections before the parent inspects a failure.
-	err = store.Read(ctx, func(context.Context, *storage.Snapshot) error {
-		assert.Fail(t, "an empty registry must not invoke the read callback")
-		return nil
-	})
-	require.ErrorIs(t, err, storage.ErrNoActiveRelease)
-	_, err = pool.Store(storage.Timeouts{})
-	require.Error(t, err)
-	var group sync.WaitGroup
-	results := make(chan error, 8)
-	for range 8 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			results <- pool.Ready(ctx)
-		}()
-	}
-	group.Wait()
-	close(results)
-	for err := range results {
-		require.NoError(t, err)
-	}
-	pool.Close()
-	require.ErrorContains(t, pool.Ready(ctx), "acquire readiness connection")
-	require.ErrorContains(t, store.Read(ctx, func(context.Context, *storage.Snapshot) error { return nil }), "acquire read connection")
+
+	otherCA, _, _ := runtimeTLSFiles(t, target.Hostname())
+	parameters := target.Query()
+	parameters.Set("sslrootcert", otherCA)
+	target.RawQuery = parameters.Encode()
+	cfg := s.config
+	cfg.URL = target.String()
+	pool, err := storage.Open(ctx, cfg)
+	require.ErrorContains(t, err, "verify database connection")
+
+	var certificateErr x509.UnknownAuthorityError
+	require.ErrorAs(t, err, &certificateErr)
+	require.Nil(t, pool)
 }
 
 // TestOpenRejectsMissingRuntimeRole temporarily renames the migrated runtime role while preserving its grants.

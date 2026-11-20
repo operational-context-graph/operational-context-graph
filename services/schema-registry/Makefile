@@ -26,7 +26,7 @@ run-schema-introspection-api: ## Run the Schema Introspection API from source
 
 test: ## Run tests with race detection and produce a coverage profile
 	mkdir -p $(COVERAGE_DIR)
-	go test $(TEST_PACKAGES) -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out $(TEST_ARGS)
+	go test $(TEST_PACKAGES) -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out -coverpkg=./... $(TEST_ARGS)
 
 test-unit: ## Run package unit tests with race detection
 	go test ./internal/... ./pkg/... -race $(TEST_ARGS)

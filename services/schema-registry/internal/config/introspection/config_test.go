@@ -1,6 +1,9 @@
 package introspection
 
 import (
+	"crypto/rand"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,15 +85,13 @@ func TestLoadAllowsSingleAPISlotWithReservedReadinessCapacity(t *testing.T) {
 	assert.Greater(t, cfg.Database.PoolMaxConnections-cfg.Database.ReservedConnections, int32(0))
 }
 
-// TestLoadRejectsInvalidBoundaries verifies URL, TLS, numeric, timeout, reserve, and admission violations return field-specific errors and no configuration.
+// TestLoadRejectsInvalidBoundaries verifies URL, numeric, timeout, reserve, and admission violations return field-specific errors.
 func TestLoadRejectsInvalidBoundaries(t *testing.T) {
 	for _, test := range []struct{ name, key, value, want string }{
 		{name: "empty target", key: "DATABASE__URL", want: "Config.Database.URL"},
 		{name: "missing runtime login", key: "DATABASE__URL", value: "postgresql://db.example.test/registry?sslmode=verify-full", want: "absolute PostgreSQL URL"},
 		{name: "malformed URL", key: "DATABASE__URL", value: "%", want: "absolute PostgreSQL URL"},
 		{name: "wrong scheme", key: "DATABASE__URL", value: "https://registry@db.example.test/registry", want: "use postgres or postgresql"},
-		{name: "weak TLS", key: "DATABASE__URL", value: "postgresql://registry@db.example.test/registry?sslmode=require", want: "require sslmode=verify-full"},
-		{name: "missing TLS", key: "DATABASE__URL", value: "postgresql://registry@db.example.test/registry", want: "require sslmode=verify-full"},
 		{name: "port zero", key: "SERVER__PORT", value: "0", want: "Config.Server.Port"},
 		{name: "port over range", key: "SERVER__PORT", value: "65536", want: "Config.Server.Port"},
 		{name: "zero timeout", key: "SERVER__READ_TIMEOUT", value: "0s", want: "Config.Server.ReadTimeout"},
@@ -121,15 +122,56 @@ func TestLoadUsesConfiguredFile(t *testing.T) {
 	assert.Equal(t, 9090, cfg.Server.Port)
 }
 
-// TestLoadRequiresVerifiedTLSInEveryMode verifies both production and development reject unverified database peers.
-func TestLoadRequiresVerifiedTLSInEveryMode(t *testing.T) {
+// TestLoadPreservesSSLModes verifies configuration accepts omitted settings and every driver-supported mode in every environment.
+func TestLoadPreservesSSLModes(t *testing.T) {
 	for _, production := range []string{"true", "false"} {
 		t.Run(production, func(t *testing.T) {
 			t.Setenv(envPrefix+"DATABASE__PRODUCTION", production)
-			contents := strings.Replace(validConfig, "sslmode=verify-full", "sslmode=disable", 1)
+			for _, mode := range []string{"", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"} {
+				t.Run("sslmode="+mode, func(t *testing.T) {
+					databaseURL := "postgresql://registry@db.example.test:5432/registry"
+					if mode != "" {
+						databaseURL += "?sslmode=" + mode
+					}
+					contents := configWithDatabaseURL(databaseURL)
+					cfg, err := LoadFromFile(writeConfig(t, contents))
+					require.NoError(t, err)
+					assert.Equal(t, databaseURL, cfg.Database.URL)
+					assert.Equal(t, production == "true", cfg.Database.Production)
+				})
+			}
+		})
+	}
+}
+
+// TestLoadPreservesSSLParameters verifies YAML and environment overrides retain SSL options without disclosing their values.
+func TestLoadPreservesSSLParameters(t *testing.T) {
+	password, sslPassword := rand.Text(), rand.Text()
+	parameters := url.Values{
+		"sslmode": {"require"}, "sslrootcert": {"/user-selected/root.pem"},
+		"sslcert": {"/user-selected/client.pem"}, "sslkey": {"/user-selected/client.key"},
+		"sslpassword": {sslPassword}, "sslnegotiation": {"direct"}, "sslsni": {"0"},
+		"ssl_min_protocol_version": {"TLSv1.2"}, "ssl_max_protocol_version": {"TLSv1.3"},
+	}
+	target := url.URL{
+		Scheme: "postgresql", Host: "db.example.test:5432", User: url.UserPassword("registry", password),
+		Path: "/registry", RawQuery: parameters.Encode(),
+	}
+	for _, source := range []string{"yaml", "environment"} {
+		t.Run(source, func(t *testing.T) {
+			contents := validConfig
+			if source == "yaml" {
+				contents = configWithDatabaseURL(target.String())
+			} else {
+				t.Setenv(envPrefix+"DATABASE__URL", target.String())
+			}
 			cfg, err := LoadFromFile(writeConfig(t, contents))
-			require.ErrorContains(t, err, "require sslmode=verify-full")
-			assert.Nil(t, cfg)
+			require.NoError(t, err)
+			assert.Equal(t, target.String(), cfg.Database.URL)
+			redacted := fmt.Sprint(cfg.Redacted())
+			for _, value := range []string{password, sslPassword, "sslmode", "/user-selected/"} {
+				assert.NotContains(t, redacted, value)
+			}
 		})
 	}
 }
@@ -153,6 +195,13 @@ func TestLoadReportsSourceAndDecodeFailures(t *testing.T) {
 	_, err := LoadFromFile(filepath.Join(t.TempDir(), "missing.yaml"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	assert.Empty(t, databaseHost("%"))
+}
+
+// configWithDatabaseURL replaces the fixture URL without duplicating YAML keys or rewriting URL parameters.
+func configWithDatabaseURL(databaseURL string) string {
+	start := strings.Index(validConfig, "url: ") + len("url: ")
+	end := start + strings.Index(validConfig[start:], "\n")
+	return validConfig[:start] + databaseURL + validConfig[end:]
 }
 
 // writeConfig creates a test-owned configuration file with restrictive permissions and automatic directory cleanup.

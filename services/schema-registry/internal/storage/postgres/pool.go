@@ -1,9 +1,8 @@
-// Package postgres provides TLS-configured PostgreSQL pools and transaction-scoped, read-only registry queries.
+// Package postgres provides PostgreSQL pools and transaction-scoped, read-only registry queries.
 package postgres
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -48,8 +47,7 @@ func Open(ctx context.Context, cfg introspection.DatabaseConfig) (*Pool, error) 
 	return result, nil
 }
 
-// configurePool parses pool settings and installs Transport Layer Security (TLS) 1.3 and read-only role preparation.
-// Callers MUST validate sslmode=verify-full before using this configuration with untrusted database URLs.
+// configurePool preserves pgx's URL-selected transport settings and installs read-only role preparation.
 func configurePool(databaseURL string, minConnections, maxConnections int32) (*pgxpool.Config, error) {
 	poolConfig, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -58,10 +56,6 @@ func configurePool(databaseURL string, minConnections, maxConnections int32) (*p
 	poolConfig.MinConns = minConnections
 	poolConfig.MaxConns = maxConnections
 	poolConfig.ConnConfig.RuntimeParams["search_path"] = "schema_registry,pg_catalog"
-	if poolConfig.ConnConfig.TLSConfig == nil {
-		return nil, fmt.Errorf("database TLS verification configuration is required")
-	}
-	poolConfig.ConnConfig.TLSConfig.MinVersion = tls.VersionTLS13
 	poolConfig.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		// The externally provisioned login must be a member of this NOLOGIN role.
 		if _, err := conn.Exec(ctx, "SET ROLE "+runtimeRole); err != nil {

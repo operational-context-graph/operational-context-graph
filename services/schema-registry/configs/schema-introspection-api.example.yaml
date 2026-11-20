@@ -1,4 +1,6 @@
 # Supply database.url through secret-backed environment variables.
+# Choose database SSL through URL parameters; the service adds no TLS policy.
+# Omitted SSL parameters retain database-driver defaults.
 server:
   host: 0.0.0.0
   port: 8081
