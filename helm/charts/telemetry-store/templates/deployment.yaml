@@ -28,38 +28,23 @@ spec:
                       values:
                         - {{ include "telemetry-store.name" . }}
                 topologyKey: "kubernetes.io/hostname"
-      # This migration approach (mysql:8 init container + raw SQL) is a temporary
-      # workaround until a proper Doris migration solution is in place.
-      # The init container requires root (runAsUser: 0) because the mysql client
-      # binary in the mysql:8 image is not usable as an unprivileged user.
       initContainers:
         - name: migrate
-          image: mysql:8
-          imagePullPolicy: IfNotPresent
-          securityContext:
-            runAsNonRoot: false
-            runAsUser: 0
-          command:
-            - sh
-            - -c
-            - |
-              MYSQL_PASS_ARG=""
-              if [ -n "${DORIS_MIGRATE_PASSWORD}" ]; then
-                MYSQL_PASS_ARG="-p${DORIS_MIGRATE_PASSWORD}"
-              fi
-              until mysql -h {{ .Values.doris.feServiceHost }} -P {{ .Values.doris.feServicePort }} -u root ${MYSQL_PASS_ARG} -e "SHOW FRONTENDS;" 2>/dev/null; do
-                echo "waiting for Doris FE..."; sleep 5;
-              done
-              mysql -h {{ .Values.doris.feServiceHost }} -P {{ .Values.doris.feServicePort }} -u root ${MYSQL_PASS_ARG} < /migrations/migrations.sql
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/migrate"]
           env:
-            - name: DORIS_MIGRATE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.dorisMigratorSecretName }}
-                  key: DORIS_MIGRATE_PASSWORD
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
+            - name: DORIS_REPLICATION_NUM
+              value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
+            - name: DORIS_BUCKETS
+              value: {{ .Values.env.DORIS_BUCKETS | quote }}
+            - name: DORIS_DATABASE
+              value: {{ .Values.env.DORIS_DATABASE | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.dorisReadSecretName }}
+            - secretRef:
+                name: {{ .Values.dorisSecretName }}
       containers:
         - name: {{ .Chart.Name }}
           image: {{ include "telemetry-store.image" . }}
@@ -91,9 +76,7 @@ spec:
               value: {{ .Values.env.HTTP_PORT | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: DORIS_DATABASE
+              value: {{ .Values.env.DORIS_DATABASE | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      volumes:
-        - name: migrations
-          configMap:
-            name: {{ include "telemetry-store.fullname" . }}-migrations

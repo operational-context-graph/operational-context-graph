@@ -11,12 +11,15 @@ import (
 func (d *DB) QueryTrace(ctx context.Context, q TraceQuery) ([]Span, error) {
 	q.Limit = clampLimit(q.Limit)
 
-	const stmt = `SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name,
+	// Doris does not support a parameter placeholder for LIMIT; the value is an integer
+	// clamped by clampLimit, not user input.
+	//nolint:gosec // G201: dbName is validated at startup; Limit is an integer clamped by clampLimit.
+	stmt := fmt.Sprintf(`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name,
 		 trace_id, span_id, parent_span_id, span_name, duration_nanos, status_code,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
-		 FROM ocg.traces WHERE trace_id = ? ORDER BY timestamp, iri LIMIT ?`
+		 FROM %s.traces WHERE trace_id = ? ORDER BY timestamp, iri LIMIT %d`, d.dbName, q.Limit)
 
-	rows, err := d.db.QueryContext(ctx, stmt, q.TraceID, q.Limit)
+	rows, err := d.db.QueryContext(ctx, stmt, q.TraceID)
 	if err != nil {
 		return nil, fmt.Errorf("query trace: %w", err)
 	}

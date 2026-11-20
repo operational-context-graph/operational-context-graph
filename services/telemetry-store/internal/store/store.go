@@ -10,16 +10,17 @@ import (
 
 // DB wraps the Doris MySQL connection pool.
 type DB struct {
-	db *sql.DB
+	db     *sql.DB
+	dbName string
 }
 
 // NewFromDB creates a DB from an already-opened *sql.DB.
-func NewFromDB(ctx context.Context, sqlDB *sql.DB) (*DB, error) {
+func NewFromDB(ctx context.Context, sqlDB *sql.DB, dbName string) (*DB, error) {
 	// Verify the schema is reachable before returning.
 	if err := sqlDB.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("ping doris: %w", err)
 	}
-	return &DB{db: sqlDB}, nil
+	return &DB{db: sqlDB, dbName: dbName}, nil
 }
 
 // Close is a no-op — the caller owns the underlying *sql.DB.
@@ -30,6 +31,7 @@ func (d *DB) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
 
 // SchemaReady verifies the Doris schema is present and queryable.
 func (d *DB) SchemaReady(ctx context.Context) error {
-	_, err := d.db.ExecContext(ctx, "SELECT 1 FROM ocg.logs LIMIT 0")
+	//nolint:gosec // dbName is validated at startup via validIdentifier in cmd/migrate
+	_, err := d.db.ExecContext(ctx, "SELECT 1 FROM "+d.dbName+".logs LIMIT 0")
 	return err
 }
