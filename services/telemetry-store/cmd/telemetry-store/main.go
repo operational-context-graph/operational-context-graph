@@ -54,13 +54,13 @@ func run(ctx context.Context) error {
 	}
 	defer func() { _ = sqlDB.Close() }() // Close errors are non-actionable on shutdown.
 
-	db, err := store.NewFromDB(ctx, sqlDB)
+	db, err := store.NewFromDB(ctx, sqlDB, cfg.DorisDatabase)
 	if err != nil {
 		return fmt.Errorf("prepare store: %w", err)
 	}
 	defer func() { _ = db.Close() }() // Close errors are non-actionable on shutdown.
 
-	sl := streamload.NewClient(cfg.DorisStreamLoadURL, cfg.DorisStreamLoadUser, cfg.DorisStreamLoadPassword)
+	sl := streamload.NewClient(cfg.DorisStreamLoadURL, cfg.DorisDatabase, cfg.DorisStreamLoadUser, cfg.DorisStreamLoadPassword)
 
 	srv := httpapi.NewServer(db, sl, ":"+cfg.HTTPPort, cfg.MaxIngestBodyBytes)
 	srvErrC := make(chan error, 1)

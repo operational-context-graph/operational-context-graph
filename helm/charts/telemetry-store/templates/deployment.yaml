@@ -76,5 +76,7 @@ spec:
               value: {{ .Values.env.HTTP_PORT | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: DORIS_DATABASE
+              value: {{ .Values.env.DORIS_DATABASE | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

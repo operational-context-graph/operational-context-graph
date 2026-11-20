@@ -32,6 +32,7 @@ import (
 var (
 	slClient *streamload.Client
 	slDB     *sql.DB
+	slDBName string
 )
 
 func TestMain(m *testing.M) {
@@ -41,8 +42,14 @@ func TestMain(m *testing.M) {
 	}
 	dorissql.RegisterTimeArgs()
 
+	slDBName = os.Getenv("DORIS_DATABASE")
+	if slDBName == "" {
+		slDBName = "ocg"
+	}
+
 	slClient = streamload.NewClient(
 		slURL,
+		slDBName,
 		os.Getenv("TEST_STREAM_LOAD_USER"),
 		os.Getenv("TEST_STREAM_LOAD_PASSWORD"),
 	)
@@ -69,8 +76,9 @@ func rowExistsInLogs(t *testing.T, iri string, ts time.Time) bool {
 	t.Helper()
 	from := ts.Add(-time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
 	to := ts.Add(time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
+	//nolint:gosec // slDBName is read from env at test startup, not user input
 	row := slDB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM ocg.logs WHERE timestamp >= ? AND timestamp < ? AND iri = ?`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.logs WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, slDBName),
 		from, to, iri)
 	var n int
 	require.NoError(t, row.Scan(&n))
@@ -81,8 +89,9 @@ func rowExistsInMetrics(t *testing.T, iri string, ts time.Time) bool {
 	t.Helper()
 	from := ts.Add(-time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
 	to := ts.Add(time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
+	//nolint:gosec // slDBName is read from env at test startup, not user input
 	row := slDB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM ocg.metrics WHERE timestamp >= ? AND timestamp < ? AND iri = ?`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.metrics WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, slDBName),
 		from, to, iri)
 	var n int
 	require.NoError(t, row.Scan(&n))
@@ -93,8 +102,9 @@ func rowExistsInTraces(t *testing.T, iri string, ts time.Time) bool {
 	t.Helper()
 	from := ts.Add(-time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
 	to := ts.Add(time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
+	//nolint:gosec // slDBName is read from env at test startup, not user input
 	row := slDB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM ocg.traces WHERE timestamp >= ? AND timestamp < ? AND iri = ?`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.traces WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, slDBName),
 		from, to, iri)
 	var n int
 	require.NoError(t, row.Scan(&n))
@@ -168,8 +178,9 @@ func TestStreamLoad_LabelIdempotency(t *testing.T) {
 
 	from := ts.Add(-time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
 	to := ts.Add(time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
+	//nolint:gosec // slDBName is read from env at test startup, not user input
 	row := slDB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM ocg.logs WHERE timestamp >= ? AND timestamp < ? AND iri = ?`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.logs WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, slDBName),
 		from, to, iri)
 	var n int
 	require.NoError(t, row.Scan(&n))

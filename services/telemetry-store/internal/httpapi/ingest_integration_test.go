@@ -37,6 +37,7 @@ import (
 var (
 	ingestHandler http.Handler
 	ingestDB      *sql.DB
+	ingestDBName  string
 )
 
 func TestMain(m *testing.M) {
@@ -46,8 +47,14 @@ func TestMain(m *testing.M) {
 	}
 	dorissql.RegisterTimeArgs()
 
+	ingestDBName = os.Getenv("DORIS_DATABASE")
+	if ingestDBName == "" {
+		ingestDBName = "ocg"
+	}
+
 	sl := streamload.NewClient(
 		slURL,
+		ingestDBName,
 		os.Getenv("TEST_STREAM_LOAD_USER"),
 		os.Getenv("TEST_STREAM_LOAD_PASSWORD"),
 	)
@@ -61,7 +68,7 @@ func TestMain(m *testing.M) {
 	}
 	ingestDB = sqlDB
 
-	db, err := store.NewFromDB(context.Background(), sqlDB)
+	db, err := store.NewFromDB(context.Background(), sqlDB, ingestDBName)
 	if err != nil {
 		panic("prepare store: " + err.Error())
 	}
@@ -92,8 +99,9 @@ func countRows(t *testing.T, table, iri string, ts time.Time) int {
 	t.Helper()
 	from := ts.Add(-time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
 	to := ts.Add(time.Minute).UTC().Format("2006-01-02 15:04:05.000000")
+	//nolint:gosec // ingestDBName is read from env at test startup; table is an internal constant, not user input
 	row := ingestDB.QueryRowContext(context.Background(),
-		fmt.Sprintf(`SELECT COUNT(*) FROM ocg.%s WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, table),
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE timestamp >= ? AND timestamp < ? AND iri = ?`, ingestDBName, table),
 		from, to, iri)
 	var n int
 	require.NoError(t, row.Scan(&n))
@@ -115,7 +123,7 @@ func TestHandleIngest_Logs_RoundTrip(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal(t, int64(1), resp.LoadedRows)
 
-	assert.Equal(t, 1, countRows(t, "logs", iri, ts), "log row must be in ocg.logs after ingest")
+	assert.Equal(t, 1, countRows(t, "logs", iri, ts), "log row must be in logs table after ingest")
 }
 
 func TestHandleIngest_Metrics_RoundTrip(t *testing.T) {
@@ -133,7 +141,7 @@ func TestHandleIngest_Metrics_RoundTrip(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal(t, int64(1), resp.LoadedRows)
 
-	assert.Equal(t, 1, countRows(t, "metrics", iri, ts), "metric row must be in ocg.metrics after ingest")
+	assert.Equal(t, 1, countRows(t, "metrics", iri, ts), "metric row must be in metrics table after ingest")
 }
 
 func TestHandleIngest_LabelIdempotency_Returns200AlreadyExists(t *testing.T) {
@@ -223,5 +231,5 @@ func TestHandleIngest_Traces_RoundTrip(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal(t, int64(1), resp.LoadedRows)
 
-	assert.Equal(t, 1, countRows(t, "traces", iri, ts), "span must be in ocg.traces after ingest")
+	assert.Equal(t, 1, countRows(t, "traces", iri, ts), "span must be in traces table after ingest")
 }

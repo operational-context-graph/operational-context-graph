@@ -12,6 +12,7 @@ import (
 type Config struct {
 	HTTPPort                string `koanf:"HTTP_PORT"                  validate:"required"`
 	DorisDSN                string `koanf:"DORIS_DSN"                  validate:"required"`
+	DorisDatabase           string `koanf:"DORIS_DATABASE"             validate:"required"`
 	DorisStreamLoadURL      string `koanf:"DORIS_STREAM_LOAD_URL"      validate:"required,url"`
 	DorisStreamLoadUser     string `koanf:"DORIS_STREAM_LOAD_USER"     validate:"required"`
 	DorisStreamLoadPassword string `koanf:"DORIS_STREAM_LOAD_PASSWORD" validate:"required"`
