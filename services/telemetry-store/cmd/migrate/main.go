@@ -62,6 +62,13 @@ func run(down bool) error {
 		return waitErr
 	}
 
+	// Create the database before Goose initialises its version tracking table,
+	// which itself lives in ocg. The DSN intentionally has no database component
+	// so this connection can run DDL at the server level.
+	if _, err := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS ocg"); err != nil {
+		return fmt.Errorf("create database: %w", err)
+	}
+
 	store, err := database.NewStoreFromQuerier("ocg.goose_db_version_telemetry_store", &dorismigrate.Querier{})
 	if err != nil {
 		return fmt.Errorf("create store: %w", err)
