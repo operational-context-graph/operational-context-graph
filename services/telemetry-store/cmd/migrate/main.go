@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"time"
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
@@ -66,11 +67,14 @@ func run(down bool) error {
 	if dbName == "" {
 		return fmt.Errorf("DORIS_DATABASE environment variable is required")
 	}
+	if !validIdentifier(dbName) {
+		return fmt.Errorf("DORIS_DATABASE %q contains invalid characters: only letters, digits, underscores, and hyphens are allowed", dbName)
+	}
 
 	// Create the database before Goose initialises its version tracking table,
 	// which itself lives in the target database. The DSN intentionally has no
 	// database component so this connection can run DDL at the server level.
-	if _, dbErr := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS "+dbName); dbErr != nil {
+	if _, dbErr := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS "+dbName); dbErr != nil { //nolint:gosec // dbName is validated to contain only safe identifier characters
 		return fmt.Errorf("create database: %w", dbErr)
 	}
 
@@ -92,7 +96,7 @@ func run(down bool) error {
 			return fmt.Errorf("roll back migration: %w", downErr)
 		}
 		if result != nil {
-			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration)
+			log.Printf("migration %d rolled back (%s)", result.Source.Version, result.Duration) //nolint:gosec // Version and Duration are Goose internals, not user input
 		} else {
 			log.Println("no migrations to roll back")
 		}
@@ -105,12 +109,19 @@ func run(down bool) error {
 	}
 
 	for _, r := range results {
-		log.Printf("migration %d applied (%s)", r.Source.Version, r.Duration)
+		log.Printf("migration %d applied (%s)", r.Source.Version, r.Duration) //nolint:gosec // Version and Duration are Goose internals, not user input
 	}
 	if len(results) == 0 {
 		log.Println("no pending migrations")
 	}
 	return nil
+}
+
+var identifierRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+
+// validIdentifier reports whether s is a safe Doris identifier (letters, digits, underscores, hyphens).
+func validIdentifier(s string) bool {
+	return identifierRe.MatchString(s)
 }
 
 // waitForDoris polls until Doris accepts connections. sql.Open only validates
