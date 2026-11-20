@@ -14,14 +14,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestReadStoreSuite runs visibility, integrity, pagination, ancestry, and concurrent snapshot checks against migrated PostgreSQL.
 func TestReadStoreSuite(t *testing.T) {
 	runPostgreSQLSuite(t, new(readStoreSuite))
 }
 
+// readStoreSuite owns isolated PostgreSQL fixtures for production read-store contract tests.
 type readStoreSuite struct {
 	PostgreSQLSuite
 }
 
+// candidateStore persists a complete activated candidate release and supplies a bounded production read store with test-owned cleanup.
 func (suite *readStoreSuite) candidateStore() *storage.Store {
 	t := suite.T()
 	_, err := loadValidatedFixture(t, suite.Context, suite.Database, candidateFixture(t))
@@ -30,11 +33,18 @@ func (suite *readStoreSuite) candidateStore() *storage.Store {
 	pool, err := pgxpool.New(suite.Context, suite.DatabaseURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: 5 * time.Second, Query: 5 * time.Second, Statement: 5 * time.Second, Lock: 5 * time.Second, IdleInTransaction: 5 * time.Second})
+	store, err := storage.NewStore(pool, storage.Timeouts{
+		Acquire:           5 * time.Second,
+		Query:             5 * time.Second,
+		Statement:         5 * time.Second,
+		Lock:              5 * time.Second,
+		IdleInTransaction: 5 * time.Second,
+	})
 	require.NoError(t, err)
 	return store
 }
 
+// TestCandidateMappingsAndParameterizedFilters verifies exact resolved filters, shared source candidates, unique mapping results, and ordered transformation/cardinality metadata.
 func (suite *readStoreSuite) TestCandidateMappingsAndParameterizedFilters() {
 	store := suite.candidateStore()
 	require.NoError(suite.T(), store.Read(suite.Context, func(ctx context.Context, snapshot *storage.Snapshot) error {
@@ -83,6 +93,8 @@ func (suite *readStoreSuite) TestCandidateMappingsAndParameterizedFilters() {
 	}))
 }
 
+// TestOrderedMappingProjectionDrift verifies a changed transformation cardinality
+// disagrees with the authoritative descriptor and returns storage.ErrInconsistentState.
 func (suite *readStoreSuite) TestOrderedMappingProjectionDrift() {
 	store := suite.candidateStore()
 	_, err := suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.source_mapping_transformations SET cardinality = 'many' WHERE mapping_revision = 'candidate-mapping-0-r1' AND ordinal = 0`)
@@ -94,6 +106,7 @@ func (suite *readStoreSuite) TestOrderedMappingProjectionDrift() {
 	suite.ErrorIs(err, storage.ErrInconsistentState)
 }
 
+// TestCandidateAncillaryResources verifies ancillary metadata coexists with exact program bindings, dependencies, and separately retrievable ancillary bytes.
 func (suite *readStoreSuite) TestCandidateAncillaryResources() {
 	fixture := candidateFixture(suite.T())
 	data := []byte(`{"code":"value"}`)
@@ -141,6 +154,7 @@ func (suite *readStoreSuite) TestCandidateAncillaryResources() {
 	}))
 }
 
+// TestRevisionProjectionReadsVerifyAllSelections verifies revision-scoped reads detect commitment corruption in every activated release selecting the revision.
 func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 	fixtures := fixtureCatalog(suite.T())
 	for _, fixture := range fixtures[:3] {
@@ -176,6 +190,7 @@ func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 	}
 }
 
+// requireMappingProjectionFailure introduces a controlled projection defect and requires the production read boundary to reject it.
 func (suite *readStoreSuite) requireMappingProjectionFailure(statement string) {
 	store := suite.candidateStore()
 	_, err := suite.Database.ExecContext(suite.Context, statement)
@@ -187,26 +202,32 @@ func (suite *readStoreSuite) requireMappingProjectionFailure(statement string) {
 	suite.ErrorIs(err, storage.ErrInconsistentState)
 }
 
+// TestMissingMappingConditionProjection verifies a missing declared condition binding fails projection integrity checks.
 func (suite *readStoreSuite) TestMissingMappingConditionProjection() {
 	suite.requireMappingProjectionFailure(`UPDATE schema_registry.source_mapping_details SET condition_program_name = NULL, condition_program_digest = NULL WHERE mapping_revision = 'candidate-mapping-0-r1'`)
 }
 
+// TestExtraMappingTransformationProjection verifies a projected transformation absent from the descriptor invalidates the complete mapping.
 func (suite *readStoreSuite) TestExtraMappingTransformationProjection() {
 	suite.requireMappingProjectionFailure(`INSERT INTO schema_registry.source_mapping_transformations SELECT schema_version,mapping_revision,3,target_artifact_type,target_revision,cardinality,program_name,program_digest FROM schema_registry.source_mapping_transformations WHERE mapping_revision = 'candidate-mapping-0-r1' AND ordinal = 0`)
 }
 
+// TestMissingMappingTransformationProjection verifies a dropped declared transformation cannot produce a truncated successful mapping.
 func (suite *readStoreSuite) TestMissingMappingTransformationProjection() {
 	suite.requireMappingProjectionFailure(`DELETE FROM schema_registry.source_mapping_transformations WHERE mapping_revision = 'candidate-mapping-0-r1' AND ordinal = 2`)
 }
 
+// TestReorderedMappingTransformationProjection verifies ordinal changes fail even when transformation values otherwise remain valid.
 func (suite *readStoreSuite) TestReorderedMappingTransformationProjection() {
 	suite.requireMappingProjectionFailure(`UPDATE schema_registry.source_mapping_transformations SET ordinal = ordinal + 10 WHERE mapping_revision = 'candidate-mapping-0-r1'`)
 }
 
+// TestMappingCommitmentMismatch verifies incorrect stored commitment bytes invalidate otherwise readable mapping projections.
 func (suite *readStoreSuite) TestMappingCommitmentMismatch() {
 	suite.requireMappingProjectionFailure(`UPDATE schema_registry.release_projection_commitments SET commitment = decode(repeat('00',32),'hex') WHERE schema_version = '8.0.0' AND family = 'source-mapping'`)
 }
 
+// TestConcurrentCandidateSnapshots verifies simultaneous bounded read transactions can independently resolve complete candidate selections without failures.
 func (suite *readStoreSuite) TestConcurrentCandidateSnapshots() {
 	store := suite.candidateStore()
 	var group sync.WaitGroup
@@ -234,6 +255,7 @@ func (suite *readStoreSuite) TestConcurrentCandidateSnapshots() {
 	}
 }
 
+// TestReleasesRejectsMissingInitialActivationSequence verifies an activation chain starting above sequence one is inconsistent.
 func (suite *readStoreSuite) TestReleasesRejectsMissingInitialActivationSequence() {
 	t := suite.T()
 	ctx := suite.Context
@@ -254,6 +276,7 @@ func (suite *readStoreSuite) TestReleasesRejectsMissingInitialActivationSequence
 	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
+// TestReleasesRejectsMissingActivationSequence verifies gaps between activated releases invalidate release listing.
 func (suite *readStoreSuite) TestReleasesRejectsMissingActivationSequence() {
 	t := suite.T()
 	ctx := suite.Context
@@ -280,6 +303,7 @@ func (suite *readStoreSuite) TestReleasesRejectsMissingActivationSequence() {
 	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
+// TestReleasesRejectsCorruptionOutsideReturnedPage verifies chain validation covers the snapshot ceiling's full history, not only rows returned by pagination.
 func (suite *readStoreSuite) TestReleasesRejectsCorruptionOutsideReturnedPage() {
 	t := suite.T()
 	ctx := suite.Context
@@ -314,6 +338,7 @@ WHERE schema_version = '1.1.0'`)
 	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
+// TestIsAncestorRejectsPredecessorMismatch verifies endpoint predecessor evidence must agree with the authoritative release before ancestry is accepted.
 func (suite *readStoreSuite) TestIsAncestorRejectsPredecessorMismatch() {
 	t := suite.T()
 	ctx := suite.Context
@@ -344,6 +369,7 @@ WHERE schema_version = '2.0.0'`)
 	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
+// TestIsAncestorRejectsMissingLineageEvidence verifies absent indexed endpoint lineage returns inconsistent state rather than an unproven ancestry result.
 func (suite *readStoreSuite) TestIsAncestorRejectsMissingLineageEvidence() {
 	t := suite.T()
 	ctx := suite.Context
@@ -371,6 +397,7 @@ func (suite *readStoreSuite) TestIsAncestorRejectsMissingLineageEvidence() {
 	require.ErrorIs(t, err, storage.ErrInconsistentState)
 }
 
+// TestIsAncestorRejectsDisconnectedBranchWithAscendingActivationSequence verifies valid disconnected lineage returns false despite increasing activation numbers.
 func (suite *readStoreSuite) TestIsAncestorRejectsDisconnectedBranchWithAscendingActivationSequence() {
 	t := suite.T()
 	ctx := suite.Context
@@ -409,6 +436,7 @@ WHERE schema_version = '2.0.0'`)
 	require.NoError(t, err)
 }
 
+// TestReadStoreVisibilityAndSnapshots verifies activated-only visibility, immutable paging ceilings, revision reuse, authoritative changes, corruption detection, and connection release.
 func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	t := suite.T()
 	ctx := suite.Context
@@ -556,6 +584,7 @@ func (suite *readStoreSuite) TestReadStoreVisibilityAndSnapshots() {
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 0 }, time.Second, 10*time.Millisecond)
 }
 
+// TestArtifactHistoryRejectsCorruptHistoricalProjection verifies historical artifact selections receive integrity checks even when the current release remains valid.
 func (suite *readStoreSuite) TestArtifactHistoryRejectsCorruptHistoricalProjection() {
 	t := suite.T()
 	ctx := suite.Context

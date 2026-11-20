@@ -15,6 +15,7 @@ import (
 
 // Validate checks immutable format constraints before application response limits.
 func Validate(value manifest.Manifest, context manifest.Context) error {
+	// Response sizing assumes format validation has already resolved the release's complete dependency closure.
 	if err := value.Validate(context); err != nil {
 		return err
 	}
@@ -44,6 +45,7 @@ type selectedClosure struct {
 	stores      map[string][]model.StorageEntry
 }
 
+// indexClosure indexes selected revisions and storage placements after format validation succeeds.
 func indexClosure(value manifest.Manifest, context manifest.Context) *selectedClosure {
 	closure := &selectedClosure{
 		version: value.SchemaVersion, context: context,
@@ -68,10 +70,13 @@ func indexClosure(value manifest.Manifest, context manifest.Context) *selectedCl
 	return closure
 }
 
+// selectionKey identifies an exact revision rather than only its logical artifact type.
 func selectionKey(value artifact.Artifact) artifact.Dependency {
 	return artifact.Dependency{Kind: value.Kind, Type: value.Type, Revision: value.Revision}
 }
 
+// descriptor builds and caches response metadata from selected artifacts and their bound payloads.
+// Missing selections, payloads, or resources return errors wrapping httpapi.ErrInvalid.
 func (c *selectedClosure) descriptor(key artifact.Dependency) (model.Descriptor, error) {
 	if descriptor, exists := c.descriptors[key]; exists {
 		return descriptor, nil
@@ -133,10 +138,12 @@ func (c *selectedClosure) descriptor(key artifact.Dependency) (model.Descriptor,
 	return value, nil
 }
 
+// byteDescriptor retains declared integrity metadata even when response sizing does not need content bytes.
 func byteDescriptor(value artifact.Descriptor, data []byte) model.ByteDescriptor {
 	return model.ByteDescriptor{MediaType: value.MediaType, Digest: value.Digest, Size: value.Size, Bytes: data}
 }
 
+// schema resolves a validated reference within this release's selected schemas, including an optional exact revision.
 func (c *selectedClosure) schema(reference sourcemapping.SchemaReference) (model.Descriptor, error) {
 	selection, exists := c.schemas[reference.ID]
 	if !exists || reference.Revision != "" && selection.Revision != reference.Revision {
@@ -146,6 +153,8 @@ func (c *selectedClosure) schema(reference sourcemapping.SchemaReference) (model
 	return c.descriptor(selectionKey(selection))
 }
 
+// mappingPackage assembles the response-sizing model with unique schemas, referenced programs, and target stores.
+// It excludes ancillary resource content and preserves transformation order.
 func (c *selectedClosure) mappingPackage(selection artifact.Artifact) (model.SourceMappingPackage, error) {
 	mapping, err := c.descriptor(selectionKey(selection))
 	if err != nil {
@@ -173,6 +182,7 @@ func (c *selectedClosure) mappingPackage(selection artifact.Artifact) (model.Sou
 		resources[resource.Name] = resource
 	}
 	programs := make(map[string]model.Resource)
+	// Shared program references contribute one resource to the generated package's size.
 	bind := func(reference sourcemapping.ProgramReference) (model.ProgramBinding, error) {
 		resource, exists := resources[reference.ProgramRef]
 		if !exists || resource.Role != "program" || resource.Digest != reference.ProgramDigest {
@@ -228,6 +238,7 @@ func (c *selectedClosure) mappingPackage(selection artifact.Artifact) (model.Sou
 		result.Stores = append(result.Stores, store)
 	}
 	sort.Slice(result.Programs, func(i, j int) bool { return result.Programs[i].Name < result.Programs[j].Name })
+	// Keep the source first; sort only the remaining schemas to match the HTTP representation.
 	sort.Slice(result.Schemas[1:], func(i, j int) bool {
 		left, right := result.Schemas[i+1].Artifact, result.Schemas[j+1].Artifact
 		if left.Type == right.Type {

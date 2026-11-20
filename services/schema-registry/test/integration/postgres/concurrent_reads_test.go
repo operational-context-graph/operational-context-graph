@@ -1,3 +1,24 @@
+/*
+PostgreSQL request-snapshot contract
+
+The shared readStoreSuite owns PostgreSQL through Testcontainers and testify lifecycle hooks.
+Goose applies fresh migrations before each database-backed test.
+Suite methods stay serial because they share migrated tables.
+Fixtures represent externally supplied read-model state, not release transitions.
+
+The candidate fixture includes optional conditions, shared resources, repeated targets, and mixed transformation targets.
+Sixteen GET and HEAD requests overlap after PostgreSQL establishes their snapshots.
+Each request uses its own snapshot across discovery, candidate queries, direct packages, or nested package pages.
+Each response MUST match its corresponding sequential baseline.
+Each request MUST issue one current-pointer query inside one read-only repeatable-read transaction.
+The statement trace MUST end with a committed transaction.
+The pool MUST retain no acquired connections after all callers finish.
+
+registryRows compares all registry tables, including exact bytes, commitments, visibility, lineage, and PostgreSQL row versions.
+The test never changes release state while requests run.
+Activation success, conflicts, rollback, and publication atomicity remain outside this reader-only contract.
+*/
+
 package postgres_test
 
 import (
@@ -22,27 +43,7 @@ import (
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
 
-/*
-PostgreSQL request-snapshot contract
-
-The shared readStoreSuite owns PostgreSQL through Testcontainers and testify lifecycle hooks.
-Goose applies fresh migrations before each database-backed test.
-Suite methods stay serial because they share migrated tables.
-Fixtures represent externally supplied read-model state, not release transitions.
-
-The candidate fixture includes optional conditions, shared resources, repeated targets, and mixed transformation targets.
-Sixteen GET and HEAD requests overlap after PostgreSQL establishes their snapshots.
-Each request uses its own snapshot across discovery, candidate queries, direct packages, or nested package pages.
-Each response MUST match its corresponding sequential baseline.
-Each request MUST issue one current-pointer query inside one read-only repeatable-read transaction.
-The statement trace MUST end with a committed transaction.
-The pool MUST retain no acquired connections after all callers finish.
-
-registryRows compares all registry tables, including exact bytes, commitments, visibility, lineage, and PostgreSQL row versions.
-The test never changes release state while requests run.
-Activation success, conflicts, rollback, and publication atomicity remain outside this reader-only contract.
-*/
-
+// readTraceKey separates request-specific driver and boundary evidence in context values.
 type readTraceKey struct{}
 
 // requestReadTrace records statements and read-boundary entries for one request.
@@ -58,6 +59,7 @@ type requestReadTrace struct {
 // readQueryTracer records driver statements without changing query arguments or execution.
 type readQueryTracer struct{}
 
+// TraceQueryStart records statements for the assigned request without changing execution or query arguments.
 func (readQueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	if trace, ok := ctx.Value(readTraceKey{}).(*requestReadTrace); ok {
 		trace.mu.Lock()
@@ -67,12 +69,14 @@ func (readQueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pg
 	return ctx
 }
 
+// TraceQueryEnd completes driver tracing without introducing state changes or additional queries.
 func (readQueryTracer) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
 // observedReadBoundary holds requests after PostgreSQL establishes their read
 // snapshots. No fixture or release state changes while the requests run.
 type observedReadBoundary struct{ release.Reader }
 
+// Read counts boundary entries and pauses after the production reader establishes a snapshot to overlap independent requests deterministically.
 func (r observedReadBoundary) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	trace := ctx.Value(readTraceKey{}).(*requestReadTrace)
 	trace.mu.Lock()
@@ -181,6 +185,7 @@ func (suite *readStoreSuite) TestConcurrentRequestsUseReadOnlySnapshots() {
 	entered, resume := make(chan struct{}, callers), make(chan struct{})
 	ctx, cancel := context.WithTimeout(suite.Context, 15*time.Second)
 	defer cancel()
+	// result joins each complete response with its request coordinates and database trace evidence.
 	type result struct {
 		path, method string
 		response     *httptest.ResponseRecorder

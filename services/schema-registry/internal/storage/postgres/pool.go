@@ -1,4 +1,4 @@
-// Package postgres owns read-only PostgreSQL pool setup for Schema Registry.
+// Package postgres provides TLS-configured PostgreSQL pools and transaction-scoped, read-only registry queries.
 package postgres
 
 import (
@@ -16,7 +16,9 @@ const runtimeRole = "schema_registry_api"
 
 // ReadinessChecker performs the bounded query used by the readiness probe.
 type ReadinessChecker interface {
+	// Ready probes database availability without requiring an active registry release.
 	Ready(context.Context) error
+	// Close releases the checker's owned database resources.
 	Close()
 }
 
@@ -46,6 +48,8 @@ func Open(ctx context.Context, cfg introspection.DatabaseConfig) (*Pool, error) 
 	return result, nil
 }
 
+// configurePool parses pool settings and installs Transport Layer Security (TLS) 1.3 and read-only role preparation.
+// Callers MUST validate sslmode=verify-full before using this configuration with untrusted database URLs.
 func configurePool(databaseURL string, minConnections, maxConnections int32) (*pgxpool.Config, error) {
 	poolConfig, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {

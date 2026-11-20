@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCodecEncodesDeterministicImmutableAndMutableSnapshots verifies stable tokens, preserved snapshot coordinates, and independent decoded filter maps.
 func TestCodecEncodesDeterministicImmutableAndMutableSnapshots(t *testing.T) {
 	codec := New()
 	immutable := testPayload("release:1.0.0")
@@ -43,6 +44,7 @@ func TestCodecEncodesDeterministicImmutableAndMutableSnapshots(t *testing.T) {
 	assert.Equal(t, "schema", again.Filters["kind"])
 }
 
+// TestCodecBindsParametersButDoesNotAuthenticateValidState verifies changed request bindings fail while valid caller-constructed continuation coordinates remain acceptable.
 func TestCodecBindsParametersButDoesNotAuthenticateValidState(t *testing.T) {
 	codec := New()
 	expected := testPayload("release:1.0.0")
@@ -68,6 +70,7 @@ func TestCodecBindsParametersButDoesNotAuthenticateValidState(t *testing.T) {
 	assert.Equal(t, callerConstructed.Last, decoded.Last)
 }
 
+// TestCodecRejectsMalformedDuplicateAndUnsupportedPayloads verifies malformed encodings, duplicate or unknown fields, and unsupported versions return ErrInvalid.
 func TestCodecRejectsMalformedDuplicateAndUnsupportedPayloads(t *testing.T) {
 	codec := New()
 	expected := testPayload("release:1.0.0")
@@ -92,6 +95,8 @@ func TestCodecRejectsMalformedDuplicateAndUnsupportedPayloads(t *testing.T) {
 	}
 }
 
+// TestCodecValidatesInputsAndTokenBoundaries verifies invalid inputs fail,
+// exact-size tokens decode, and oversized tokens fail.
 func TestCodecValidatesInputsAndTokenBoundaries(t *testing.T) {
 	codec := New()
 	_, err := codec.Encode(Payload{Resource: "releases", Limit: 100, Sort: "sequence", Last: "after"})
@@ -120,6 +125,7 @@ func TestCodecValidatesInputsAndTokenBoundaries(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalid)
 }
 
+// TestCodecRejectsInvalidFieldShapes verifies every cursor field rejects wrong JSON types, invalid values, and noncanonical representations.
 func TestCodecRejectsInvalidFieldShapes(t *testing.T) {
 	expected := testPayload("release:1.0.0")
 	// Field order matches Payload so canonical encoding cannot mask invalid field shapes.
@@ -191,6 +197,8 @@ func TestCodecRejectsInvalidFieldShapes(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid)
 }
 
+// TestCodecIsSafeForConcurrentCalls verifies concurrent decoding of one encoded
+// token preserves its snapshot coordinate without errors.
 func TestCodecIsSafeForConcurrentCalls(t *testing.T) {
 	codec := New()
 	expected := testPayload("release:1.0.0")
@@ -216,6 +224,7 @@ func TestCodecIsSafeForConcurrentCalls(t *testing.T) {
 	}
 }
 
+// testPayload supplies valid request bindings and a continuation position for the chosen snapshot coordinate.
 func testPayload(snapshot string) Payload {
 	return Payload{
 		Resource: "releases",

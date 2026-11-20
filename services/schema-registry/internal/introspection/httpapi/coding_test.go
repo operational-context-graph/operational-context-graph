@@ -14,6 +14,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
+// TestNegotiateCoding verifies identity defaults, gzip preferences, wildcard and explicit exclusions, and quality-based supported coding selection.
 func TestNegotiateCoding(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -43,6 +44,7 @@ func TestNegotiateCoding(t *testing.T) {
 	}
 }
 
+// TestEncodeRepresentationIsDeterministicAndExact verifies identity copies preserve bytes and repeated gzip encoding produces identical, losslessly decoded streams.
 func TestEncodeRepresentationIsDeterministicAndExact(t *testing.T) {
 	identity := bytes.Repeat([]byte("x"), 64*1024)
 	first, err := EncodeRepresentation(identity, Gzip)
@@ -59,6 +61,7 @@ func TestEncodeRepresentationIsDeterministicAndExact(t *testing.T) {
 	assert.Equal(t, []byte{0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 4, 255}, first[:10])
 }
 
+// TestEncodeRepresentationAllows64MiBBoundary verifies exact-limit identity content encodes while content one byte larger fails before compression.
 func TestEncodeRepresentationAllows64MiBBoundary(t *testing.T) {
 	identity := bytes.Repeat([]byte("x"), int(limits.MaxGeneratedJSONBytes))
 	compressed, err := EncodeRepresentation(identity, Gzip)
@@ -76,6 +79,7 @@ func TestEncodeRepresentationAllows64MiBBoundary(t *testing.T) {
 	require.ErrorIs(t, err, ErrRepresentationTooLarge)
 }
 
+// TestEncodeRepresentationContextStopsCancelledCompression verifies canceled contexts stop representation work with context.Canceled and no encoded output.
 func TestEncodeRepresentationContextStopsCancelledCompression(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -83,6 +87,7 @@ func TestEncodeRepresentationContextStopsCancelledCompression(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+// TestConcurrentCancelledCompressionReleasesWorkers verifies simultaneous canceled encoding requests terminate without stranded compression workers.
 func TestConcurrentCancelledCompressionReleasesWorkers(t *testing.T) {
 	const workers = 8
 	body := bytes.Repeat([]byte("x"), 16*1024*1024)

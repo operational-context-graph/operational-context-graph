@@ -22,6 +22,7 @@ import (
 
 const testOrigin = "https://registry.example.test"
 
+// TestValidateRejectsOversizedMappingPackageAfterFormatValidation verifies a format-valid release fails serviceability with ErrTooLarge identifying the oversized mapping.
 func TestValidateRejectsOversizedMappingPackageAfterFormatValidation(t *testing.T) {
 	value, context := mappingClosure(t)
 	// The second mapping proves acceptance checks every selected candidate.
@@ -33,6 +34,7 @@ func TestValidateRejectsOversizedMappingPackageAfterFormatValidation(t *testing.
 	require.ErrorContains(t, err, "mapping-b")
 }
 
+// TestValidateExcludesLargeAncillaryContent verifies ancillary metadata remains visible while unembedded content neither inflates package size nor stays retained.
 func TestValidateExcludesLargeAncillaryContent(t *testing.T) {
 	value, context := mappingClosure(t)
 	key := mappingKey("mapping-a")
@@ -58,6 +60,7 @@ func TestValidateExcludesLargeAncillaryContent(t *testing.T) {
 	}
 }
 
+// TestValidateDeduplicatesLargeSharedProgram verifies repeated bindings count a large program once and avoid retaining its bytes during sizing.
 func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	value, context := mappingClosure(t)
 	item := context.Artifacts[mappingKey("mapping-a")]
@@ -85,6 +88,7 @@ func TestValidateDeduplicatesLargeSharedProgram(t *testing.T) {
 	require.Less(t, size, limits.MaxGeneratedJSONBytes)
 }
 
+// TestMappingPackagePreservesValidatedClosure verifies exact revisions, opaque engine metadata, extensions, boolean schemas, transformation order, and deterministic dependency unions.
 func TestMappingPackagePreservesValidatedClosure(t *testing.T) {
 	value, context := mappingClosure(t)
 	require.NoError(t, Validate(value, context))
@@ -115,6 +119,7 @@ func TestMappingPackagePreservesValidatedClosure(t *testing.T) {
 	require.Equal(t, "source-r1", pack.Mapping.Dependencies[2].Revision)
 }
 
+// TestMappingPackageSizeMatchesSharedRepresentation verifies validation's metadata-only byte count equals the fully encoded shared response model.
 func TestMappingPackageSizeMatchesSharedRepresentation(t *testing.T) {
 	value, context := mappingClosure(t)
 	require.NoError(t, value.Validate(context))
@@ -138,6 +143,7 @@ func TestMappingPackageSizeMatchesSharedRepresentation(t *testing.T) {
 	require.EqualValues(t, len(encoded), size)
 }
 
+// TestValidateAllowsCanonicalSourceAsTarget verifies a shared source/target schema stays unique while its target stores contribute to the package.
 func TestValidateAllowsCanonicalSourceAsTarget(t *testing.T) {
 	value, context := mappingClosure(t)
 	item := context.Artifacts[mappingKey("mapping-a")]
@@ -154,6 +160,7 @@ func TestValidateAllowsCanonicalSourceAsTarget(t *testing.T) {
 	require.Equal(t, []string{"data-center-inventory", "insights-repository", "telemetry-store"}, storeNames(pack.Stores))
 }
 
+// TestValidateAllowsMappingWithoutCondition verifies an absent optional condition produces no binding and only the referenced transformation program.
 func TestValidateAllowsMappingWithoutCondition(t *testing.T) {
 	value, context := mappingClosure(t)
 	item := context.Artifacts[mappingKey("mapping-a")]
@@ -168,6 +175,8 @@ func TestValidateAllowsMappingWithoutCondition(t *testing.T) {
 	require.Len(t, pack.Programs, 1)
 }
 
+// TestValidateAllowsReleaseWithoutMappings verifies mapping-free releases pass,
+// but an unsupported manifest format version returns manifest.ErrInvalid.
 func TestValidateAllowsReleaseWithoutMappings(t *testing.T) {
 	value, context := mappingClosure(t)
 	value.Artifacts = value.Artifacts[:3]
@@ -177,6 +186,7 @@ func TestValidateAllowsReleaseWithoutMappings(t *testing.T) {
 	require.ErrorIs(t, Validate(value, context), manifest.ErrInvalid)
 }
 
+// TestValidateRejectsInvalidFormatBeforeApplicationSize verifies format failures take precedence over otherwise oversized generated packages.
 func TestValidateRejectsInvalidFormatBeforeApplicationSize(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -227,6 +237,7 @@ func TestValidateRejectsInvalidFormatBeforeApplicationSize(t *testing.T) {
 	}
 }
 
+// TestMappingPackageRejectsMissingValidatedInputs verifies lost selections, payloads, bindings, or stores fail assembly with specific ErrInvalid diagnostics.
 func TestMappingPackageRejectsMissingValidatedInputs(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -286,10 +297,12 @@ func TestMappingPackageRejectsMissingValidatedInputs(t *testing.T) {
 	}
 }
 
+// mappingKey identifies a fixture mapping's exact selected revision.
 func mappingKey(name string) artifact.Dependency {
 	return artifact.Dependency{Kind: artifact.KindSourceMapping, Type: name, Revision: name + "-r1"}
 }
 
+// mappingClosure supplies a valid release with shared schemas, programs, mappings, and target storage placements.
 func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 	t.Helper()
 	value := manifest.Manifest{
@@ -354,6 +367,7 @@ func mappingClosure(t testing.TB) (manifest.Manifest, manifest.Context) {
 	return value, context
 }
 
+// updateArtifact keeps a fixture's manifest selection and bound artifact context synchronized after mutation.
 func updateArtifact(value *manifest.Manifest, context manifest.Context, item artifact.Artifact) {
 	for i := range item.Resources {
 		if item.Resources[i].BundlePath == "resources/"+item.Resources[i].Name {
@@ -379,19 +393,23 @@ func updateArtifact(value *manifest.Manifest, context manifest.Context, item art
 	value.Artifacts = append(value.Artifacts, selection)
 }
 
+// testResource creates named resource metadata with integrity fields matching the supplied content.
 func testResource(name, role string, data []byte) artifact.Resource {
 	return artifact.Resource{Name: name, Role: artifact.ResourceRole(role), Descriptor: testDescriptor(data, "application/octet-stream", "resources/"+name), Bytes: data}
 }
 
+// testDescriptor supplies exact digest, size, media type, and bundle path for fixture bytes.
 func testDescriptor(data []byte, mediaType, path string) artifact.Descriptor {
 	digest := sha256.Sum256(data)
 	return artifact.Descriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(digest[:]), Size: int64(len(data)), BundlePath: path}
 }
 
+// programReference builds a descriptor binding to a fixture program's exact name and digest.
 func programReference(resource artifact.Resource) map[string]any {
 	return map[string]any{"programRef": resource.Name, "programDigest": resource.Digest}
 }
 
+// rewriteMapping applies a descriptor mutation and refreshes payload bytes and integrity metadata together.
 func rewriteMapping(t testing.TB, item *artifact.Artifact, mutate func(map[string]any)) {
 	t.Helper()
 	var document map[string]any
@@ -403,6 +421,7 @@ func rewriteMapping(t testing.TB, item *artifact.Artifact, mutate func(map[strin
 	item.Payload = testDescriptor(payload, item.Payload.MediaType, item.Payload.BundlePath)
 }
 
+// oversizeMapping expands valid program bindings until the selected mapping's generated package exceeds the application limit.
 func oversizeMapping(t testing.TB, value *manifest.Manifest, context manifest.Context, name string) {
 	t.Helper()
 	item := context.Artifacts[mappingKey(name)]
@@ -422,6 +441,7 @@ func oversizeMapping(t testing.TB, value *manifest.Manifest, context manifest.Co
 	updateArtifact(value, context, item)
 }
 
+// schemaTypes extracts schema type order for package closure assertions.
 func schemaTypes(schemas []model.Descriptor) []string {
 	result := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
@@ -430,6 +450,7 @@ func schemaTypes(schemas []model.Descriptor) []string {
 	return result
 }
 
+// storeNames extracts logical store order for placement-union assertions.
 func storeNames(stores []model.StorageEntry) []string {
 	result := make([]string, 0, len(stores))
 	for _, store := range stores {

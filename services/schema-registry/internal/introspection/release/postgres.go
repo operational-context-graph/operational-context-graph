@@ -9,8 +9,10 @@ import (
 // PostgresReader adapts the shared PostgreSQL read boundary to release use cases.
 type PostgresReader struct{ store *postgres.Store }
 
+// NewPostgresReader adapts a PostgreSQL store to the release service's read boundary.
 func NewPostgresReader(store *postgres.Store) *PostgresReader { return &PostgresReader{store: store} }
 
+// Read passes the store's transaction-scoped snapshot to the callback without extending its lifetime.
 func (r *PostgresReader) Read(ctx context.Context, fn func(context.Context, Snapshot) error) error {
 	return r.store.Read(ctx, func(readCtx context.Context, snapshot *postgres.Snapshot) error { return fn(readCtx, snapshot) })
 }

@@ -23,6 +23,7 @@ func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescrip
 		result.Links[v1.LinkTypeSelf] = "/v1/releases/" + selected + "/artifacts/" + item.Kind + "/" + item.Type
 	}
 	if len(item.Extensions) > 0 {
+		// Copy mutable JSON so building a response cannot expose the domain model's backing slice.
 		result.Extensions = append(json.RawMessage(nil), item.Extensions...)
 	}
 	for _, resource := range value.Resources {
@@ -46,6 +47,7 @@ func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescrip
 	return result
 }
 
+// resourceMetadata builds integrity metadata and an immutable content link for a revision-owned resource.
 func resourceMetadata(revision string, resource model.Resource) v1.Resource {
 	return v1.Resource{Name: resource.Name, Role: artifactmodel.ResourceRole(resource.Role), MediaType: resource.MediaType, Digest: resource.Digest, Size: resource.Size, Href: "/v1/artifacts/" + revision + "/resources/" + resource.Name}
 }
@@ -67,6 +69,7 @@ func BuildMapping(value model.SourceMapping, version string) v1.SourceMapping {
 	return result
 }
 
+// schemaReference identifies an exact selected schema and links to its release-scoped content.
 func schemaReference(version, artifactType, revision string) v1.SourceMappingSourceSchema {
 	return v1.SourceMappingSourceSchema{ArtifactType: artifactType, ArtifactRevision: revision, Content: "/v1/releases/" + version + "/schemas/" + artifactType + "/content"}
 }

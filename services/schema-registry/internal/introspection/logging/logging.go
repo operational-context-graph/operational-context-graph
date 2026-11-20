@@ -16,6 +16,7 @@ func New(cfg introspection.LoggingConfig) *slog.Logger {
 	return newLogger(cfg, os.Stderr)
 }
 
+// newLogger creates a severity-filtered JSON logger that bounds string attributes before encoding.
 func newLogger(cfg introspection.LoggingConfig, writer io.Writer) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
 		Level: parseLevel(cfg.Level),
@@ -28,6 +29,7 @@ func newLogger(cfg introspection.LoggingConfig, writer io.Writer) *slog.Logger {
 	}))
 }
 
+// parseLevel maps configured severity names to slog levels, defaulting unknown values to info.
 func parseLevel(level string) slog.Level {
 	switch level {
 	case "debug":
@@ -41,9 +43,12 @@ func parseLevel(level string) slog.Level {
 	}
 }
 
+// truncate limits a string's byte length and removes incomplete UTF-8 sequences at the boundary.
+// max MUST be nonnegative.
 func truncate(value string, max int) string {
 	if len(value) <= max {
 		return value
 	}
+	// A byte limit can split a multibyte rune; discard the fragment rather than emitting invalid text.
 	return strings.ToValidUTF8(value[:max], "")
 }

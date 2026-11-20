@@ -27,6 +27,7 @@ type PostgreSQLSuite struct {
 	DatabaseURL string
 }
 
+// SetupSuite provisions a disposable PostgreSQL server and a migration-capable connection for database boundary tests.
 func (suite *PostgreSQLSuite) SetupSuite() {
 	suite.Context = context.Background()
 
@@ -54,14 +55,17 @@ func (suite *PostgreSQLSuite) SetupSuite() {
 	suite.Require().NoError(goose.SetDialect("postgres"))
 }
 
+// SetupTest applies migrations so each test begins with an empty registry schema.
 func (suite *PostgreSQLSuite) SetupTest() {
 	suite.Require().NoError(goose.UpContext(suite.Context, suite.Database, migrationDirectory()))
 }
 
+// TearDownTest rolls back the registry migration to isolate database fixtures between tests.
 func (suite *PostgreSQLSuite) TearDownTest() {
 	suite.Require().NoError(goose.DownContext(suite.Context, suite.Database, migrationDirectory()))
 }
 
+// TearDownSuite closes database handles and terminates the suite-owned container.
 func (suite *PostgreSQLSuite) TearDownSuite() {
 	if suite.Database != nil {
 		suite.Require().NoError(suite.Database.Close())
@@ -71,10 +75,12 @@ func (suite *PostgreSQLSuite) TearDownSuite() {
 	}
 }
 
+// migrationDirectory locates the component's canonical migrations relative to the integration package.
 func migrationDirectory() string {
 	return filepath.Join("..", "..", "..", "migrations")
 }
 
+// runPostgreSQLSuite connects database test suites to testify's setup, isolation, and cleanup lifecycle.
 func runPostgreSQLSuite(t *testing.T, testSuite suite.TestingSuite) {
 	suite.Run(t, testSuite)
 }

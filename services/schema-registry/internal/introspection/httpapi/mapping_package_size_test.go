@@ -17,6 +17,8 @@ import (
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
 
+// TestMappingPackageSizeMatchesEncodedJSON verifies exact sizing across Base64 padding boundaries, boolean schemas, Unicode escaping, and precision-sensitive numeric literals.
+// Building preserves raw document bytes and leaves input models unchanged.
 func TestMappingPackageSizeMatchesEncodedJSON(t *testing.T) {
 	documents := []struct {
 		name string
@@ -54,6 +56,7 @@ func TestMappingPackageSizeMatchesEncodedJSON(t *testing.T) {
 	}
 }
 
+// TestMappingPackageSmallSizeLimits verifies inclusive exact limits, larger integer budgets, and zero results for undersized or negative limits.
 func TestMappingPackageSmallSizeLimits(t *testing.T) {
 	value := testPackage([]byte{1, 2, 3, 4})
 	body, err := BuildMappingPackage(value, testVersion)
@@ -80,6 +83,7 @@ func TestMappingPackageSmallSizeLimits(t *testing.T) {
 	require.Zero(t, size)
 }
 
+// TestMappingPackagePublicSizeBoundaryWithoutProgramAllocation verifies exact 64 MiB metadata passes preflight and one-byte overflow fails before content allocation.
 func TestMappingPackagePublicSizeBoundaryWithoutProgramAllocation(t *testing.T) {
 	require.EqualValues(t, 64<<20, limits.MaxGeneratedJSONBytes)
 	value := testPackage(nil)
@@ -110,6 +114,7 @@ func TestMappingPackagePublicSizeBoundaryWithoutProgramAllocation(t *testing.T) 
 	require.ErrorIs(t, err, ErrTooLarge, "oversize preflight runs before Base64 encoding or byte-length checks")
 }
 
+// TestMappingPackageRejectsAggregateProgramSize verifies individually bounded programs can exceed the aggregate JSON limit after Base64 expansion.
 func TestMappingPackageRejectsAggregateProgramSize(t *testing.T) {
 	value := testPackage(nil)
 	program := value.Programs[1]
@@ -125,6 +130,7 @@ func TestMappingPackageRejectsAggregateProgramSize(t *testing.T) {
 	require.ErrorIs(t, err, ErrTooLarge)
 }
 
+// TestMappingPackageRejectsInvalidContent verifies absent content, invalid JSON, negative sizes, and oversized declared programs retain distinct invalid/too-large classifications.
 func TestMappingPackageRejectsInvalidContent(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -164,6 +170,7 @@ func TestMappingPackageRejectsInvalidContent(t *testing.T) {
 	}
 }
 
+// TestMappingPackagePropagatesMetadataMarshalError verifies sizing and building preserve both ErrInvalid and the underlying JSON marshaler error.
 func TestMappingPackagePropagatesMetadataMarshalError(t *testing.T) {
 	value := testPackage(nil)
 	value.Mapping.Artifact.Extensions = []byte(`{"broken":`)

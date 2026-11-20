@@ -29,12 +29,15 @@ import (
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
+// artifactTestReader supplies controlled artifact state to each in-process route request.
 type artifactTestReader struct{ snapshot *artifactTestSnapshot }
 
+// Read exposes the fixture snapshot without opening a database transaction.
 func (r artifactTestReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	return fn(ctx, r.snapshot)
 }
 
+// artifactTestSnapshot models visible releases, immutable artifacts, selected relationships, filters, and injected lookup failures.
 type artifactTestSnapshot struct {
 	current       model.CurrentState
 	releases      map[string]model.Release
@@ -53,10 +56,15 @@ type artifactTestSnapshot struct {
 	dependencyErr error
 }
 
+// CurrentState supplies the current pointer and immutable activation ceiling.
 func (s *artifactTestSnapshot) CurrentState() model.CurrentState { return s.current }
+
+// CurrentRelease resolves the fixture's current version through the same visibility rules as selected releases.
 func (s *artifactTestSnapshot) CurrentRelease(ctx context.Context) (model.Release, error) {
 	return s.Release(ctx, s.current.SchemaVersion)
 }
+
+// Release returns configured visible releases and hides absent versions behind ErrNotFound.
 func (s *artifactTestSnapshot) Release(_ context.Context, version string) (model.Release, error) {
 	value, ok := s.releases[version]
 	if !ok {
@@ -64,12 +72,18 @@ func (s *artifactTestSnapshot) Release(_ context.Context, version string) (model
 	}
 	return value, nil
 }
+
+// ReleasesAt supplies an empty release collection outside artifact-route fixture concerns.
 func (*artifactTestSnapshot) ReleasesAt(context.Context, *int64, int64, int) ([]model.Release, error) {
 	return nil, nil
 }
+
+// IsAncestor supplies no ancestry evidence because these fixtures do not support release comparisons.
 func (*artifactTestSnapshot) IsAncestor(context.Context, string, string) (bool, error) {
 	return false, nil
 }
+
+// Artifact supplies immutable revision content or a controlled absence or integrity failure.
 func (s *artifactTestSnapshot) Artifact(_ context.Context, revision string) (model.Artifact, error) {
 	if s.artifactErr != nil {
 		return model.Artifact{}, s.artifactErr
@@ -80,6 +94,8 @@ func (s *artifactTestSnapshot) Artifact(_ context.Context, revision string) (mod
 	}
 	return value, nil
 }
+
+// ReleaseArtifact resolves the fixture's logical selections; release visibility is checked separately by the service.
 func (s *artifactTestSnapshot) ReleaseArtifact(_ context.Context, _ string, kind, artifactType string) (model.Artifact, error) {
 	if s.artifactErr != nil {
 		return model.Artifact{}, s.artifactErr
@@ -90,6 +106,8 @@ func (s *artifactTestSnapshot) ReleaseArtifact(_ context.Context, _ string, kind
 	}
 	return value, nil
 }
+
+// ReleaseArtifacts emulates exact artifact and resolved-mapping filters, canonical ordering, and exclusive kind/type continuation bounds.
 func (s *artifactTestSnapshot) ReleaseArtifacts(_ context.Context, version string, filter model.ArtifactFilter, afterKind, afterType *string, limit int) ([]model.Artifact, error) {
 	items, ok := s.collections[version]
 	if !ok {
@@ -142,6 +160,8 @@ func (s *artifactTestSnapshot) ReleaseArtifacts(_ context.Context, version strin
 	}
 	return filtered, nil
 }
+
+// ArtifactHistory supplies descending logical selections within the original activation ceiling and exclusive continuation position.
 func (s *artifactTestSnapshot) ArtifactHistory(_ context.Context, kind, artifactType string, before *int64, maximum int64, limit int) ([]model.ReleaseArtifact, error) {
 	items := make([]model.ReleaseArtifact, 0, len(s.history))
 	for _, item := range s.history {
@@ -158,12 +178,16 @@ func (s *artifactTestSnapshot) ArtifactHistory(_ context.Context, kind, artifact
 	}
 	return items, nil
 }
+
+// Resources copies fixture resource metadata or injects a controlled resource-query failure.
 func (s *artifactTestSnapshot) Resources(_ context.Context, revision string) ([]model.Resource, error) {
 	if s.resourceErr != nil {
 		return nil, s.resourceErr
 	}
 	return append([]model.Resource(nil), s.resources[revision]...), nil
 }
+
+// Resource returns named fixture content with independent failure injection and missing-resource classification.
 func (s *artifactTestSnapshot) Resource(_ context.Context, revision, name string) (model.Resource, error) {
 	if s.resourceErr != nil {
 		return model.Resource{}, s.resourceErr
@@ -175,18 +199,26 @@ func (s *artifactTestSnapshot) Resource(_ context.Context, revision, name string
 	}
 	return model.Resource{}, postgres.ErrNotFound
 }
+
+// Dependencies copies exact-revision fixture relationships or injects a dependency-query failure.
 func (s *artifactTestSnapshot) Dependencies(_ context.Context, revision string) ([]model.Dependency, error) {
 	if s.dependencyErr != nil {
 		return nil, s.dependencyErr
 	}
 	return append([]model.Dependency(nil), s.dependencies[revision]...), nil
 }
+
+// ContextBindings supplies copied context selections scoped to both release and schema revision.
 func (s *artifactTestSnapshot) ContextBindings(_ context.Context, version, revision string) ([]model.SchemaContextBinding, error) {
 	return append([]model.SchemaContextBinding(nil), s.bindings[version+"\x00"+revision]...), nil
 }
+
+// StorageEntries supplies copied logical placements scoped to release and schema type.
 func (s *artifactTestSnapshot) StorageEntries(_ context.Context, version, artifactType string) ([]model.StorageEntry, error) {
 	return append([]model.StorageEntry(nil), s.stores[version+"\x00"+artifactType]...), nil
 }
+
+// URIEntry performs exact release-scoped fixture lookup without normalizing the requested URI.
 func (s *artifactTestSnapshot) URIEntry(_ context.Context, version, uri string) (model.URIEntry, error) {
 	value, ok := s.uris[version+"\x00"+uri]
 	if !ok {
@@ -194,6 +226,8 @@ func (s *artifactTestSnapshot) URIEntry(_ context.Context, version, uri string) 
 	}
 	return value, nil
 }
+
+// SourceMappingByRevision supplies mapping projections by exact revision for agreement checks.
 func (s *artifactTestSnapshot) SourceMappingByRevision(_ context.Context, _ string, revision string) (model.SourceMappingDetail, error) {
 	value, ok := s.mappings[revision]
 	if !ok {
@@ -201,6 +235,8 @@ func (s *artifactTestSnapshot) SourceMappingByRevision(_ context.Context, _ stri
 	}
 	return value, nil
 }
+
+// SourceMapping provides legacy source-type fixture lookup; candidate collection tests use revision-resolved mapping projections instead.
 func (s *artifactTestSnapshot) SourceMapping(_ context.Context, _ string, source string) (model.SourceMappingDetail, error) {
 	for _, value := range s.mappings {
 		if value.SourceArtifactType == source {
@@ -210,10 +246,12 @@ func (s *artifactTestSnapshot) SourceMapping(_ context.Context, _ string, source
 	return model.SourceMappingDetail{}, postgres.ErrNotFound
 }
 
+// TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse verifies all artifact kinds expose complete relationships and immutable revisions retain release-independent identity.
 func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *testing.T) {
 	snapshot := artifactFixture()
 	server := artifactTestServer(snapshot)
 
+	// Selected schemas expose complete integrity, resource, dependency, extension, and relationship metadata without importer-only bundle paths.
 	t.Run("release scoped schema descriptor", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/schema/device")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -231,6 +269,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		assert.NotContains(t, response.Body.String(), "bundlePath")
 	})
 
+	// Contexts omit schema classification, target version, and schema-only context/package links.
 	t.Run("context descriptor omits schema relationships", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/context/device")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -242,6 +281,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		assert.NotContains(t, body.Links, "package")
 	})
 
+	// Mapping metadata exposes its target schema version and a package link keyed by the mapping's own logical type.
 	t.Run("source mapping descriptor uses source keyed package link", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/source-mapping/device-mapping")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -253,6 +293,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		assert.Equal(t, "/v1/releases/1.0.0/source-mappings/device-mapping/package", body.Links["package"])
 	})
 
+	// Immutable revision metadata uses revision-specific links and omits all release-dependent schema relationship links.
 	t.Run("immutable reused descriptor omits release links", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema/metadata")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -266,6 +307,7 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 		assert.NotContains(t, body.Links, "stores")
 	})
 
+	// Reusing a revision preserves payload identity while each selected descriptor retains its own release links and version header.
 	t.Run("reused revision remains immutable across release selections", func(t *testing.T) {
 		snapshot.releases["1.1.0"] = model.Release{SchemaVersion: "1.1.0", ActivationSequence: 2}
 		first := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/schema/device")
@@ -282,13 +324,16 @@ func TestCommonArtifactDescriptorsCoverKindsRelationshipsAndImmutableReuse(t *te
 	})
 }
 
+// TestCommonArtifactDescriptorsRejectInactiveAndInconsistentRows verifies inactive-only revisions return 404 and corrupt resource or dependency evidence returns inconsistent-registry-state.
 func TestCommonArtifactDescriptorsRejectInactiveAndInconsistentRows(t *testing.T) {
+	// A revision stored only for an inactive release is not visible through immutable metadata lookup.
 	t.Run("inactive only revision is hidden", func(t *testing.T) {
 		response := serveArtifactRequest(artifactTestServer(artifactFixture()), http.MethodGet, "/v1/artifacts/inactive/metadata")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.Contains(t, response.Body.String(), `"code":"artifact-not-found"`)
 	})
 
+	// Resource projection integrity failures produce inconsistent-registry-state instead of artifact metadata.
 	t.Run("inconsistent resources are not represented", func(t *testing.T) {
 		snapshot := artifactFixture()
 		snapshot.resourceErr = postgres.ErrInconsistentState
@@ -297,6 +342,7 @@ func TestCommonArtifactDescriptorsRejectInactiveAndInconsistentRows(t *testing.T
 		assert.Contains(t, response.Body.String(), `"code":"inconsistent-registry-state"`)
 	})
 
+	// Dependency projection integrity failures produce inconsistent-registry-state instead of artifact metadata.
 	t.Run("inconsistent dependencies are not represented", func(t *testing.T) {
 		snapshot := artifactFixture()
 		snapshot.dependencyErr = postgres.ErrInconsistentState
@@ -306,10 +352,12 @@ func TestCommonArtifactDescriptorsRejectInactiveAndInconsistentRows(t *testing.T
 	})
 }
 
+// TestReleaseArtifactCollectionFiltersPaginationAndValidation verifies exact selection filters, bounded pages, and rejection of invalid values or incompatible filter combinations.
 func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 	snapshot := artifactFixture()
 	server := artifactTestServer(snapshot)
 
+	// Complete collections preserve canonical kind order, null continuation, and HEAD validator parity without a body.
 	t.Run("returns ordered complete descriptors and supports HEAD", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -324,6 +372,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 		assert.Empty(t, head.Body.String())
 	})
 
+	// Kind, type, class, and dependency predicates combine conjunctively to select the exact matching revision.
 	t.Run("combines exact filters with logical AND", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?kind=schema&artifactType=device&schemaClass=entity-type&dependsOnRevision=rev-context")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -334,6 +383,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 		assert.Nil(t, body.NextCursor)
 	})
 
+	// A valid unmatched filter returns an empty array and null continuation rather than a missing-item error.
 	t.Run("well formed unmatched type returns an empty collection", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?artifactType=unknown")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -341,6 +391,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"nextCursor":null`)
 	})
 
+	// A collection exceeding the maximum page length returns exactly 1000 descriptors and a continuation token.
 	t.Run("returns a 1000 item page and a next cursor", func(t *testing.T) {
 		items := make([]model.Artifact, 1001)
 		for index := range items {
@@ -378,6 +429,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 	}
 }
 
+// TestArtifactCursorTraversesKindBoundaries verifies kind/type continuation traverses different artifact kinds without omissions or duplicate selections.
 func TestArtifactCursorTraversesKindBoundaries(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	const base = "/v1/releases/1.0.0/artifacts?limit=1"
@@ -399,6 +451,7 @@ func TestArtifactCursorTraversesKindBoundaries(t *testing.T) {
 	assert.Equal(t, []string{"context/device", "schema/device", "source-mapping/device-mapping"}, identities)
 }
 
+// TestArtifactCursorRejectsChangedBindingsAndMalformedKeysets verifies changed resource parameters and invalid kind/type positions cannot reuse a continuation token.
 func TestArtifactCursorRejectsChangedBindingsAndMalformedKeysets(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?limit=1")
@@ -429,6 +482,7 @@ func TestArtifactCursorRejectsChangedBindingsAndMalformedKeysets(t *testing.T) {
 	}
 }
 
+// TestReleaseArtifactReadsRemainReleaseScopedForConcurrentCallers verifies simultaneous selected metadata reads preserve their release-scoped identity and links.
 func TestReleaseArtifactReadsRemainReleaseScopedForConcurrentCallers(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	var group sync.WaitGroup
@@ -437,15 +491,13 @@ func TestReleaseArtifactReadsRemainReleaseScopedForConcurrentCallers(t *testing.
 		body, selected string
 	}, 32)
 	for range 32 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?kind=schema")
 			results <- struct {
 				status         int
 				body, selected string
 			}{response.Code, response.Body.String(), response.Header().Get("Selected-Schema-Version")}
-		}()
+		})
 	}
 	group.Wait()
 	close(results)
@@ -460,6 +512,7 @@ func TestReleaseArtifactReadsRemainReleaseScopedForConcurrentCallers(t *testing.
 	}
 }
 
+// TestSelectedArtifactRouteValidatesSelectionAndPath verifies malformed coordinates, unsupported kinds, and absent selections map to appropriate public failures.
 func TestSelectedArtifactRouteValidatesSelectionAndPath(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	get := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts/schema/device")
@@ -485,6 +538,7 @@ func TestSelectedArtifactRouteValidatesSelectionAndPath(t *testing.T) {
 	}
 }
 
+// TestImmutableRevisionMetadataSupportsConditionalAndConcurrentReads verifies immutable metadata stays identical across callers and supports bodyless validator revalidation.
 func TestImmutableRevisionMetadataSupportsConditionalAndConcurrentReads(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	response := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema/metadata")
@@ -534,15 +588,13 @@ func TestImmutableRevisionMetadataSupportsConditionalAndConcurrentReads(t *testi
 		body, tag string
 	}, 32)
 	for range 32 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			got := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema/metadata")
 			results <- struct {
 				status    int
 				body, tag string
 			}{got.Code, got.Body.String(), got.Header().Get("ETag")}
-		}()
+		})
 	}
 	group.Wait()
 	close(results)
@@ -557,10 +609,12 @@ func TestImmutableRevisionMetadataSupportsConditionalAndConcurrentReads(t *testi
 	}
 }
 
+// TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting verifies exact bytes, coding negotiation, HEAD parity, and precommit failures across content routes.
 func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing.T) {
 	snapshot := artifactFixture()
 	server := artifactTestServer(snapshot)
 
+	// Identity, decoded gzip, and HEAD agree on payload content and integrity, with HEAD retaining its selected representation's validator.
 	t.Run("primary identity gzip and HEAD retain integrity metadata", func(t *testing.T) {
 		identity := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema")
 		require.Equal(t, http.StatusOK, identity.Code)
@@ -585,6 +639,7 @@ func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing
 		assert.Empty(t, head.Body.String())
 	})
 
+	// Empty and one-byte resources retain exact content lengths; gzip decoding preserves the one-byte resource.
 	t.Run("named resources preserve empty and one byte values", func(t *testing.T) {
 		empty := fixtureBytes(nil, "application/octet-stream")
 		one := fixtureBytes([]byte("x"), "application/octet-stream")
@@ -619,6 +674,7 @@ func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing
 		assert.Equal(t, []byte("x"), decoded)
 	})
 
+	// Exact-limit stored payloads remain retrievable without truncation at the 16 MiB artifact boundary.
 	t.Run("exact sixteen MiB boundary remains servable", func(t *testing.T) {
 		bytes := make([]byte, 16*1024*1024)
 		bytes[0] = 'x'
@@ -657,6 +713,7 @@ func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing
 	}
 }
 
+// TestSimultaneousExactByteRequestsAreIdentical verifies concurrent immutable content requests return identical bytes and integrity metadata.
 func TestSimultaneousExactByteRequestsAreIdentical(t *testing.T) {
 	snapshot := artifactFixture()
 	server := artifactTestServer(snapshot)
@@ -666,15 +723,13 @@ func TestSimultaneousExactByteRequestsAreIdentical(t *testing.T) {
 		body, mediaType, digest, tag string
 	}, 32)
 	for range 32 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			got := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-schema")
 			results <- struct {
 				status                       int
 				body, mediaType, digest, tag string
 			}{got.Code, got.Body.String(), got.Header().Get("Content-Type"), got.Header().Get("Artifact-Digest"), got.Header().Get("ETag")}
-		}()
+		})
 	}
 	group.Wait()
 	close(results)
@@ -694,6 +749,7 @@ func TestSimultaneousExactByteRequestsAreIdentical(t *testing.T) {
 	}
 }
 
+// TestCanonicalResourcePathsRemainImmutable verifies canonical coordinates identify exact immutable content and mismatched identity coordinates fail.
 func TestCanonicalResourcePathsRemainImmutable(t *testing.T) {
 	snapshot := artifactFixture()
 	server := artifactTestServer(snapshot)
@@ -745,6 +801,7 @@ func TestCanonicalResourcePathsRemainImmutable(t *testing.T) {
 	assert.Equal(t, "1.1.0", historical.Header().Get("Schema-Version"))
 }
 
+// TestReleaseScopedURIResolverUsesExactSafeRedirects verifies exact catalog lookup produces conditional, server-owned redirects unaffected by request authority.
 func TestReleaseScopedURIResolverUsesExactSafeRedirects(t *testing.T) {
 	snapshot := artifactFixture()
 	payloadURI := "https://catalog.example.test/device"
@@ -816,6 +873,7 @@ func TestReleaseScopedURIResolverUsesExactSafeRedirects(t *testing.T) {
 	assert.Equal(t, "1.0.0", historical.Header().Get("Selected-Schema-Version"))
 }
 
+// TestReleaseScopedURIResolverValidatesQueryBoundaries verifies malformed, absent, duplicate, and unsupported URI query parameters fail before resolution.
 func TestReleaseScopedURIResolverValidatesQueryBoundaries(t *testing.T) {
 	snapshot := artifactFixture()
 	exactURI := "https://catalog.example.test/" + strings.Repeat("a", 8192-len("https://catalog.example.test/"))
@@ -846,6 +904,7 @@ func TestReleaseScopedURIResolverValidatesQueryBoundaries(t *testing.T) {
 	}
 }
 
+// TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot verifies continuation excludes later activations while preserving historical selection metadata and links.
 func TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot(t *testing.T) {
 	snapshot := artifactFixture()
 	old := fixtureArtifact("rev-old", "schema", "device", new("entity-type"), nil, []byte("false"))
@@ -881,13 +940,16 @@ func TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot(t *testing.T) {
 	assert.Equal(t, "rev-schema", secondBody.Items[0].ArtifactRevision)
 }
 
+// TestLogicalArtifactHistoryValidationAndPageShapes verifies logical identity validation, absent history classification, page limits, and complete envelope shapes.
 func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
+	// An identity without activated selections returns logical-artifact-not-found rather than a successful empty history page.
 	t.Run("no history is not found", func(t *testing.T) {
 		response := serveArtifactRequest(artifactTestServer(artifactFixture()), http.MethodGet, "/v1/artifact-kinds/schema/device/history")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.Contains(t, response.Body.String(), `"code":"logical-artifact-not-found"`)
 	})
 
+	// Single selections need no continuation; maximum-length history pages retain a cursor and support bodyless HEAD.
 	t.Run("single and maximum pages", func(t *testing.T) {
 		snapshot := artifactFixture()
 		snapshot.history = []model.ReleaseArtifact{{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 1}}
@@ -902,8 +964,8 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		items := make([]model.ReleaseArtifact, 1001)
 		for index := range items {
 			revision := "history-" + fmt.Sprintf("%04d", index)
-			artifact := fixtureArtifact(revision, "schema", "device", new("entity-type"), nil, []byte("true"))
-			snapshot.artifacts[revision] = artifact
+			entityArtifact := fixtureArtifact(revision, "schema", "device", new("entity-type"), nil, []byte("true"))
+			snapshot.artifacts[revision] = entityArtifact
 			items[index] = model.ReleaseArtifact{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: revision, ActivationSequence: int64(1001 - index)}
 		}
 		snapshot.history = items
@@ -933,6 +995,7 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		})
 	}
 
+	// A valid stateless history continuation succeeds without emitting cursor-expired.
 	t.Run("cursor remains valid without expiry", func(t *testing.T) {
 		snapshot := artifactFixture()
 		snapshot.current = model.CurrentState{SchemaVersion: "2.0.0", ActivationSequence: 2, SnapshotSequence: 2}
@@ -953,6 +1016,7 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 	})
 }
 
+// TestHistoryCursorRejectsInvalidSequences verifies unsigned history cursors still require positive numeric continuation and snapshot coordinates.
 func TestHistoryCursorRejectsInvalidSequences(t *testing.T) {
 	for _, coordinate := range []string{"last", "snapshot"} {
 		for _, invalid := range []string{"text", "0", "-1", "9223372036854775808"} {
@@ -973,6 +1037,7 @@ func TestHistoryCursorRejectsInvalidSequences(t *testing.T) {
 	}
 }
 
+// TestHistoryRejectsLateDescriptorFailureWithoutPartialPage verifies a later item's metadata failure rejects the whole page without publishing earlier items.
 func TestHistoryRejectsLateDescriptorFailureWithoutPartialPage(t *testing.T) {
 	snapshot := artifactFixture()
 	snapshot.current.SnapshotSequence = 2
@@ -987,18 +1052,19 @@ func TestHistoryRejectsLateDescriptorFailureWithoutPartialPage(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "rev-schema")
 }
 
+// artifactFixture creates visible release selections spanning schemas, contexts, mappings, resources, dependencies, and historical revision reuse.
 func artifactFixture() *artifactTestSnapshot {
 	class, target := "entity-type", "1.0.0"
-	schema := fixtureArtifact("rev-schema", "schema", "device", &class, nil, []byte(`{"type":"object"}`))
-	schema.Extensions = []byte(`{"org.example.review":{"approved":true}}`)
-	context := fixtureArtifact("rev-context", "context", "device", nil, nil, []byte(`{"@context":{}}`))
-	mapping := fixtureArtifact("rev-mapping", "source-mapping", "device-mapping", nil, &target, []byte(`{"mapping":true}`))
+	schemaArtifact := fixtureArtifact("rev-schema", "schema", "device", &class, nil, []byte(`{"type":"object"}`))
+	schemaArtifact.Extensions = []byte(`{"org.example.review":{"approved":true}}`)
+	contextArtifact := fixtureArtifact("rev-context", "context", "device", nil, nil, []byte(`{"@context":{}}`))
+	sourceMappingArtifact := fixtureArtifact("rev-mapping", "source-mapping", "device-mapping", nil, &target, []byte(`{"mapping":true}`))
 	return &artifactTestSnapshot{
 		current:      model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1},
 		releases:     map[string]model.Release{"1.0.0": {SchemaVersion: "1.0.0", ActivationSequence: 1}},
-		artifacts:    map[string]model.Artifact{"rev-schema": schema, "rev-context": context, "rev-mapping": mapping},
-		selections:   map[string]model.Artifact{"schema/device": schema, "context/device": context, "source-mapping/device-mapping": mapping},
-		collections:  map[string][]model.Artifact{"1.0.0": {schema, context, mapping}},
+		artifacts:    map[string]model.Artifact{"rev-schema": schemaArtifact, "rev-context": contextArtifact, "rev-mapping": sourceMappingArtifact},
+		selections:   map[string]model.Artifact{"schema/device": schemaArtifact, "context/device": contextArtifact, "source-mapping/device-mapping": sourceMappingArtifact},
+		collections:  map[string][]model.Artifact{"1.0.0": {schemaArtifact, contextArtifact, sourceMappingArtifact}},
 		history:      []model.ReleaseArtifact{},
 		resources:    map[string][]model.Resource{"rev-schema": {{ArtifactRevision: "rev-schema", Name: "example", Role: "example", ByteDescriptor: fixtureBytes([]byte("resource"), "text/plain")}}, "rev-context": {}, "rev-mapping": {}},
 		dependencies: map[string][]model.Dependency{"rev-schema": {{ArtifactRevision: "rev-schema", Kind: "context", ArtifactType: "device", Revision: "rev-context"}}, "rev-context": {}, "rev-mapping": {}},
@@ -1009,15 +1075,18 @@ func artifactFixture() *artifactTestSnapshot {
 	}
 }
 
+// fixtureArtifact supplies consistent immutable identity, optional classification, and exact payload integrity metadata.
 func fixtureArtifact(revision, kind, artifactType string, schemaClass, target *string, bytes []byte) model.Artifact {
 	return model.Artifact{Revision: revision, Kind: kind, Type: artifactType, CreatedUnderSchemaVersion: "1.0.0", SchemaClass: schemaClass, TargetSchemaVersion: target, CanonicalURI: "https://registry.example.test/v1/resources/" + kind + "/" + artifactType + "/" + revision, Payload: fixtureBytes(bytes, "application/json")}
 }
 
+// fixtureBytes supplies exact-byte size and digest metadata for route fixture content.
 func fixtureBytes(bytes []byte, mediaType string) model.ByteDescriptor {
 	sum := sha256.Sum256(bytes)
 	return model.ByteDescriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(sum[:]), Size: int64(len(bytes)), Bytes: bytes}
 }
 
+// artifactTestServer wires a controlled snapshot into both artifact and release services for complete in-process routing.
 func artifactTestServer(snapshot *artifactTestSnapshot) *Server {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 64
@@ -1025,6 +1094,7 @@ func artifactTestServer(snapshot *artifactTestSnapshot) *Server {
 	return NewWithServices(cfg, &fakeChecker{}, release.New(reader), artifact.New(reader))
 }
 
+// serveArtifactRequest captures an in-process response for status, header, and complete-body assertions.
 func serveArtifactRequest(server *Server, method, path string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, httptest.NewRequest(method, path, nil))

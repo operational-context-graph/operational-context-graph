@@ -28,6 +28,7 @@ type Config struct {
 	Logging   LoggingConfig   `koanf:"logging"`
 }
 
+// ServerConfig bounds listener behavior and request and shutdown lifetimes.
 type ServerConfig struct {
 	Host              string        `koanf:"host" validate:"required"`
 	Port              int           `koanf:"port" validate:"min=1,max=65535"`
@@ -38,11 +39,13 @@ type ServerConfig struct {
 	ShutdownTimeout   time.Duration `koanf:"shutdown_timeout" validate:"gt=0"`
 }
 
+// DatabaseConfig configures verified PostgreSQL connections and bounded read transactions.
 type DatabaseConfig struct {
-	URL                      string        `koanf:"url" validate:"required"`
-	Production               bool          `koanf:"production"`
-	PoolMinConnections       int32         `koanf:"pool_min_connections" validate:"gte=0"`
-	PoolMaxConnections       int32         `koanf:"pool_max_connections" validate:"gte=2"`
+	URL                string `koanf:"url" validate:"required"`
+	Production         bool   `koanf:"production"`
+	PoolMinConnections int32  `koanf:"pool_min_connections" validate:"gte=0"`
+	PoolMaxConnections int32  `koanf:"pool_max_connections" validate:"gte=2"`
+	// ReservedConnections preserves pool capacity for readiness probes when API admission reaches its limit.
 	ReservedConnections      int32         `koanf:"reserved_connections" validate:"gte=1"`
 	AcquireTimeout           time.Duration `koanf:"acquire_timeout" validate:"gt=0"`
 	QueryTimeout             time.Duration `koanf:"query_timeout" validate:"gt=0"`
@@ -51,11 +54,13 @@ type DatabaseConfig struct {
 	IdleInTransactionTimeout time.Duration `koanf:"idle_in_transaction_timeout" validate:"gt=0"`
 }
 
+// AdmissionConfig limits concurrent API requests and supplies retry advice for transient failures.
 type AdmissionConfig struct {
 	MaxInFlight   int           `koanf:"max_in_flight" validate:"gt=0"`
 	RetryInterval time.Duration `koanf:"retry_interval" validate:"gte=0"`
 }
 
+// LoggingConfig controls severity filtering and the maximum retained string field length.
 type LoggingConfig struct {
 	Level          string `koanf:"level" validate:"oneof=debug info warn error"`
 	MaxFieldLength int    `koanf:"max_field_length" validate:"gt=0"`
@@ -76,6 +81,7 @@ func LoadFromFile(path string) (*Config, error) {
 		}
 	}
 	transform := func(key, value string) (string, any) {
+		// Double underscores separate nested keys; single underscores remain part of field names.
 		key = strings.TrimPrefix(key, envPrefix)
 		return strings.ReplaceAll(strings.ToLower(key), "__", "."), value
 	}
@@ -91,6 +97,7 @@ func LoadFromFile(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// defaults returns baseline settings; callers MUST supply a database URL and an admission limit.
 func defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -108,6 +115,7 @@ func defaults() *Config {
 	}
 }
 
+// validate checks field constraints and reserves database capacity outside API admission.
 func validate(cfg *Config) error {
 	if err := validator.New().Struct(cfg); err != nil {
 		return fmt.Errorf("validate configuration: %w", err)
@@ -116,11 +124,13 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if cfg.Admission.MaxInFlight > int(cfg.Database.PoolMaxConnections-cfg.Database.ReservedConnections) {
+		// Reject oversubscription instead of allowing API traffic to starve readiness probes.
 		return fmt.Errorf("validate configuration: admission.max_in_flight exceeds unreserved database capacity")
 	}
 	return nil
 }
 
+// validateDatabase requires an absolute PostgreSQL URL, verified peers, and usable pool capacity.
 func validateDatabase(cfg DatabaseConfig) error {
 	parsed, err := url.Parse(cfg.URL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User == nil || parsed.User.Username() == "" {
@@ -136,6 +146,7 @@ func validateDatabase(cfg DatabaseConfig) error {
 		return fmt.Errorf("validate configuration: database reserved connections exhaust the pool")
 	}
 	if parsed.Query().Get("sslmode") != "verify-full" {
+		// Development mode does not relax certificate or hostname verification.
 		return fmt.Errorf("validate configuration: database connections require sslmode=verify-full")
 	}
 	return nil
@@ -150,6 +161,7 @@ func (c Config) Redacted() map[string]any {
 	}
 }
 
+// databaseHost extracts the hostname without retaining user information, ports, or query parameters.
 func databaseHost(target string) string {
 	parsed, err := url.Parse(target)
 	if err != nil {

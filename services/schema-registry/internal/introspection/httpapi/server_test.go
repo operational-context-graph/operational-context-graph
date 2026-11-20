@@ -21,6 +21,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
+// fakeChecker provides synchronized readiness failures, call counts, and closure evidence for lifecycle tests.
 type fakeChecker struct {
 	mu     sync.Mutex
 	err    error
@@ -28,8 +29,10 @@ type fakeChecker struct {
 	calls  int
 }
 
+// blockingChecker holds readiness until its query context expires to test bounded probe behavior.
 type blockingChecker struct{ fakeChecker }
 
+// Ready records the probe and waits for cancellation instead of using a database.
 func (b *blockingChecker) Ready(ctx context.Context) error {
 	b.mu.Lock()
 	b.calls++
@@ -38,6 +41,7 @@ func (b *blockingChecker) Ready(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// Ready counts calls and returns the configured availability result under synchronization.
 func (f *fakeChecker) Ready(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -45,30 +49,35 @@ func (f *fakeChecker) Ready(context.Context) error {
 	return f.err
 }
 
+// readyCalls reads the probe count safely while server goroutines run.
 func (f *fakeChecker) readyCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
 }
 
+// Close records readiness-checker cleanup for startup and shutdown assertions.
 func (f *fakeChecker) Close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closed = true
 }
 
+// isClosed reports synchronized closure evidence without racing lifecycle cleanup.
 func (f *fakeChecker) isClosed() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.closed
 }
 
+// setError changes the controlled readiness result safely between requests.
 func (f *fakeChecker) setError(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.err = err
 }
 
+// TestProbesSupportGetAndHead verifies healthy liveness and readiness return bodyless success for both read methods.
 func TestProbesSupportGetAndHead(t *testing.T) {
 	checker := &fakeChecker{}
 	server := New(testConfig(), checker)
@@ -83,6 +92,7 @@ func TestProbesSupportGetAndHead(t *testing.T) {
 	}
 }
 
+// TestServerBoundsHeaderBlockBeforeGin verifies net/http rejects oversized wire headers before the request reaches Gin or readiness checks.
 func TestServerBoundsHeaderBlockBeforeGin(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
 	assert.Equal(t, maxRequestTargetBytes+maxHeaderBytes, server.http.MaxHeaderBytes)
@@ -113,6 +123,7 @@ func TestServerBoundsHeaderBlockBeforeGin(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
+// TestReadinessFailsWhenDrainingOrUnavailable verifies draining state and database probe failures return unavailable readiness.
 func TestReadinessFailsWhenDrainingOrUnavailable(t *testing.T) {
 	checker := &fakeChecker{err: errors.New("unavailable")}
 	server := New(testConfig(), checker)
@@ -127,6 +138,7 @@ func TestReadinessFailsWhenDrainingOrUnavailable(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
 }
 
+// TestReadinessFailsWhenQueryTimesOut verifies a blocked readiness query respects its deadline and returns unavailable rather than hanging.
 func TestReadinessFailsWhenQueryTimesOut(t *testing.T) {
 	cfg := testConfig()
 	cfg.Database.QueryTimeout = 20 * time.Millisecond
@@ -140,6 +152,7 @@ func TestReadinessFailsWhenQueryTimesOut(t *testing.T) {
 	assert.Equal(t, 1, checker.readyCalls())
 }
 
+// TestAdmissionRejectsWhenCapacityIsExhausted verifies saturated admission rejects immediately with retry advice instead of queuing work.
 func TestAdmissionRejectsWhenCapacityIsExhausted(t *testing.T) {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 1
@@ -164,6 +177,7 @@ func TestAdmissionRejectsWhenCapacityIsExhausted(t *testing.T) {
 	assert.Zero(t, checker.readyCalls())
 }
 
+// TestCapacityOneCompletesAndReleasesAdmission verifies a single permitted request completes and returns its slot for subsequent traffic.
 func TestCapacityOneCompletesAndReleasesAdmission(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
 	calls := 0
@@ -180,6 +194,7 @@ func TestCapacityOneCompletesAndReleasesAdmission(t *testing.T) {
 	assert.Empty(t, server.admission)
 }
 
+// TestAPIMiddlewareRejectsInvalidRequestBeforeHandler verifies unsupported metadata aborts processing before the endpoint handler runs.
 func TestAPIMiddlewareRejectsInvalidRequestBeforeHandler(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
 	handlerCalls := 0
@@ -197,6 +212,7 @@ func TestAPIMiddlewareRejectsInvalidRequestBeforeHandler(t *testing.T) {
 	assert.Empty(t, server.admission)
 }
 
+// TestCancellationReleasesAdmissionSlot verifies canceled downstream work does not leak bounded API capacity.
 func TestCancellationReleasesAdmissionSlot(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
 	started := make(chan struct{})
@@ -222,6 +238,7 @@ func TestCancellationReleasesAdmissionSlot(t *testing.T) {
 	assert.Empty(t, server.admission)
 }
 
+// TestReadinessRetainsCapacityWhenAPISlotsAreSaturated verifies operational probes bypass saturated API admission and still reach the readiness checker.
 func TestReadinessRetainsCapacityWhenAPISlotsAreSaturated(t *testing.T) {
 	checker := &fakeChecker{}
 	server := New(testConfig(), checker)
@@ -244,6 +261,7 @@ func TestReadinessRetainsCapacityWhenAPISlotsAreSaturated(t *testing.T) {
 	assert.Equal(t, 32, checker.readyCalls())
 }
 
+// TestRunClosesPoolOnCancellation verifies server cancellation completes shutdown and closes its owned readiness checker.
 func TestRunClosesPoolOnCancellation(t *testing.T) {
 	checker := &fakeChecker{}
 	server := New(testConfig(), checker)
@@ -262,6 +280,7 @@ func TestRunClosesPoolOnCancellation(t *testing.T) {
 	}
 }
 
+// TestRunListenerRejectsListenerFailure verifies transport startup failures propagate and release the owned readiness checker.
 func TestRunListenerRejectsListenerFailure(t *testing.T) {
 	listener, err := newListener()
 	require.NoError(t, err)
@@ -272,6 +291,7 @@ func TestRunListenerRejectsListenerFailure(t *testing.T) {
 	assert.True(t, server.checker.(*fakeChecker).isClosed())
 }
 
+// TestDrainRefusesNewAdmission verifies drain rejects new API work with availability retry advice.
 func TestDrainRefusesNewAdmission(t *testing.T) {
 	server := New(testConfig(), &fakeChecker{})
 	server.api.GET("/test-admission", func(c *gin.Context) { c.Status(http.StatusNoContent) })
@@ -281,6 +301,7 @@ func TestDrainRefusesNewAdmission(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
 }
 
+// TestRouteInventoryRegistersReadOnlyMethods verifies the installed route inventory exposes only GET and HEAD operations.
 func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
 	server := artifactTestServer(artifactFixture())
 	expectedPaths := []string{
@@ -334,6 +355,7 @@ func TestRouteInventoryRegistersReadOnlyMethods(t *testing.T) {
 	assert.Len(t, routes, 52)
 }
 
+// TestShutdownForceClosesTransportAfterDeadline verifies unresponsive handlers cannot extend shutdown beyond its configured deadline.
 func TestShutdownForceClosesTransportAfterDeadline(t *testing.T) {
 	cfg := testConfig()
 	cfg.Server.ShutdownTimeout = 20 * time.Millisecond
@@ -368,6 +390,7 @@ func TestShutdownForceClosesTransportAfterDeadline(t *testing.T) {
 	assert.True(t, checker.isClosed())
 }
 
+// TestShutdownCancelsRequestContext verifies in-flight handlers receive cancellation when the server begins shutdown.
 func TestShutdownCancelsRequestContext(t *testing.T) {
 	checker := &fakeChecker{}
 	server := New(testConfig(), checker)
@@ -397,6 +420,7 @@ func TestShutdownCancelsRequestContext(t *testing.T) {
 	assert.True(t, checker.isClosed())
 }
 
+// TestRunClosesCheckerOnBindFailure verifies a listener bind failure propagates and releases the readiness checker.
 func TestRunClosesCheckerOnBindFailure(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -409,6 +433,7 @@ func TestRunClosesCheckerOnBindFailure(t *testing.T) {
 	assert.True(t, checker.isClosed())
 }
 
+// TestRunStopsOnCancellation verifies normal cancellation returns successfully and closes owned readiness resources.
 func TestRunStopsOnCancellation(t *testing.T) {
 	checker := &fakeChecker{}
 	server := New(testConfig(), checker)
@@ -419,6 +444,7 @@ func TestRunStopsOnCancellation(t *testing.T) {
 	assert.True(t, checker.isClosed())
 }
 
+// testConfig supplies bounded server lifetimes and admission settings for deterministic lifecycle and route tests.
 func testConfig() introspection.Config {
 	return introspection.Config{
 		Server: introspection.ServerConfig{

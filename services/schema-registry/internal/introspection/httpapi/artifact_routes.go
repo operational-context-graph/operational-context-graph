@@ -18,6 +18,7 @@ import (
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
+// registerArtifactRoutes installs read-only artifact, resource, history, and URI-resolution routes when artifacts are available.
 func (s *Server) registerArtifactRoutes() {
 	if s.artifacts == nil {
 		return
@@ -40,6 +41,7 @@ func (s *Server) registerArtifactRoutes() {
 	}
 }
 
+// releaseArtifacts serves filtered release selections using a kind/type keyset cursor.
 func (s *Server) releaseArtifacts(c *gin.Context) {
 	version := c.Param("schemaVersion")
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "kind", "artifactType", "schemaClass", "dependsOnRevision", "limit", "cursor")
@@ -85,6 +87,7 @@ func (s *Server) releaseArtifacts(c *gin.Context) {
 			return
 		}
 		parts := strings.Split(payload.Last, "\x00")
+		// Validate both coordinates because unsigned cursor contents remain caller-controlled.
 		if len(parts) != 2 || !validKind(parts[0]) || !artifactmodel.ValidLogicalType(parts[1]) {
 			s.writeArtifactValidationError(c, InvalidCursor)
 			return
@@ -119,6 +122,7 @@ func (s *Server) releaseArtifacts(c *gin.Context) {
 	})
 }
 
+// artifactHistory serves activated selections for a logical artifact within a continuation's original activation ceiling.
 func (s *Server) artifactHistory(c *gin.Context) {
 	kind, artifactType := c.Param("kind"), c.Param("artifactType")
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "limit", "cursor")
@@ -181,6 +185,7 @@ func (s *Server) artifactHistory(c *gin.Context) {
 		items = items[:limit]
 	}
 	responseItems := make([]v1.ArtifactHistoryItem, 0, len(items))
+	// Resolve all item metadata before writing; a late lookup failure must not publish a partial page.
 	for _, item := range items {
 		descriptorResult, descriptorErr := s.artifacts.GetArtifact(c.Request.Context(), item.ArtifactRevision)
 		if descriptorErr != nil {
@@ -205,10 +210,12 @@ func (s *Server) artifactHistory(c *gin.Context) {
 	})
 }
 
+// validKind accepts only artifact kinds defined by the registry contract.
 func validKind(value string) bool {
 	return value == "schema" || value == "context" || value == "source-mapping"
 }
 
+// releaseArtifact serves complete metadata for one exact release-selected logical artifact.
 func (s *Server) releaseArtifact(c *gin.Context) {
 	version, kind, artifactType := c.Param("schemaVersion"), c.Param("kind"), c.Param("artifactType")
 	if !artifactmodel.ValidVersion(version) || !validKind(kind) || !artifactmodel.ValidLogicalType(artifactType) {
@@ -223,6 +230,7 @@ func (s *Server) releaseArtifact(c *gin.Context) {
 	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, descriptor(value.Value, version))
 }
 
+// artifactMetadata serves activated-reachable revision metadata without release-dependent links.
 func (s *Server) artifactMetadata(c *gin.Context) {
 	revision := c.Param("artifactRevision")
 	if !artifactmodel.ValidRevision(revision) {
@@ -237,6 +245,7 @@ func (s *Server) artifactMetadata(c *gin.Context) {
 	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, "", descriptor(value.Value, ""))
 }
 
+// artifactPayload serves exact immutable payload bytes for a visible artifact revision.
 func (s *Server) artifactPayload(c *gin.Context) {
 	revision := c.Param("artifactRevision")
 	if !artifactmodel.ValidRevision(revision) {
@@ -251,6 +260,7 @@ func (s *Server) artifactPayload(c *gin.Context) {
 	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.Payload.MediaType, Digest: value.Value.Payload.Digest, Bytes: value.Value.Payload.Bytes, Revision: value.Value.Revision})
 }
 
+// artifactResource verifies artifact visibility and resource ownership before serving exact named resource bytes.
 func (s *Server) artifactResource(c *gin.Context) {
 	revision, name := c.Param("artifactRevision"), c.Param("resourceName")
 	if !artifactmodel.ValidRevision(revision) || !artifactmodel.ValidResourceName(name) {
@@ -273,6 +283,7 @@ func (s *Server) artifactResource(c *gin.Context) {
 	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.MediaType, Digest: value.Value.Digest, Bytes: value.Value.Bytes, Revision: revision, ResourceName: value.Value.Name})
 }
 
+// canonicalResource serves payload bytes only when all canonical-path coordinates match the immutable artifact identity.
 func (s *Server) canonicalResource(c *gin.Context) {
 	kind, artifactType, revision := c.Param("kind"), c.Param("artifactType"), c.Param("artifactRevision")
 	if !validKind(kind) {
@@ -294,6 +305,7 @@ func (s *Server) canonicalResource(c *gin.Context) {
 	s.writeArtifactBytes(c, value.Current.SchemaVersion, "", v1.ArtifactBytes{MediaType: value.Value.Payload.MediaType, Digest: value.Value.Payload.Digest, Bytes: value.Value.Payload.Bytes, Revision: revision})
 }
 
+// resolveURI redirects an exact release-scoped catalog URI to a server-owned immutable content path.
 func (s *Server) resolveURI(c *gin.Context) {
 	version := c.Param("schemaVersion")
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "uri")
@@ -307,6 +319,7 @@ func (s *Server) resolveURI(c *gin.Context) {
 		return
 	}
 	segments := []string{"v1", "artifacts", value.Value.ArtifactRevision}
+	// Catalog URIs are lookup keys, not redirect destinations; request authority never influences Location.
 	if value.Value.ResourceName != nil {
 		segments = append(segments, "resources", *value.Value.ResourceName)
 	}
@@ -321,6 +334,7 @@ func (s *Server) resolveURI(c *gin.Context) {
 	}
 }
 
+// writeArtifactBytes negotiates content and attaches artifact identity and integrity headers before writing a complete representation.
 func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, value v1.ArtifactBytes) {
 	if _, ok := NegotiateMediaType(c.GetHeader("Accept"), value.MediaType); !ok {
 		s.writeReleaseErrorResponse(c, NotAcceptable, 0, ErrorMetadata{SchemaVersion: schema, SelectedSchemaVersion: selected})
@@ -336,10 +350,12 @@ func (s *Server) writeArtifactBytes(c *gin.Context, schema, selected string, val
 	}
 }
 
+// descriptor delegates validated artifact metadata to the shared wire-model builder.
 func descriptor(value artifact.Descriptor, selected string) v1.ArtifactDescriptor {
 	return BuildDescriptor(value, selected)
 }
 
+// invalidArtifactPathCode distinguishes an unsupported kind from other malformed artifact coordinates.
 func invalidArtifactPathCode(kind string) ErrorCode {
 	if !validKind(kind) {
 		return UnsupportedArtifactKind
@@ -347,6 +363,7 @@ func invalidArtifactPathCode(kind string) ErrorCode {
 	return InvalidRequest
 }
 
+// validSchemaClass accepts the canonical schema classes and source-record class defined by the artifact contract.
 func validSchemaClass(value string) bool {
 	switch value {
 	case "entity-type", "identifier-type", "edge-type", "source-record":
@@ -356,10 +373,12 @@ func validSchemaClass(value string) bool {
 	}
 }
 
+// writeArtifactValidationError applies registry-availability precedence to artifact request validation failures.
 func (s *Server) writeArtifactValidationError(c *gin.Context, code ErrorCode) {
 	s.writeReleaseValidationError(c, code)
 }
 
+// writeArtifactError distinguishes missing releases, missing route-specific items, and integrity failures while preserving resolved versions.
 func (s *Server) writeArtifactError(c *gin.Context, err error, notFound ErrorCode) {
 	var code ErrorCode
 	switch {

@@ -17,11 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVerifiedTLS13PeerValidation verifies trusted TLS 1.3 peers connect while plaintext, wrong-host, untrusted, and expired peers fail.
 func TestVerifiedTLS13PeerValidation(t *testing.T) {
 	certificateAuthority, trustedServer, expiredServer := tlsFixtures(t)
 	rootPath := filepath.Join(t.TempDir(), "root.pem")
 	require.NoError(t, os.WriteFile(rootPath, certificateAuthority, 0o600))
 
+	// A trusted certificate for the expected hostname permits the verified TLS 1.3 connection.
 	t.Run("trusted peer", func(t *testing.T) {
 		listener := tlsListener(t, trustedServer)
 		defer func() { require.NoError(t, listener.Close()) }()
@@ -32,6 +34,7 @@ func TestVerifiedTLS13PeerValidation(t *testing.T) {
 		require.NoError(t, connection.Close())
 	})
 
+	// A plaintext listener cannot satisfy the required encrypted connection.
 	t.Run("plaintext peer", func(t *testing.T) {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
@@ -45,6 +48,7 @@ func TestVerifiedTLS13PeerValidation(t *testing.T) {
 		}
 	})
 
+	// A trusted signer does not compensate for a mismatched certificate hostname.
 	t.Run("wrong host", func(t *testing.T) {
 		listener := tlsListener(t, trustedServer)
 		defer func() { require.NoError(t, listener.Close()) }()
@@ -55,6 +59,7 @@ func TestVerifiedTLS13PeerValidation(t *testing.T) {
 		}
 	})
 
+	// A valid hostname does not compensate for an untrusted certificate authority.
 	t.Run("unknown authority", func(t *testing.T) {
 		listener := tlsListener(t, trustedServer)
 		defer func() { require.NoError(t, listener.Close()) }()
@@ -65,6 +70,7 @@ func TestVerifiedTLS13PeerValidation(t *testing.T) {
 		}
 	})
 
+	// An otherwise trusted peer fails once its certificate validity period expires.
 	t.Run("expired certificate", func(t *testing.T) {
 		listener := tlsListener(t, expiredServer)
 		defer func() { require.NoError(t, listener.Close()) }()
@@ -76,6 +82,7 @@ func TestVerifiedTLS13PeerValidation(t *testing.T) {
 	})
 }
 
+// verifiedTLSConfig obtains the pool's production TLS configuration using fixture trust roots and the requested hostname.
 func verifiedTLSConfig(t *testing.T, rootPath, serverName string) *tls.Config {
 	t.Helper()
 	config, err := configurePool("postgres://registry:password@localhost/registry?sslmode=verify-full&sslrootcert="+rootPath, 2, 1)
@@ -85,6 +92,7 @@ func verifiedTLSConfig(t *testing.T, rootPath, serverName string) *tls.Config {
 	return copy
 }
 
+// tlsListener exposes a TLS 1.3 peer using the supplied certificate for handshake verification tests.
 func tlsListener(t *testing.T, certificate tls.Certificate) net.Listener {
 	t.Helper()
 	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}})
@@ -93,6 +101,7 @@ func tlsListener(t *testing.T, certificate tls.Certificate) net.Listener {
 	return listener
 }
 
+// acceptAndClose handles one test connection and releases it after the peer's handshake attempt.
 func acceptAndClose(listener net.Listener) {
 	connection, err := listener.Accept()
 	if err == nil {
@@ -103,6 +112,7 @@ func acceptAndClose(listener net.Listener) {
 	}
 }
 
+// tlsFixtures creates an ephemeral certificate authority and valid and expired server certificates without persistent secrets.
 func tlsFixtures(t *testing.T) ([]byte, tls.Certificate, tls.Certificate) {
 	t.Helper()
 	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -120,6 +130,7 @@ func tlsFixtures(t *testing.T) ([]byte, tls.Certificate, tls.Certificate) {
 	return caPEM, signedServerCertificate(t, ca, caKey, false), signedServerCertificate(t, ca, caKey, true)
 }
 
+// signedServerCertificate creates a localhost certificate whose validity period supports either successful or expired-peer checks.
 func signedServerCertificate(t *testing.T, ca *x509.Certificate, caKey *rsa.PrivateKey, expired bool) tls.Certificate {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

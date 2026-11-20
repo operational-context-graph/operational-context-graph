@@ -25,6 +25,7 @@ type cancelQueryOnce struct {
 	used   atomic.Bool
 }
 
+// TraceQueryStart cancels exactly one matching boundary statement while leaving subsequent recovery reads unaffected.
 func (tracer *cancelQueryOnce) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	if strings.HasPrefix(data.SQL, tracer.prefix) && tracer.used.CompareAndSwap(false, true) {
 		canceled, cancel := context.WithCancel(ctx)
@@ -33,8 +34,11 @@ func (tracer *cancelQueryOnce) TraceQueryStart(ctx context.Context, _ *pgx.Conn,
 	}
 	return ctx
 }
+
+// TraceQueryEnd completes the tracer contract without altering transaction cleanup evidence.
 func (*cancelQueryOnce) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
+// TestReadBoundaryFailuresReleaseConnectionsAndRecover verifies begin, timeout-setup, callback, and commit failures preserve causes, release connections, and permit later reads.
 func (s *readStoreSuite) TestReadBoundaryFailuresReleaseConnectionsAndRecover() {
 	t := s.T()
 	fixture := registryFixture{
@@ -99,6 +103,7 @@ func (s *readStoreSuite) TestReadBoundaryFailuresReleaseConnectionsAndRecover() 
 	}
 }
 
+// TestBlockedReadTimeoutAndCancellationReleaseConnections verifies lock-blocked queries distinguish server timeout from client cancellation, release capacity, and recover after unlocking.
 func (s *readStoreSuite) TestBlockedReadTimeoutAndCancellationReleaseConnections() {
 	t := s.T()
 	_, err := loadValidatedFixture(t, s.Context, s.Database, registryFixture{

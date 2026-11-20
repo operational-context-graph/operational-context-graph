@@ -20,7 +20,7 @@ const (
 var errInvalidRequest = errors.New("invalid request")
 
 // ValidateRequestMetadata rejects malformed and over-budget read requests
-// before route-specific parsing or database admission.
+// before route-specific parsing or database acquisition.
 func ValidateRequestMetadata(request *http.Request) error {
 	if request == nil || len(request.RequestURI) > maxRequestTargetBytes {
 		return errInvalidRequest
@@ -29,12 +29,14 @@ func ValidateRequestMetadata(request *http.Request) error {
 		return errInvalidRequest
 	}
 	if request.Body != nil && request.Body != http.NoBody {
+		// Inspect body presence, not only Content-Length; unknown-length bodies still violate the read-only request contract.
 		return errInvalidRequest
 	}
 	if len(request.TransferEncoding) > 0 {
 		return errInvalidRequest
 	}
 	for _, contentEncoding := range request.Header.Values("Content-Encoding") {
+		// Check every field value so an initial identity coding cannot conceal another unsupported coding.
 		for _, coding := range strings.Split(contentEncoding, ",") {
 			if coding = strings.TrimSpace(coding); coding != "" && !strings.EqualFold(coding, "identity") {
 				return errInvalidRequest
@@ -59,6 +61,7 @@ func ValidateRequestMetadata(request *http.Request) error {
 
 // ValidateQuery permits exactly the named parameters and bounded decoded values.
 func ValidateQuery(values url.Values, allowed ...string) error {
+	// Duplicate and empty values are ambiguous even when the parameter name itself is permitted.
 	permitted := make(map[string]struct{}, len(allowed))
 	for _, name := range allowed {
 		permitted[name] = struct{}{}

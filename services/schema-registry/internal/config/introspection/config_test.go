@@ -21,6 +21,8 @@ admission:
   max_in_flight: 7
 `
 
+// TestLoadPrecedenceAndRedaction verifies environment overrides win over file
+// settings and the redacted database hostname omits password text.
 func TestLoadPrecedenceAndRedaction(t *testing.T) {
 	path := writeConfig(t, validConfig)
 	t.Setenv("OCG_SCHEMA_INTROSPECTION_ADMISSION__MAX_IN_FLIGHT", "3")
@@ -30,6 +32,7 @@ func TestLoadPrecedenceAndRedaction(t *testing.T) {
 	assert.NotContains(t, values(cfg.Redacted()), "password")
 }
 
+// TestLoadConvertsConfigurationValues verifies YAML and environment sources decode integers, durations, and booleans while retaining unspecified defaults.
 func TestLoadConvertsConfigurationValues(t *testing.T) {
 	for _, source := range []string{"yaml", "environment"} {
 		t.Run(source, func(t *testing.T) {
@@ -56,18 +59,21 @@ func TestLoadConvertsConfigurationValues(t *testing.T) {
 	}
 }
 
+// TestLoadRequiresNoCursorConfiguration verifies unsigned cursors need no signing, rotation, or expiration settings.
 func TestLoadRequiresNoCursorConfiguration(t *testing.T) {
 	cfg, err := LoadFromFile(writeConfig(t, validConfig))
 	require.NoError(t, err)
 	assert.Equal(t, 7, cfg.Admission.MaxInFlight)
 }
 
+// TestLoadRequiresAdmissionLimit verifies defaults cannot start the service without an explicit positive admission limit.
 func TestLoadRequiresAdmissionLimit(t *testing.T) {
 	contents := strings.Replace(validConfig, "admission:\n  max_in_flight: 7\n", "", 1)
 	_, err := LoadFromFile(writeConfig(t, contents))
 	require.Error(t, err)
 }
 
+// TestLoadAllowsSingleAPISlotWithReservedReadinessCapacity verifies one API slot is valid when the pool retains readiness capacity.
 func TestLoadAllowsSingleAPISlotWithReservedReadinessCapacity(t *testing.T) {
 	contents := strings.Replace(validConfig, "max_in_flight: 7", "max_in_flight: 1", 1)
 	cfg, err := LoadFromFile(writeConfig(t, contents))
@@ -76,6 +82,7 @@ func TestLoadAllowsSingleAPISlotWithReservedReadinessCapacity(t *testing.T) {
 	assert.Greater(t, cfg.Database.PoolMaxConnections-cfg.Database.ReservedConnections, int32(0))
 }
 
+// TestLoadRejectsInvalidBoundaries verifies URL, TLS, numeric, timeout, reserve, and admission violations return field-specific errors and no configuration.
 func TestLoadRejectsInvalidBoundaries(t *testing.T) {
 	for _, test := range []struct{ name, key, value, want string }{
 		{name: "empty target", key: "DATABASE__URL", want: "Config.Database.URL"},
@@ -106,6 +113,7 @@ func TestLoadRejectsInvalidBoundaries(t *testing.T) {
 	}
 }
 
+// TestLoadUsesConfiguredFile verifies Load honors the environment-selected configuration file.
 func TestLoadUsesConfiguredFile(t *testing.T) {
 	t.Setenv(envFileKey, writeConfig(t, strings.Replace(validConfig, "port: 8081", "port: 9090", 1)))
 	cfg, err := Load()
@@ -113,6 +121,7 @@ func TestLoadUsesConfiguredFile(t *testing.T) {
 	assert.Equal(t, 9090, cfg.Server.Port)
 }
 
+// TestLoadRequiresVerifiedTLSInEveryMode verifies both production and development reject unverified database peers.
 func TestLoadRequiresVerifiedTLSInEveryMode(t *testing.T) {
 	for _, production := range []string{"true", "false"} {
 		t.Run(production, func(t *testing.T) {
@@ -125,6 +134,7 @@ func TestLoadRequiresVerifiedTLSInEveryMode(t *testing.T) {
 	}
 }
 
+// TestLoadReportsSourceAndDecodeFailures verifies malformed YAML, invalid typed overrides, and missing files preserve useful failure classifications.
 func TestLoadReportsSourceAndDecodeFailures(t *testing.T) {
 	for _, test := range []struct{ name, contents, key, value, want string }{
 		{name: "malformed YAML", contents: "server: [", want: "load configuration file"},
@@ -145,6 +155,7 @@ func TestLoadReportsSourceAndDecodeFailures(t *testing.T) {
 	assert.Empty(t, databaseHost("%"))
 }
 
+// writeConfig creates a test-owned configuration file with restrictive permissions and automatic directory cleanup.
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -152,6 +163,8 @@ func writeConfig(t *testing.T, contents string) string {
 	return path
 }
 
+// values extracts only the redacted database hostname for password-text assertions;
+// it does not inspect other summary fields.
 func values(values map[string]any) string {
 	return values["database_host"].(string)
 }

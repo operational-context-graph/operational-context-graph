@@ -42,6 +42,7 @@ type blockingLifecycleSnapshot struct {
 	once             sync.Once
 }
 
+// Artifact blocks the selected exact-byte read until cancellation and delegates all unrelated revision reads.
 func (s *blockingLifecycleSnapshot) Artifact(ctx context.Context, revision string) (model.Artifact, error) {
 	// Exact artifact-byte retrieval reaches Artifact before it validates and
 	// writes bytes. Blocking here creates an in-flight exact-byte request.
@@ -51,6 +52,7 @@ func (s *blockingLifecycleSnapshot) Artifact(ctx context.Context, revision strin
 	return s.Snapshot.Artifact(ctx, revision)
 }
 
+// Resource blocks selected mapping program loads to expose in-flight direct and page package assembly.
 func (s *blockingLifecycleSnapshot) Resource(ctx context.Context, revision, name string) (model.Resource, error) {
 	// Source-mapping package assembly reaches Resource after it resolves mapping
 	// metadata and before it assembles program bytes into its response model.
@@ -61,6 +63,7 @@ func (s *blockingLifecycleSnapshot) Resource(ctx context.Context, revision, name
 	return s.Snapshot.Resource(ctx, revision, name)
 }
 
+// wait exposes read entry and observed cancellation without substituting a test-specific response path.
 func (s *blockingLifecycleSnapshot) wait(ctx context.Context) error {
 	// Returning ctx.Err makes the production service take its normal canceled
 	// read path. No test-only response or storage behavior is introduced.
@@ -76,6 +79,7 @@ func (s *blockingLifecycleSnapshot) wait(ctx context.Context) error {
 // use.
 type lifecycleReader struct{ snapshot release.Snapshot }
 
+// Read exposes the decorated fixture snapshot through the normal release and artifact service callback contract.
 func (r lifecycleReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	return fn(ctx, r.snapshot)
 }

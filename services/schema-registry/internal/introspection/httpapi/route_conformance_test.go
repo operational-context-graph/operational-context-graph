@@ -17,11 +17,13 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 )
 
+// blockingConformanceReader exposes deterministic in-flight read and cancellation signals for network admission-cleanup checks.
 type blockingConformanceReader struct {
 	started  chan struct{}
 	finished chan struct{}
 }
 
+// Read signals boundary entry and returns only after the real request context is canceled.
 func (r blockingConformanceReader) Read(ctx context.Context, _ func(context.Context, release.Snapshot) error) error {
 	close(r.started)
 	<-ctx.Done()
@@ -39,9 +41,8 @@ func TestRouteConformanceFixture(t *testing.T) {
 	assert.Contains(t, fixture.selections, "source-mapping/device-mapping")
 }
 
-// TestHTTPRouteConformance sends every request through a real HTTP client, the
-// Gin router, API middleware, handlers, services, and the controlled repository
-// snapshot. Focused route tests assert route-specific response fields in detail.
+// TestHTTPRouteConformance verifies every route's network-visible status, media type, cache policy, identity headers, and GET/HEAD body behavior.
+// Focused route tests verify route-specific response fields in detail.
 func TestHTTPRouteConformance(t *testing.T) {
 	for _, test := range []struct {
 		name        string
@@ -118,7 +119,9 @@ func TestHTTPDrainConformance(t *testing.T) {
 	assert.Equal(t, "no-cache", api.Header.Get("Cache-Control"))
 }
 
+// TestHTTPFailureConformance verifies network-visible failure classification, revalidation, cancellation cleanup, bounded overload, atomic integrity failures, and unchanged fixture state.
 func TestHTTPFailureConformance(t *testing.T) {
+	// Network requests preserve 304 revalidation and route-specific 404, 406, and invalid-cursor 400 classifications.
 	t.Run("conditional, negotiation, missing, and invalid-cursor statuses traverse the API", func(t *testing.T) {
 		server := conformanceServer(t)
 		client, baseURL := newHTTPConformanceClient(t, server)
@@ -148,6 +151,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Contains(t, readConformanceBody(t, invalid), `"code":"invalid-cursor"`)
 	})
 
+	// Client cancellation reaches the blocked repository context and eventually returns the occupied admission slot.
 	t.Run("client cancellation releases API admission", func(t *testing.T) {
 		server := conformanceServer(t)
 		reader := blockingConformanceReader{started: make(chan struct{}), finished: make(chan struct{})}
@@ -177,6 +181,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Eventually(t, func() bool { return len(server.admission) == 0 }, time.Second, time.Millisecond)
 	})
 
+	// Database outages produce registry-unavailable with a one-second Retry-After header over the real transport.
 	t.Run("outage maps to bounded 503 through the API", func(t *testing.T) {
 		server := conformanceServer(t)
 		server.releases = release.New(releaseTestReader{err: errors.New("database unavailable")})
@@ -188,6 +193,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Contains(t, readConformanceBody(t, response), `"code":"registry-unavailable"`)
 	})
 
+	// Pre-database overload returns versionless 429; restoring admission capacity permits the next request to succeed.
 	t.Run("admission overload is versionless and releases capacity", func(t *testing.T) {
 		server := conformanceServer(t)
 		for range cap(server.admission) {
@@ -206,6 +212,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Equal(t, http.StatusOK, response.StatusCode)
 	})
 
+	// Corrupt payload digests and missing canonical placements return 500 without exposing successful content fields.
 	t.Run("projection and integrity failures do not return partial success", func(t *testing.T) {
 		fixture := conformanceFixture(t)
 		corrupt := fixture.selections["schema/device"]
@@ -229,6 +236,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 		assert.Contains(t, readConformanceBody(t, response), `"code":"inconsistent-registry-state"`)
 	})
 
+	// Successful package reads leave the fixture equal to its saved top-level container snapshot.
 	t.Run("requests do not mutate controlled read state", func(t *testing.T) {
 		fixture := conformanceFixture(t)
 		before := cloneConformanceFixture(t, fixture)
@@ -240,6 +248,7 @@ func TestHTTPFailureConformance(t *testing.T) {
 	})
 }
 
+// TestHTTPOperationalProbeConformance verifies liveness and readiness support successful GET and HEAD over a real HTTP connection.
 func TestHTTPOperationalProbeConformance(t *testing.T) {
 	client, baseURL := newHTTPConformanceClient(t, conformanceServer(t))
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -251,8 +260,10 @@ func TestHTTPOperationalProbeConformance(t *testing.T) {
 	}
 }
 
+// conformanceServer provides complete production routing backed by a stable controlled repository fixture.
 func conformanceServer(t *testing.T) *Server { return artifactTestServer(conformanceFixture(t)) }
 
+// conformanceFixture combines canonical release bytes, mapping relationships, URI resolution, and logical history for network route coverage.
 func conformanceFixture(t *testing.T) *artifactTestSnapshot {
 	t.Helper()
 	fixture := mappingFixture()
@@ -267,6 +278,7 @@ func conformanceFixture(t *testing.T) *artifactTestSnapshot {
 	return fixture
 }
 
+// newHTTPConformanceClient starts test-owned HTTP routing with bounded requests, no automatic decompression, and no redirect following.
 func newHTTPConformanceClient(t *testing.T, server *Server) (*http.Client, string) {
 	t.Helper()
 	httpServer := httptest.NewServer(server.Handler())
@@ -278,6 +290,7 @@ func newHTTPConformanceClient(t *testing.T, server *Server) (*http.Client, strin
 	}, httpServer.URL
 }
 
+// requestConformance obtains a real identity-coded response with explicit headers for protocol assertions.
 func requestConformance(t *testing.T, client *http.Client, method, url string, headers http.Header) *http.Response {
 	t.Helper()
 	request, err := http.NewRequestWithContext(context.Background(), method, url, nil)
@@ -293,6 +306,7 @@ func requestConformance(t *testing.T, client *http.Client, method, url string, h
 	return response
 }
 
+// readConformanceBody requires successful complete-body retrieval for network content and atomic-failure assertions.
 func readConformanceBody(t *testing.T, response *http.Response) string {
 	t.Helper()
 	bytes, err := io.ReadAll(response.Body)
@@ -300,10 +314,11 @@ func readConformanceBody(t *testing.T, response *http.Response) string {
 	return string(bytes)
 }
 
+// cloneConformanceFixture copies top-level fixture containers for detecting replacement or addition of repository values during requests.
+// Nested slices remain shared, so this helper does not detect every possible in-place mutation.
 func cloneConformanceFixture(t *testing.T, fixture *artifactTestSnapshot) *artifactTestSnapshot {
 	t.Helper()
-	// The fixture contains only strings, slices, maps, and model values.
-	// A value copy plus copies of the reference containers is sufficient here.
+	// Copies isolate container replacements; nested backing arrays remain shared with the original fixture.
 	fixtureCopy := *fixture
 	fixtureCopy.releases = mapsClone(fixture.releases)
 	fixtureCopy.artifacts = mapsClone(fixture.artifacts)
@@ -319,12 +334,14 @@ func cloneConformanceFixture(t *testing.T, fixture *artifactTestSnapshot) *artif
 	return &fixtureCopy
 }
 
+// mapsClone copies a map's entries without deep-copying reference-bearing values.
 func mapsClone[K comparable, V any](value map[K]V) map[K]V {
 	result := make(map[K]V, len(value))
 	maps.Copy(result, value)
 	return result
 }
 
+// closeConformanceBody registers response cleanup without preventing later body assertions.
 func closeConformanceBody(t testing.TB, response *http.Response) {
 	t.Helper()
 	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })

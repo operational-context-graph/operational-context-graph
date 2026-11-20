@@ -34,9 +34,11 @@ import (
 const mappingBase = "/v1/releases/1.0.0/source-mappings/device-mapping"
 const candidateBase = "/v1/releases/1.0.0/schemas/incoming/source-mappings"
 
+// TestSchemaRoutesMetadataContentContextsPackageAndStores verifies selected metadata, exact content, bound contexts, embedded documents, and logical placements agree.
 func TestSchemaRoutesMetadataContentContextsPackageAndStores(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 
+	// Collection descriptors expose context links; selected HEAD responses retain the release header without a body.
 	t.Run("metadata and collection expose release links", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -49,6 +51,7 @@ func TestSchemaRoutesMetadataContentContextsPackageAndStores(t *testing.T) {
 		assert.Equal(t, "1.0.0", response.Header().Get("Selected-Schema-Version"))
 	})
 
+	// Identity and decoded gzip preserve exact schema JSON while their representation validators differ.
 	t.Run("content preserves exact bytes and supports gzip validators", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/content")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -63,12 +66,13 @@ func TestSchemaRoutesMetadataContentContextsPackageAndStores(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code)
 		reader, err := gzip.NewReader(response.Body)
 		require.NoError(t, err)
-		bytes, err := io.ReadAll(reader)
+		body, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		assert.Equal(t, `{"type":"object"}`, string(bytes))
+		assert.Equal(t, `{"type":"object"}`, string(body))
 		assert.NotEqual(t, tag, response.Header().Get("ETag"))
 	})
 
+	// Context metadata identifies the selected revision, and the package embeds both schema and JSON-LD context documents.
 	t.Run("contexts and package preserve complete parsed values", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/contexts")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -81,6 +85,7 @@ func TestSchemaRoutesMetadataContentContextsPackageAndStores(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"document":{"@context":{}}`)
 	})
 
+	// Placement responses expose logical store names rather than database deployment details.
 	t.Run("stores expose logical assignments only", func(t *testing.T) {
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/device/stores")
 		require.Equal(t, http.StatusOK, response.Code)
@@ -89,7 +94,9 @@ func TestSchemaRoutesMetadataContentContextsPackageAndStores(t *testing.T) {
 	})
 }
 
+// TestSchemaRoutesRejectInvalidAndInconsistentData verifies malformed requests and corrupt selected schema relationships produce distinct safe errors.
 func TestSchemaRoutesRejectInvalidAndInconsistentData(t *testing.T) {
+	// Missing schemas return 404; context collections reject pagination parameters because the complete binding set is required.
 	t.Run("unknown schema and pagination contexts fail", func(t *testing.T) {
 		server := artifactTestServer(schemaFixture())
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing")
@@ -101,6 +108,7 @@ func TestSchemaRoutesRejectInvalidAndInconsistentData(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, response.Code)
 	})
 
+	// Unsupported stored schema media and missing canonical placements each return 500 rather than successful incomplete data.
 	t.Run("wrong schema media type and missing canonical stores are inconsistent", func(t *testing.T) {
 		fixture := schemaFixture()
 		invalid := fixture.selections["schema/device"]
@@ -116,7 +124,9 @@ func TestSchemaRoutesRejectInvalidAndInconsistentData(t *testing.T) {
 	})
 }
 
+// TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings verifies complete empty or multiple context sets and rejects absent or duplicated required bindings.
 func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T) {
+	// Unbound schemas still return schema identity, self links, and a nonnull empty items array.
 	t.Run("no contexts returns complete empty wrapper", func(t *testing.T) {
 		fixture := schemaFixture()
 		fixture.bindings = map[string][]model.SchemaContextBinding{}
@@ -129,6 +139,7 @@ func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T)
 		assert.Contains(t, response.Body.String(), `"self":"/v1/releases/1.0.0/schemas/device/contexts"`)
 	})
 
+	// Adding a second selected binding makes its context revision visible in the successful collection.
 	t.Run("several contexts remain ordered and complete", func(t *testing.T) {
 		fixture := schemaFixture()
 		second := fixture.selections["context/device"]
@@ -141,6 +152,7 @@ func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T)
 		assert.Contains(t, response.Body.String(), `"rev-context-two"`)
 	})
 
+	// Missing referenced contexts and duplicate binding revisions invalidate the entire collection with 500.
 	t.Run("missing or duplicate binding is inconsistent", func(t *testing.T) {
 		fixture := schemaFixture()
 		fixture.bindings["1.0.0\x00rev-schema"] = []model.SchemaContextBinding{{SchemaVersion: "1.0.0", SchemaRevision: "rev-schema", ContextRevision: "missing"}}
@@ -154,6 +166,7 @@ func TestBoundContextsCoverEmptySeveralMissingAndDuplicateBindings(t *testing.T)
 	})
 }
 
+// TestBoundContextsConcurrentCallersReceiveOneCompleteSet verifies simultaneous context requests return identical complete binding sets without partial results.
 func TestBoundContextsConcurrentCallersReceiveOneCompleteSet(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 	const callers = 24
@@ -182,6 +195,7 @@ func TestBoundContextsConcurrentCallersReceiveOneCompleteSet(t *testing.T) {
 	require.NotEmpty(t, first)
 }
 
+// TestSchemaPackageConcurrentReadsAreStable verifies successful simultaneous reads return identical complete package bodies.
 func TestSchemaPackageConcurrentReadsAreStable(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 	const callers = 32
@@ -209,6 +223,7 @@ func TestSchemaPackageConcurrentReadsAreStable(t *testing.T) {
 	require.NotEmpty(t, first)
 }
 
+// TestSchemaPackageSupportsBooleanSchemas verifies embedded boolean schemas retain their JSON values instead of becoming object-shaped documents.
 func TestSchemaPackageSupportsBooleanSchemas(t *testing.T) {
 	fixture := schemaFixture()
 	value := fixture.selections["schema/device"]
@@ -225,6 +240,7 @@ func TestSchemaPackageSupportsBooleanSchemas(t *testing.T) {
 	assert.True(t, strings.Contains(string(body["schema"]), `"document":true`))
 }
 
+// TestSchemaPackageNegotiationConditionalsAndInvalidContextFailAtomically verifies negotiation and revalidation while invalid context JSON rejects the complete package.
 func TestSchemaPackageNegotiationConditionalsAndInvalidContextFailAtomically(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 	request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
@@ -247,16 +263,17 @@ func TestSchemaPackageNegotiationConditionalsAndInvalidContextFailAtomically(t *
 	assert.Empty(t, response.Body.String())
 
 	fixture := schemaFixture()
-	context := fixture.artifacts["rev-context"]
-	context.Payload.Bytes = []byte(`{`)
-	context.Payload.Size = 1
-	context.Payload.Digest = fixtureBytes(context.Payload.Bytes, context.Payload.MediaType).Digest
-	fixture.artifacts[context.Revision] = context
+	contextArtifact := fixture.artifacts["rev-context"]
+	contextArtifact.Payload.Bytes = []byte(`{`)
+	contextArtifact.Payload.Size = 1
+	contextArtifact.Payload.Digest = fixtureBytes(contextArtifact.Payload.Bytes, contextArtifact.Payload.MediaType).Digest
+	fixture.artifacts[contextArtifact.Revision] = contextArtifact
 	response = serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/releases/1.0.0/schemas/device/package")
 	assert.Equal(t, http.StatusInternalServerError, response.Code)
 	assert.NotContains(t, response.Body.String(), `"schema":`)
 }
 
+// TestSchemaPackageHandlesZeroAndSeveralContexts verifies package context arrays represent both unbound schemas and complete multiple-context selections.
 func TestSchemaPackageHandlesZeroAndSeveralContexts(t *testing.T) {
 	fixture := schemaFixture()
 	fixture.bindings = map[string][]model.SchemaContextBinding{}
@@ -274,7 +291,9 @@ func TestSchemaPackageHandlesZeroAndSeveralContexts(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(response.Body.String(), `"document":{"@context":{}}`))
 }
 
+// TestSchemaPackageRejectsCorruptionAndDependencyFailuresWithoutPartialBody verifies invalid payloads and relationship failures publish only errors, never partial package documents.
 func TestSchemaPackageRejectsCorruptionAndDependencyFailuresWithoutPartialBody(t *testing.T) {
+	// Corrupt declared payload integrity returns 500 without exposing any schema package fields.
 	t.Run("corrupt schema descriptor", func(t *testing.T) {
 		fixture := schemaFixture()
 		schema := fixture.selections["schema/device"]
@@ -284,6 +303,7 @@ func TestSchemaPackageRejectsCorruptionAndDependencyFailuresWithoutPartialBody(t
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.NotContains(t, response.Body.String(), `"schema":`)
 	})
+	// Dependency-read integrity failures return only an error envelope, not an incomplete schema package.
 	t.Run("dependency query failure", func(t *testing.T) {
 		fixture := schemaFixture()
 		fixture.dependencyErr = postgres.ErrInconsistentState
@@ -293,6 +313,7 @@ func TestSchemaPackageRejectsCorruptionAndDependencyFailuresWithoutPartialBody(t
 	})
 }
 
+// TestSchemaContentBooleanConditionalAndHistoricalReads verifies exact false content, bodyless revalidation, and successful simultaneous historical selection reads.
 func TestSchemaContentBooleanConditionalAndHistoricalReads(t *testing.T) {
 	fixture := schemaFixture()
 	value := fixture.selections["schema/device"]
@@ -332,6 +353,7 @@ func TestSchemaContentBooleanConditionalAndHistoricalReads(t *testing.T) {
 	}
 }
 
+// TestSchemaContentRejectsCorruptDescriptor verifies a declared size mismatch produces an inconsistent-registry-state error instead of schema bytes.
 func TestSchemaContentRejectsCorruptDescriptor(t *testing.T) {
 	fixture := schemaFixture()
 	value := fixture.selections["schema/device"]
@@ -342,6 +364,8 @@ func TestSchemaContentRejectsCorruptDescriptor(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"code":"inconsistent-registry-state"`)
 }
 
+// TestSchemaCollectionPaginatesAndFiltersExactValues verifies 1001 selected schemas paginate into 1000-item and one-item pages under a class filter.
+// Unsupported classes and malformed dependency revisions return bad-request responses.
 func TestSchemaCollectionPaginatesAndFiltersExactValues(t *testing.T) {
 	fixture := schemaFixture()
 	class := "entity-type"
@@ -374,6 +398,7 @@ func TestSchemaCollectionPaginatesAndFiltersExactValues(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 }
 
+// TestSchemaCollectionSupportsEmptyOneItemAndExactDependencyFilters verifies empty page shapes and combined class/dependency filters return only matching selections.
 func TestSchemaCollectionSupportsEmptyOneItemAndExactDependencyFilters(t *testing.T) {
 	fixture := schemaFixture()
 	fixture.collections["1.0.0"] = nil
@@ -393,6 +418,7 @@ func TestSchemaCollectionSupportsEmptyOneItemAndExactDependencyFilters(t *testin
 	assert.Contains(t, response.Body.String(), `"items":[]`)
 }
 
+// TestSchemaCollectionConcurrentReadSnapshotsRemainIndependent verifies successful simultaneous reads of one selected release return identical schema page bodies.
 func TestSchemaCollectionConcurrentReadSnapshotsRemainIndependent(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 	const callers = 32
@@ -420,6 +446,7 @@ func TestSchemaCollectionConcurrentReadSnapshotsRemainIndependent(t *testing.T) 
 	require.NotEmpty(t, first)
 }
 
+// TestSchemaStoresSupportSourceRecordsAndSeveralSortedStores verifies source records have empty placements and canonical schemas expose sorted logical store sets.
 func TestSchemaStoresSupportSourceRecordsAndSeveralSortedStores(t *testing.T) {
 	fixture := schemaFixture()
 	fixture.stores["1.0.0\x00device"] = []model.StorageEntry{{Store: "telemetry-store"}, {Store: "data-center-inventory"}}
@@ -438,12 +465,15 @@ func TestSchemaStoresSupportSourceRecordsAndSeveralSortedStores(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"stores":[]`)
 }
 
+// TestSchemaStoresAbsentAndConcurrentCallers verifies absent schema classification and stable placement metadata for simultaneous callers.
 func TestSchemaStoresAbsentAndConcurrentCallers(t *testing.T) {
+	// Missing selected schemas return schema-not-in-release rather than an empty store assignment.
 	t.Run("absent schema", func(t *testing.T) {
 		response := serveArtifactRequest(artifactTestServer(schemaFixture()), http.MethodGet, "/v1/releases/1.0.0/schemas/missing/stores")
 		assert.Equal(t, http.StatusNotFound, response.Code)
 		assert.Contains(t, response.Body.String(), `"code":"schema-not-in-release"`)
 	})
+	// Successful concurrent bodies agree on sorted logical stores and exclude credential text.
 	t.Run("concurrent callers receive sorted logical stores only", func(t *testing.T) {
 		fixture := schemaFixture()
 		fixture.stores["1.0.0\x00device"] = []model.StorageEntry{{Store: "telemetry-store"}, {Store: "data-center-inventory"}}
@@ -476,6 +506,7 @@ func TestSchemaStoresAbsentAndConcurrentCallers(t *testing.T) {
 	})
 }
 
+// TestSourceMappingCollectionRejectsUnknownSchemasAndEmptyFilters verifies schema selectors resolve visible selections and explicitly empty filters fail validation.
 func TestSourceMappingCollectionRejectsUnknownSchemasAndEmptyFilters(t *testing.T) {
 	server := artifactTestServer(schemaFixture())
 	for _, path := range []string{
@@ -493,6 +524,7 @@ func TestSourceMappingCollectionRejectsUnknownSchemasAndEmptyFilters(t *testing.
 	}
 }
 
+// TestSourceMappingCollectionFiltersEnvelopeAndConcurrentReads verifies resolved mapping filters, complete collection envelopes, and stable simultaneous results.
 func TestSourceMappingCollectionFiltersEnvelopeAndConcurrentReads(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
 	path := "/v1/releases/1.0.0/source-mappings?sourceArtifactType=device&targetArtifactType=device&engineLanguage=arbitrary-engine&executionProfile=arbitrary-profile"
@@ -532,7 +564,9 @@ func TestSourceMappingCollectionFiltersEnvelopeAndConcurrentReads(t *testing.T) 
 	require.NotEmpty(t, first)
 }
 
+// TestSourceMappingCollectionPaginatesAndAcceptsSharedSources verifies multiple mappings may select the same source and paginate without losing candidates.
 func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
+	// The maximum page exposes 1000 candidates and a continuation that returns the final candidate without another cursor.
 	t.Run("1001 mappings paginate through an unsigned cursor", func(t *testing.T) {
 		fixture := mappingFixture()
 		items := make([]model.Artifact, 0, 1001)
@@ -565,6 +599,7 @@ func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
 		assert.Nil(t, page.NextCursor)
 	})
 
+	// A second logical mapping remains visible when it shares the first mapping's resolved source schema.
 	t.Run("shared resolved source is valid", func(t *testing.T) {
 		fixture := mappingFixture()
 		original := fixture.selections["source-mapping/device-mapping"]
@@ -582,6 +617,7 @@ func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
 	})
 }
 
+// TestSourceMappingCursorUsesLastMatchingFilteredItem verifies continuation advances from the final returned match rather than unrelated selections or lookahead items.
 func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 	fixture := mappingFixture()
 	items := make([]model.Artifact, 0, 1002)
@@ -622,6 +658,7 @@ func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 	assert.Nil(t, page.NextCursor)
 }
 
+// TestSourceMappingFiltersUseResolvedDependenciesNotMappingIdentity verifies source and target selectors match resolved schema dependencies, not logical mapping names.
 func TestSourceMappingFiltersUseResolvedDependenciesNotMappingIdentity(t *testing.T) {
 	fixture := mappingFixture()
 	mapping := fixture.selections["source-mapping/device-mapping"]
@@ -637,6 +674,7 @@ func TestSourceMappingFiltersUseResolvedDependenciesNotMappingIdentity(t *testin
 	assert.Contains(t, response.Body.String(), `"sourceSchema":{"artifactRevision":"rev-schema"`)
 }
 
+// TestSourceMappingRoutesPreserveOpaqueProgramMetadata verifies arbitrary engine metadata and program links survive while packages embed exact opaque Base64 content.
 func TestSourceMappingRoutesPreserveOpaqueProgramMetadata(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
 
@@ -651,7 +689,9 @@ func TestSourceMappingRoutesPreserveOpaqueProgramMetadata(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "execute")
 }
 
+// TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals verifies source-scoped lookup errors, descriptor/projection integrity, and bodyless conditional metadata responses.
 func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
+	// Missing source schemas and missing mapping identities return distinct schema-not-in-release and artifact-not-in-release codes.
 	t.Run("absent schema and mapping have distinct failures", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mappings")
@@ -665,6 +705,7 @@ func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"code":"artifact-not-in-release"`)
 	})
 
+	// Valid mapping validators produce 304; a declared program mismatch instead invalidates metadata with 500.
 	t.Run("program mismatch is inconsistent and validators are conditional", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping")
@@ -685,6 +726,9 @@ func TestSourceSchemaMappingLookupErrorsIntegrityAndConditionals(t *testing.T) {
 	})
 }
 
+// TestSourceMappingPackageNegotiationAndConcurrentReads verifies unsupported
+// media types return 406 and successful HEAD responses contain no body.
+// Successful concurrent GET responses have identical, nonempty package bodies.
 func TestSourceMappingPackageNegotiationAndConcurrentReads(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
 	request := httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/source-mappings/device-mapping/package", nil)
@@ -724,6 +768,7 @@ func TestSourceMappingPackageNegotiationAndConcurrentReads(t *testing.T) {
 	require.NotEmpty(t, first)
 }
 
+// TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot verifies each simultaneous package response contains one internally consistent selected-release closure.
 func TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot(t *testing.T) {
 	server := artifactTestServer(mappingFixture())
 	const callers = 32
@@ -767,7 +812,9 @@ func TestSourceMappingPackageConcurrentCallersReceiveOneReleaseSnapshot(t *testi
 	require.NotNil(t, first)
 }
 
+// TestSourceMappingPackageMissingDependenciesAndConditionalResponses verifies absent selected schemas/mappings and failed resource reads expose no partial package fields.
 func TestSourceMappingPackageMissingDependenciesAndConditionalResponses(t *testing.T) {
+	// Missing selected inputs return 404 without publishing any mapping package fields.
 	t.Run("absent source schema and mapping have no partial package", func(t *testing.T) {
 		server := artifactTestServer(mappingFixture())
 		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/schemas/missing/source-mappings/packages")
@@ -782,6 +829,7 @@ func TestSourceMappingPackageMissingDependenciesAndConditionalResponses(t *testi
 		assert.NotContains(t, response.Body.String(), `"mapping":`)
 	})
 
+	// Resource integrity failures return 500 without exposing previously assembled mapping metadata.
 	t.Run("resource failure returns no partial package", func(t *testing.T) {
 		fixture := mappingFixture()
 		fixture.resourceErr = postgres.ErrInconsistentState
@@ -791,7 +839,9 @@ func TestSourceMappingPackageMissingDependenciesAndConditionalResponses(t *testi
 	})
 }
 
+// TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas verifies canonical target placements and valid schema documents are required before package success.
 func TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas(t *testing.T) {
+	// Missing required canonical placements return 500 without an incomplete target-store list.
 	t.Run("missing canonical target stores", func(t *testing.T) {
 		fixture := mappingFixture()
 		fixture.stores = map[string][]model.StorageEntry{}
@@ -799,6 +849,7 @@ func TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas(t *testing.T)
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.NotContains(t, response.Body.String(), `"targetStores"`)
 	})
+	// Invalid schema content returns 500 without exposing a partial source-schema document.
 	t.Run("corrupt source schema bytes", func(t *testing.T) {
 		fixture := mappingFixture()
 		schema := fixture.selections["schema/device"]
@@ -810,6 +861,7 @@ func TestSourceMappingPackageRejectsMissingStoresAndCorruptSchemas(t *testing.T)
 	})
 }
 
+// TestSourceMappingPackageRejectsCorruptProgram verifies altered opaque program content prevents successful package generation.
 func TestSourceMappingPackageRejectsCorruptProgram(t *testing.T) {
 	fixture := mappingFixture()
 	mapping := fixture.selections["source-mapping/device-mapping"]
@@ -820,6 +872,7 @@ func TestSourceMappingPackageRejectsCorruptProgram(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, response.Code)
 }
 
+// TestSourceMappingPackageOpaqueProgramBoundaries verifies empty, one-byte, and exact 16 MiB programs preserve size, digest, and decoded content.
 func TestSourceMappingPackageOpaqueProgramBoundaries(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -864,7 +917,9 @@ func TestSourceMappingPackageOpaqueProgramBoundaries(t *testing.T) {
 	}
 }
 
+// TestGeneratedPackageSizeBoundary verifies generated identity JSON accepts the configured boundary and rejects content exceeding it.
 func TestGeneratedPackageSizeBoundary(t *testing.T) {
+	// packageBody supplies predictable JSON overhead for exact generated-response size boundaries.
 	type packageBody struct {
 		Content string `json:"content"`
 	}
@@ -874,26 +929,29 @@ func TestGeneratedPackageSizeBoundary(t *testing.T) {
 	content := strings.Repeat("x", limit-len(base))
 	require.Len(t, mustJSON(t, packageBody{Content: content}), limit)
 
+	// Exact 64 MiB identity JSON succeeds and retains its complete encoded length.
 	t.Run("exact limit succeeds", func(t *testing.T) {
 		writer := httptest.NewRecorder()
-		context, _ := gin.CreateTestContext(writer)
-		context.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
-		(&Server{}).writeBoundedJSON(context, "1.0.0", "1.0.0", packageBody{Content: content})
+		requestContext, _ := gin.CreateTestContext(writer)
+		requestContext.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
+		(&Server{}).writeBoundedJSON(requestContext, "1.0.0", "1.0.0", packageBody{Content: content})
 		assert.Equal(t, http.StatusOK, writer.Code)
 		assert.Len(t, writer.Body.Bytes(), limit)
 	})
 
+	// One-byte overflow returns an integrity error without exposing the generated content field.
 	t.Run("one byte over fails before success", func(t *testing.T) {
 		writer := httptest.NewRecorder()
-		context, _ := gin.CreateTestContext(writer)
-		context.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
-		(&Server{}).writeBoundedJSON(context, "1.0.0", "1.0.0", packageBody{Content: content + "x"})
+		requestContext, _ := gin.CreateTestContext(writer)
+		requestContext.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
+		(&Server{}).writeBoundedJSON(requestContext, "1.0.0", "1.0.0", packageBody{Content: content + "x"})
 		assert.Equal(t, http.StatusInternalServerError, writer.Code)
 		assert.NotContains(t, writer.Body.String(), `"content"`)
 		assert.Contains(t, writer.Body.String(), `"code":"inconsistent-registry-state"`)
 	})
 }
 
+// mustJSON serializes fixture documents and attributes encoding failures to the calling test.
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	bytes, err := json.Marshal(value)
@@ -901,6 +959,7 @@ func mustJSON(t *testing.T, value any) []byte {
 	return bytes
 }
 
+// schemaFixture supplies selected schemas with bound contexts and canonical logical storage placements.
 func schemaFixture() *artifactTestSnapshot {
 	fixture := artifactFixture()
 	schema := fixture.selections["schema/device"]
@@ -908,24 +967,53 @@ func schemaFixture() *artifactTestSnapshot {
 	fixture.selections["schema/device"] = schema
 	fixture.artifacts[schema.Revision] = schema
 	fixture.collections["1.0.0"][0] = schema
-	context := fixture.selections["context/device"]
-	context.Payload.MediaType = `application/ld+json;profile="http://www.w3.org/ns/json-ld#context"`
-	fixture.selections["context/device"] = context
-	fixture.artifacts[context.Revision] = context
-	fixture.collections["1.0.0"][1] = context
+	contextArtifact := fixture.selections["context/device"]
+	contextArtifact.Payload.MediaType = `application/ld+json;profile="http://www.w3.org/ns/json-ld#context"`
+	fixture.selections["context/device"] = contextArtifact
+	fixture.artifacts[contextArtifact.Revision] = contextArtifact
+	fixture.collections["1.0.0"][1] = contextArtifact
 	return fixture
 }
 
+// mappingFixture supplies a consistent source mapping, exact schema dependencies, and opaque program resources.
 func mappingFixture() *artifactTestSnapshot {
 	fixture := schemaFixture()
 	mapping := fixture.selections["source-mapping/device-mapping"]
 	program := []byte("opaque\x00program")
-	fixture.resources[mapping.Revision] = []model.Resource{{ArtifactRevision: mapping.Revision, Name: "program.bin", Role: "program", ByteDescriptor: fixtureBytes(program, "application/vnd.example.program")}}
-	detail := model.SourceMappingDetail{SchemaVersion: "1.0.0", MappingRevision: mapping.Revision, SourceArtifactType: "device", SourceRevision: "rev-schema", TargetSchemaVersion: "1.0.0", EngineLanguage: "arbitrary-engine", EngineLanguageVersion: "9.8.7", ExecutionProfile: "arbitrary-profile", Transformations: []model.SourceMappingTransformation{{TargetArtifactType: "device", TargetRevision: "rev-schema", Cardinality: "one", ProgramBinding: model.ProgramBinding{ProgramName: "program.bin", ProgramDigest: fixture.resources[mapping.Revision][0].Digest}}}}
+	fixture.resources[mapping.Revision] = []model.Resource{
+		{
+			ArtifactRevision: mapping.Revision,
+			Name:             "program.bin",
+			Role:             "program",
+			ByteDescriptor:   fixtureBytes(program, "application/vnd.example.program"),
+		},
+	}
+	detail := model.SourceMappingDetail{
+		SchemaVersion:         "1.0.0",
+		MappingRevision:       mapping.Revision,
+		SourceArtifactType:    "device",
+		SourceRevision:        "rev-schema",
+		TargetSchemaVersion:   "1.0.0",
+		EngineLanguage:        "arbitrary-engine",
+		EngineLanguageVersion: "9.8.7",
+		ExecutionProfile:      "arbitrary-profile",
+		Transformations: []model.SourceMappingTransformation{
+			{
+				TargetArtifactType: "device",
+				TargetRevision:     "rev-schema",
+				Cardinality:        "one",
+				ProgramBinding: model.ProgramBinding{
+					ProgramName:   "program.bin",
+					ProgramDigest: fixture.resources[mapping.Revision][0].Digest,
+				},
+			},
+		},
+	}
 	setMappingFixture(fixture, mapping, detail)
 	return fixture
 }
 
+// setMappingFixture synchronizes mapping descriptor bytes, selected artifact metadata, dependencies, and resolved projections after fixture changes.
 func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detail model.SourceMappingDetail) {
 	programs := map[string]any{"transformations": make([]any, 0, len(detail.Transformations))}
 	if detail.Condition != nil {
@@ -933,17 +1021,40 @@ func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detai
 	}
 	dependencies := []model.Dependency{{ArtifactRevision: item.Revision, Kind: "schema", ArtifactType: detail.SourceArtifactType, Revision: detail.SourceRevision}}
 	seen := map[string]bool{detail.SourceRevision: true}
+
 	for _, transformation := range detail.Transformations {
-		programs["transformations"] = append(programs["transformations"].([]any), map[string]any{"programRef": transformation.ProgramName, "programDigest": transformation.ProgramDigest, "cardinality": transformation.Cardinality, "targetSchema": map[string]any{"id": transformation.TargetArtifactType, "revision": transformation.TargetRevision}})
+		programs["transformations"] = append(programs["transformations"].([]any), map[string]any{
+			"programRef":    transformation.ProgramName,
+			"programDigest": transformation.ProgramDigest,
+			"cardinality":   transformation.Cardinality,
+			"targetSchema":  map[string]any{"id": transformation.TargetArtifactType, "revision": transformation.TargetRevision},
+		})
 		if !seen[transformation.TargetRevision] {
-			dependencies = append(dependencies, model.Dependency{ArtifactRevision: item.Revision, Kind: "schema", ArtifactType: transformation.TargetArtifactType, Revision: transformation.TargetRevision})
+			dependencies = append(dependencies, model.Dependency{
+				ArtifactRevision: item.Revision,
+				Kind:             "schema",
+				ArtifactType:     transformation.TargetArtifactType,
+				Revision:         transformation.TargetRevision,
+			})
 			seen[transformation.TargetRevision] = true
 		}
 	}
-	data, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": item.Type, "sourceSchema": map[string]any{"id": detail.SourceArtifactType, "revision": detail.SourceRevision}, "engine": map[string]any{"language": detail.EngineLanguage, "languageVersion": detail.EngineLanguageVersion, "executionProfile": detail.ExecutionProfile}, "programs": programs})
+	data, err := json.Marshal(map[string]any{
+		"$schema":       "https://example.test/mapping-1.0.0",
+		"formatVersion": "1.0.0",
+		"id":            item.Type,
+		"sourceSchema":  map[string]any{"id": detail.SourceArtifactType, "revision": detail.SourceRevision},
+		"engine": map[string]any{
+			"language":         detail.EngineLanguage,
+			"languageVersion":  detail.EngineLanguageVersion,
+			"executionProfile": detail.ExecutionProfile,
+		},
+		"programs": programs,
+	})
 	if err != nil {
 		panic(err)
 	}
+
 	item.Payload = fixtureBytes(data, "application/vnd.apeiro.ocg.source-mapping.v1+json")
 	fixture.artifacts[item.Revision], fixture.selections["source-mapping/"+item.Type] = item, item
 	for index := range fixture.collections[detail.SchemaVersion] {
@@ -957,6 +1068,7 @@ func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detai
 	fixture.mappings[item.Revision], fixture.dependencies[item.Revision] = detail, dependencies
 }
 
+// multiMappingFixture creates candidates sharing a source and programs while retaining distinct mapping identities and ordered targets.
 func multiMappingFixture() *artifactTestSnapshot {
 	fixture := mappingFixture()
 	source := fixtureArtifact("rev-source", "schema", "incoming", new("source-record"), nil, []byte("true"))
@@ -966,11 +1078,19 @@ func multiMappingFixture() *artifactTestSnapshot {
 	for _, schema := range []model.Artifact{source, edge} {
 		fixture.artifacts[schema.Revision], fixture.selections["schema/"+schema.Type] = schema, schema
 	}
-	fixture.stores["1.0.0\x00located-in"] = []model.StorageEntry{{SchemaVersion: "1.0.0", ArtifactType: "located-in", Store: "insights-repository"}, {SchemaVersion: "1.0.0", ArtifactType: "located-in", Store: "data-center-inventory"}}
+	fixture.stores["1.0.0\x00located-in"] = []model.StorageEntry{
+		{SchemaVersion: "1.0.0", ArtifactType: "located-in", Store: "insights-repository"},
+		{SchemaVersion: "1.0.0", ArtifactType: "located-in", Store: "data-center-inventory"},
+	}
 	mapping := fixture.selections["source-mapping/device-mapping"]
 	detail := fixture.mappings[mapping.Revision]
 	detail.SourceArtifactType, detail.SourceRevision = "incoming", "rev-source"
-	condition := model.Resource{ArtifactRevision: mapping.Revision, Name: "a-condition.bin", Role: "program", ByteDescriptor: fixtureBytes(nil, "application/octet-stream")}
+	condition := model.Resource{
+		ArtifactRevision: mapping.Revision,
+		Name:             "a-condition.bin",
+		Role:             "program",
+		ByteDescriptor:   fixtureBytes(nil, "application/octet-stream"),
+	}
 	fixture.resources[mapping.Revision] = append([]model.Resource{condition}, fixture.resources[mapping.Revision]...)
 	detail.Condition = &model.ProgramBinding{ProgramName: condition.Name, ProgramDigest: condition.Digest}
 	first := detail.Transformations[0]
@@ -989,6 +1109,7 @@ func multiMappingFixture() *artifactTestSnapshot {
 	return fixture
 }
 
+// mappingJSON requires a successful complete response and decodes its JSON for cross-route contract comparisons.
 func mappingJSON(t testing.TB, response *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -997,6 +1118,7 @@ func mappingJSON(t testing.TB, response *httptest.ResponseRecorder) map[string]a
 	return result
 }
 
+// TestMappingHTTPUsesSharedRepresentationAndSize verifies HTTP package bytes and identity size match the shared response builder and sizing contract.
 func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -1029,16 +1151,36 @@ func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
 	}
 }
 
+// TestMappingModelsAreCompleteAndEqualAcrossResources verifies individual, collection, and package mapping models agree,
+// including links, boolean schemas, and deduplicated programs.
 func TestMappingModelsAreCompleteAndEqualAcrossResources(t *testing.T) {
 	server := artifactTestServer(multiMappingFixture())
 	direct := mappingJSON(t, serveArtifactRequest(server, http.MethodGet, mappingBase))
-	for _, name := range []string{"schemaVersion", "kind", "artifactType", "artifactRevision", "createdUnderSchemaVersion", "targetSchemaVersion", "canonicalUri", "payload", "resources", "dependencies", "links", "sourceSchema", "engine", "programs"} {
+	for _, name := range []string{
+		"schemaVersion",
+		"kind",
+		"artifactType",
+		"artifactRevision",
+		"createdUnderSchemaVersion",
+		"targetSchemaVersion",
+		"canonicalUri",
+		"payload",
+		"resources",
+		"dependencies",
+		"links",
+		"sourceSchema",
+		"engine",
+		"programs",
+	} {
 		require.Contains(t, direct, name)
 	}
 	for _, absent := range []string{"metadata", "targetSchema", "program", "cardinality"} {
 		require.NotContains(t, direct, absent)
 	}
-	for _, path := range []string{"/v1/releases/1.0.0/source-mappings?sourceArtifactType=incoming", candidateBase + "?sourceMappingArtifactType=device-mapping"} {
+	for _, path := range []string{
+		"/v1/releases/1.0.0/source-mappings?sourceArtifactType=incoming",
+		candidateBase + "?sourceMappingArtifactType=device-mapping",
+	} {
 		collection := mappingJSON(t, serveArtifactRequest(server, http.MethodGet, path))
 		items := collection["items"].([]any)
 		require.NotEmpty(t, items)
@@ -1088,6 +1230,7 @@ func TestMappingModelsAreCompleteAndEqualAcrossResources(t *testing.T) {
 	require.Equal(t, "/v1/releases/1.0.0/source-mappings?sourceArtifactType=incoming", metadata["links"].(map[string]any)["sourceMappings"])
 }
 
+// TestCandidateCollectionFiltersAndCursorBindings verifies exact candidate filters, page shapes, and resource/source/limit/filter cursor bindings while rejecting unsupported route parameters.
 func TestCandidateCollectionFiltersAndCursorBindings(t *testing.T) {
 	server := artifactTestServer(multiMappingFixture())
 	for _, base := range []string{candidateBase, candidateBase + "/packages"} {
@@ -1101,7 +1244,17 @@ func TestCandidateCollectionFiltersAndCursorBindings(t *testing.T) {
 			}
 			require.Nil(t, body["nextCursor"])
 		}
-		for _, query := range []string{"sourceMappingArtifactType=", "sourceMappingArtifactType=Upper", "sourceMappingArtifactType=" + strings.Repeat("x", 256), "sourceMappingArtifactType=a&sourceMappingArtifactType=b", "unknown=x", "limit=0", "limit=1001", "limit=", "cursor="} {
+		for _, query := range []string{
+			"sourceMappingArtifactType=",
+			"sourceMappingArtifactType=Upper",
+			"sourceMappingArtifactType=" + strings.Repeat("x", 256),
+			"sourceMappingArtifactType=a&sourceMappingArtifactType=b",
+			"unknown=x",
+			"limit=0",
+			"limit=1001",
+			"limit=",
+			"cursor=",
+		} {
 			response := serveArtifactRequest(server, http.MethodGet, base+"?"+query)
 			require.Equal(t, http.StatusBadRequest, response.Code, query)
 			require.Contains(t, response.Body.String(), `"code":"invalid-query-parameter"`)
@@ -1116,7 +1269,12 @@ func TestCandidateCollectionFiltersAndCursorBindings(t *testing.T) {
 		if base == candidateBase {
 			other += "/packages"
 		}
-		for _, path := range []string{other + "?limit=1", base + "?limit=2", base + "?limit=1&sourceMappingArtifactType=device-mapping", strings.Replace(base, "incoming", "device", 1) + "?limit=1"} {
+		for _, path := range []string{
+			other + "?limit=1",
+			base + "?limit=2",
+			base + "?limit=1&sourceMappingArtifactType=device-mapping",
+			strings.Replace(base, "incoming", "device", 1) + "?limit=1",
+		} {
 			response := serveArtifactRequest(server, http.MethodGet, path+"&cursor="+url.QueryEscape(token))
 			require.Equal(t, http.StatusBadRequest, response.Code, path)
 			require.Contains(t, response.Body.String(), `"code":"invalid-cursor"`)
@@ -1134,6 +1292,7 @@ func TestCandidateCollectionFiltersAndCursorBindings(t *testing.T) {
 	}
 }
 
+// TestPackagePageLimitIncludesEveryReturnedPackage verifies individually valid packages can exceed the aggregate page limit and fail without partial items.
 func TestPackagePageLimitIncludesEveryReturnedPackage(t *testing.T) {
 	fixture := multiMappingFixture()
 	data := bytes.Repeat([]byte{0xff}, 16<<20)
@@ -1165,6 +1324,7 @@ func TestPackagePageLimitIncludesEveryReturnedPackage(t *testing.T) {
 	require.NotContains(t, response.Body.String(), `"items"`)
 }
 
+// TestPackagePageFailsAtomicallyForLaterMapping verifies a later mapping's corrupt binding or bytes rejects the whole page while preserving selected-version metadata.
 func TestPackagePageFailsAtomicallyForLaterMapping(t *testing.T) {
 	for _, change := range []func(*artifactTestSnapshot){
 		func(f *artifactTestSnapshot) {
@@ -1187,19 +1347,22 @@ func TestPackagePageFailsAtomicallyForLaterMapping(t *testing.T) {
 	}
 }
 
+// alternatingMappingReader changes the current pointer between reads to expose accidental multiple-snapshot request assembly.
 type alternatingMappingReader struct {
 	snapshot *artifactTestSnapshot
 	calls    atomic.Int64
 }
 
+// Read counts invocations and alternates current-version metadata without changing immutable selected-release content.
 func (r *alternatingMappingReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
-	copy := *r.snapshot
+	snapshotCopy := *r.snapshot
 	if r.calls.Add(1)%2 == 0 {
-		copy.current.SchemaVersion = "2.0.0"
+		snapshotCopy.current.SchemaVersion = "2.0.0"
 	}
-	return fn(ctx, &copy)
+	return fn(ctx, &snapshotCopy)
 }
 
+// TestMappingRequestsUseOneSnapshotAndConditionalRepresentation verifies one read per request, stable selected-content validators despite pointer changes, and concurrent HEAD/coding behavior.
 func TestMappingRequestsUseOneSnapshotAndConditionalRepresentation(t *testing.T) {
 	fixture := multiMappingFixture()
 	fixture.releases["2.0.0"] = model.Release{SchemaVersion: "2.0.0"}
@@ -1245,12 +1408,15 @@ func TestMappingRequestsUseOneSnapshotAndConditionalRepresentation(t *testing.T)
 	}
 }
 
+// mappingRegressionReader exposes instrumented snapshots through the normal service read boundary.
 type mappingRegressionReader struct{ snapshot release.Snapshot }
 
+// Read passes the instrumented snapshot to the callback without adding another lookup layer.
 func (r mappingRegressionReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	return fn(ctx, r.snapshot)
 }
 
+// mappingRegressionServer installs instrumented release and artifact readers for mapping lookup and content-load regression tests.
 func mappingRegressionServer(snapshot release.Snapshot) *Server {
 	server := artifactTestServer(mappingFixture())
 	reader := mappingRegressionReader{snapshot: snapshot}
@@ -1258,16 +1424,19 @@ func mappingRegressionServer(snapshot release.Snapshot) *Server {
 	return server
 }
 
+// schemaLookupSnapshot counts metadata-only schema lookups to verify snapshot-local deduplication.
 type schemaLookupSnapshot struct {
 	release.Snapshot
 	lookups map[string]int
 }
 
+// ReleaseArtifactMetadata records each schema lookup while delegating fixture selection behavior.
 func (s *schemaLookupSnapshot) ReleaseArtifactMetadata(ctx context.Context, version, kind, artifactType string) (model.Artifact, error) {
 	s.lookups[artifactType]++
 	return s.ReleaseArtifact(ctx, version, kind, artifactType)
 }
 
+// repeatedTargetFixture fills the transformation limit with repeated references to a small set of selected schemas.
 func repeatedTargetFixture() *artifactTestSnapshot {
 	fixture := multiMappingFixture()
 	mapping := fixture.artifacts["rev-mapping"]
@@ -1281,6 +1450,8 @@ func repeatedTargetFixture() *artifactTestSnapshot {
 	return fixture
 }
 
+// TestMappingSchemaLookupsScaleWithDistinctSchemas verifies each request looks up each distinct schema once despite
+// maximum-length repeated transformation references.
 func TestMappingSchemaLookupsScaleWithDistinctSchemas(t *testing.T) {
 	fixture := repeatedTargetFixture()
 	snapshot := &schemaLookupSnapshot{Snapshot: fixture}
@@ -1297,11 +1468,13 @@ func TestMappingSchemaLookupsScaleWithDistinctSchemas(t *testing.T) {
 	}
 }
 
+// fallbackSchemaLookupSnapshot counts full-artifact schema lookups when the metadata-only capability is absent.
 type fallbackSchemaLookupSnapshot struct {
 	release.Snapshot
 	lookups map[string]int
 }
 
+// ReleaseArtifact records schema-only lookups and delegates all selected artifact reads.
 func (s *fallbackSchemaLookupSnapshot) ReleaseArtifact(ctx context.Context, version, kind, artifactType string) (model.Artifact, error) {
 	if kind == "schema" {
 		s.lookups[artifactType]++
@@ -1309,6 +1482,8 @@ func (s *fallbackSchemaLookupSnapshot) ReleaseArtifact(ctx context.Context, vers
 	return s.Snapshot.ReleaseArtifact(ctx, version, kind, artifactType)
 }
 
+// TestMappingSchemaLookupCachePreservesFallbackAndValidation verifies fallback lookup deduplication retains ordered
+// metadata and rejects a late revision mismatch against cached state.
 func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 	fixture := repeatedTargetFixture()
 	snapshot := &fallbackSchemaLookupSnapshot{Snapshot: fixture, lookups: make(map[string]int)}
@@ -1335,6 +1510,7 @@ func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 	require.Equal(t, map[string]int{"incoming": 1, "device": 1, "located-in": 1}, snapshot.lookups)
 }
 
+// TestMappingCachedSourceStillValidatesTargetClassification verifies a cached source schema cannot bypass canonical target classification when reused as a target.
 func TestMappingCachedSourceStillValidatesTargetClassification(t *testing.T) {
 	fixture := mappingFixture()
 	schema := fixture.selections["schema/device"]
@@ -1347,11 +1523,13 @@ func TestMappingCachedSourceStillValidatesTargetClassification(t *testing.T) {
 	require.Equal(t, map[string]int{"device": 1}, snapshot.lookups)
 }
 
+// programReadSnapshot strips resource bytes from metadata and detects accidental ancillary content loads during package assembly.
 type programReadSnapshot struct {
 	release.Snapshot
 	reads map[string]int
 }
 
+// Resources supplies metadata-only resources to emulate PostgreSQL list queries.
 func (s *programReadSnapshot) Resources(ctx context.Context, revision string) ([]model.Resource, error) {
 	resources, err := s.Snapshot.Resources(ctx, revision)
 	for index := range resources {
@@ -1360,6 +1538,7 @@ func (s *programReadSnapshot) Resources(ctx context.Context, revision string) ([
 	return resources, err
 }
 
+// Resource counts named content loads and rejects ancillary resources that packages MUST NOT embed.
 func (s *programReadSnapshot) Resource(ctx context.Context, revision, name string) (model.Resource, error) {
 	s.reads[name]++
 	resource, err := s.Snapshot.Resource(ctx, revision, name)
@@ -1369,11 +1548,17 @@ func (s *programReadSnapshot) Resource(ctx context.Context, revision, name strin
 	return resource, err
 }
 
+// TestMappingAncillaryResourcesStayMetadataOnly verifies large ancillary resources retain metadata but packages load only unique referenced programs once.
 func TestMappingAncillaryResourcesStayMetadataOnly(t *testing.T) {
 	fixture := multiMappingFixture()
 	data := bytes.Repeat([]byte{0xff}, 16<<20)
 	for _, name := range []string{"lookup-a.bin", "lookup-b.bin", "lookup-c.bin"} {
-		fixture.resources["rev-mapping"] = append(fixture.resources["rev-mapping"], model.Resource{ArtifactRevision: "rev-mapping", Name: name, Role: "metadata", ByteDescriptor: fixtureBytes(data, "application/octet-stream")})
+		fixture.resources["rev-mapping"] = append(fixture.resources["rev-mapping"], model.Resource{
+			ArtifactRevision: "rev-mapping",
+			Name:             name,
+			Role:             "metadata",
+			ByteDescriptor:   fixtureBytes(data, "application/octet-stream"),
+		})
 	}
 	snapshot := &programReadSnapshot{Snapshot: fixture, reads: make(map[string]int)}
 	server := mappingRegressionServer(snapshot)
@@ -1399,6 +1584,8 @@ func TestMappingAncillaryResourcesStayMetadataOnly(t *testing.T) {
 	}
 }
 
+// TestMappingProgramBindingsStillRejectInvalidResources verifies nonprogram bindings, unused programs, and malformed
+// ancillary roles reject both metadata and package responses.
 func TestMappingProgramBindingsStillRejectInvalidResources(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -1412,7 +1599,12 @@ func TestMappingProgramBindingsStillRejectInvalidResources(t *testing.T) {
 			f.resources["rev-mapping"] = append(f.resources["rev-mapping"], resource)
 		}},
 		{"invalid ancillary role", func(f *artifactTestSnapshot) {
-			f.resources["rev-mapping"] = append(f.resources["rev-mapping"], model.Resource{ArtifactRevision: "rev-mapping", Name: "lookup.bin", Role: "Invalid", ByteDescriptor: fixtureBytes(nil, "application/octet-stream")})
+			f.resources["rev-mapping"] = append(f.resources["rev-mapping"], model.Resource{
+				ArtifactRevision: "rev-mapping",
+				Name:             "lookup.bin",
+				Role:             "Invalid",
+				ByteDescriptor:   fixtureBytes(nil, "application/octet-stream"),
+			})
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -1428,11 +1620,13 @@ func TestMappingProgramBindingsStillRejectInvalidResources(t *testing.T) {
 	}
 }
 
+// selectedReleaseErrorSnapshot injects version-specific release failures while retaining the current pointer's fixture behavior.
 type selectedReleaseErrorSnapshot struct {
 	release.Snapshot
 	errors map[string]error
 }
 
+// Release returns a configured selected-version failure or delegates ordinary fixture lookup.
 func (s selectedReleaseErrorSnapshot) Release(ctx context.Context, version string) (model.Release, error) {
 	if err := s.errors[version]; err != nil {
 		return model.Release{}, err
@@ -1440,6 +1634,8 @@ func (s selectedReleaseErrorSnapshot) Release(ctx context.Context, version strin
 	return s.Snapshot.Release(ctx, version)
 }
 
+// TestMappingRoutesDistinguishReleaseAndItemFailures verifies unknown/inactive releases, storage failures, and missing
+// items produce distinct codes and safely resolved GET/HEAD headers.
 func TestMappingRoutesDistinguishReleaseAndItemFailures(t *testing.T) {
 	for _, test := range []struct {
 		name, version string
@@ -1456,7 +1652,13 @@ func TestMappingRoutesDistinguishReleaseAndItemFailures(t *testing.T) {
 			fixture.releases["1.1.0"] = model.Release{SchemaVersion: "1.1.0"}
 			snapshot := selectedReleaseErrorSnapshot{Snapshot: fixture, errors: map[string]error{test.version: test.err}}
 			server := mappingRegressionServer(snapshot)
-			for _, path := range []string{mappingBase, mappingBase + "/package", "/v1/releases/1.0.0/source-mappings", candidateBase, candidateBase + "/packages"} {
+			for _, path := range []string{
+				mappingBase,
+				mappingBase + "/package",
+				"/v1/releases/1.0.0/source-mappings",
+				candidateBase,
+				candidateBase + "/packages",
+			} {
 				path = strings.Replace(path, "/1.0.0/", "/"+test.version+"/", 1)
 				get := serveArtifactRequest(server, http.MethodGet, path)
 				require.Equal(t, test.status, get.Code, path)

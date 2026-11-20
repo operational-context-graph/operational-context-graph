@@ -10,6 +10,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 )
 
+// TestTimeoutsValidate verifies positive database timeouts pass and a disabled timeout fails validation.
 func TestTimeoutsValidate(t *testing.T) {
 	t.Parallel()
 	valid := Timeouts{
@@ -22,6 +23,7 @@ func TestTimeoutsValidate(t *testing.T) {
 	assert.Error(t, valid.validate())
 }
 
+// TestTimeoutsCapToRequestDeadline verifies statement, lock, and idle-transaction timeouts cannot exceed the remaining request budget.
 func TestTimeoutsCapToRequestDeadline(t *testing.T) {
 	t.Parallel()
 	timeouts := Timeouts{Acquire: time.Second, Query: time.Second, Statement: 5 * time.Second, Lock: 3 * time.Second, IdleInTransaction: 2 * time.Second}
@@ -31,6 +33,7 @@ func TestTimeoutsCapToRequestDeadline(t *testing.T) {
 	assert.Equal(t, 500*time.Millisecond, capped.IdleInTransaction)
 }
 
+// TestProjectionCommitmentDeterministic verifies equivalent row sets produce identical commitments and altered rows produce different commitments.
 func TestProjectionCommitmentDeterministic(t *testing.T) {
 	t.Parallel()
 	first := ProjectionCommitmentHex([]string{"resource\titem", "artifact\titem"})
@@ -39,6 +42,7 @@ func TestProjectionCommitmentDeterministic(t *testing.T) {
 	assert.NotEqual(t, first, ProjectionCommitmentHex([]string{"artifact\tchanged", "resource\titem"}))
 }
 
+// TestValidSort verifies only supported sort identifiers pass, excluding empty values and SQL fragments.
 func TestValidSort(t *testing.T) {
 	t.Parallel()
 	assert.True(t, ValidSort("activation-desc"))
@@ -47,6 +51,7 @@ func TestValidSort(t *testing.T) {
 	assert.False(t, ValidSort(""))
 }
 
+// TestFilterValuesRejectsUnsafeInput verifies valid opaque filters pass while empty, control-containing, and oversized values fail.
 func TestFilterValuesRejectsUnsafeInput(t *testing.T) {
 	t.Parallel()
 	for _, value := range []string{
@@ -59,6 +64,7 @@ func TestFilterValuesRejectsUnsafeInput(t *testing.T) {
 	assert.Error(t, FilterValues(string(make([]byte, 8193))))
 }
 
+// TestValidateReleaseChain verifies contiguous activations and matching predecessor coordinates distinguish a valid chain from inconsistent state.
 func TestValidateReleaseChain(t *testing.T) {
 	t.Parallel()
 	sequenceTwo := int64(2)
@@ -90,6 +96,7 @@ func TestValidateReleaseChain(t *testing.T) {
 	assert.ErrorIs(t, validateReleaseChain(actual), ErrInconsistentState)
 }
 
+// TestManifestChangesUsesAuthoritativeManifestBytes verifies exact stored change JSON wins, absent changes return nil, and malformed manifests fail.
 func TestManifestChangesUsesAuthoritativeManifestBytes(t *testing.T) {
 	t.Parallel()
 	changes, err := manifestChanges([]byte(`{"schemaVersion":"1.0.0","changes":{"compatibility":"initial","artifacts":[]}}`))
@@ -104,6 +111,7 @@ func TestManifestChangesUsesAuthoritativeManifestBytes(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInconsistentState)
 }
 
+// TestValidBytesEnforcesExactSizeDigestAndProfile verifies empty and exact-limit content pass, but size, digest, and over-limit content fail.
 func TestValidBytesEnforcesExactSizeDigestAndProfile(t *testing.T) {
 	value := []byte("x")
 	assert.True(t, validBytes(value, 1, manifestDigest(value)))

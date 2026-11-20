@@ -25,9 +25,8 @@ import (
 	storage "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 )
 
-// TestAPIConformanceWithPostgres exercises the HTTP server with a migrated
-// PostgreSQL read boundary. Route-conformance tests cover every resource with
-// controlled snapshots. This suite verifies the network-to-database boundary.
+// TestAPIConformanceWithPostgres verifies healthy probes, versionless no-active-release responses, and unavailable readiness after drain or pool closure.
+// It covers the network-to-database boundary using an empty migrated registry.
 func TestAPIConformanceWithPostgres(t *testing.T) {
 	ctx := context.Background()
 	container, err := tcpostgres.Run(ctx, "postgres:18",
@@ -89,15 +88,19 @@ func TestAPIConformanceWithPostgres(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 }
 
+// poolChecker supplies a real database availability probe and owns pool closure for integration server tests.
 type poolChecker struct{ pool *pgxpool.Pool }
 
+// Ready checks that a real pooled connection can execute a query under the supplied probe deadline.
 func (c *poolChecker) Ready(ctx context.Context) error {
 	_, err := c.pool.Exec(ctx, "SELECT 1")
 	return err
 }
 
+// Close releases the integration server's database pool.
 func (c *poolChecker) Close() { c.pool.Close() }
 
+// getAPIResponse requires a successful network exchange and leaves the response body to the caller for assertions and cleanup.
 func getAPIResponse(t *testing.T, client *http.Client, url string) *http.Response {
 	t.Helper()
 	response, err := client.Get(url)
@@ -105,6 +108,7 @@ func getAPIResponse(t *testing.T, client *http.Client, url string) *http.Respons
 	return response
 }
 
+// apiConfig supplies one API slot and short server and probe deadlines for network-to-database integration tests.
 func apiConfig() introspection.Config {
 	return introspection.Config{
 		Server: introspection.ServerConfig{

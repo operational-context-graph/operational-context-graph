@@ -1,3 +1,17 @@
+/*
+Pool configuration and readiness unit-test scope
+
+Configuration tests validate transport requirements without opening database connections.
+The readiness cancellation test uses net.Pipe and a minimal PostgreSQL startup stub.
+The stub authenticates a synthetic connection without contacting a PostgreSQL server.
+The driver tracer cancels SELECT 1 after acquisition but before the query reaches the stub.
+Assertions distinguish a query-stage failure from an acquisition-stage failure and require zero acquired connections afterward.
+
+The synthetic connection's plaintext transport does not change production Transport Layer Security (TLS) requirements.
+Docker-backed lifecycle checks belong to test/integration/postgres/runtime_pool_test.go, not this unit-test file.
+The pool closes before the test waits for stub workers, preventing cleanup from racing further connection attempts.
+*/
+
 package postgres
 
 import (
@@ -17,20 +31,6 @@ import (
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
-
-/*
-Pool configuration and readiness unit-test scope
-
-Configuration tests validate transport requirements without opening database connections.
-The readiness cancellation test uses net.Pipe and a minimal PostgreSQL startup stub.
-The stub authenticates a synthetic connection without contacting a PostgreSQL server.
-The driver tracer cancels SELECT 1 after acquisition but before the query reaches the stub.
-Assertions distinguish a query-stage failure from an acquisition-stage failure and require zero acquired connections afterward.
-
-The synthetic connection's plaintext transport does not change production Transport Layer Security (TLS) requirements.
-Docker-backed lifecycle checks belong to test/integration/postgres/runtime_pool_test.go, not this unit-test file.
-The pool closes before the test waits for stub workers, preventing cleanup from racing further connection attempts.
-*/
 
 // TestConfigurePoolRequiresVerifiedTLS rejects plaintext configuration without opening a connection.
 // Transport Layer Security (TLS) remains mandatory at the pool configuration boundary.
@@ -54,6 +54,7 @@ func TestConfigurePoolPinsTLS13AndRolePreparation(t *testing.T) {
 // cancellingProbeTracer cancels only the readiness statement after the pool acquires a connection.
 type cancellingProbeTracer struct{ cancel context.CancelFunc }
 
+// TraceQueryStart cancels the readiness probe at execution to exercise post-acquisition cleanup.
 func (tracer cancellingProbeTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	if data.SQL == "SELECT 1" {
 		tracer.cancel()
@@ -61,6 +62,7 @@ func (tracer cancellingProbeTracer) TraceQueryStart(ctx context.Context, _ *pgx.
 	return ctx
 }
 
+// TraceQueryEnd completes the tracer contract without changing the injected cancellation result.
 func (cancellingProbeTracer) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
 // TestCancelledReadinessQueryReleasesConnection cancels an acquired connection's readiness query through the driver tracer.

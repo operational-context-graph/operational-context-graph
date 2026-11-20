@@ -23,6 +23,7 @@ const (
 	cursorVersion = 1
 )
 
+// ErrInvalid identifies malformed cursors and mismatched request bindings.
 var ErrInvalid = errors.New("invalid cursor")
 
 // Payload contains complete untrusted keyset state. The calling service MUST
@@ -49,6 +50,7 @@ func (c *Codec) Encode(value Payload) (string, error) {
 		return "", ErrInvalid
 	}
 	value.Version = cursorVersion
+	// Copy filters so normalization does not mutate the caller's map.
 	value.Filters = cloneFilters(value.Filters)
 	data, err := json.Marshal(value)
 	if err != nil || len(data) > maxTokenBytes {
@@ -75,6 +77,7 @@ func (c *Codec) Decode(token string, expected Payload) (Payload, error) {
 		return Payload{}, ErrInvalid
 	}
 	canonical, err := json.Marshal(value)
+	// One canonical spelling excludes alternate JSON encodings of the same cursor state.
 	if err != nil || !bytes.Equal(data, canonical) {
 		return Payload{}, ErrInvalid
 	}
@@ -85,14 +88,17 @@ func (c *Codec) Decode(token string, expected Payload) (Payload, error) {
 	return value, nil
 }
 
+// validPayloadInput requires request bindings and nonempty continuation coordinates.
 func validPayloadInput(value Payload) bool {
 	return validExpected(value) && value.Last != "" && value.Snapshot != ""
 }
 
+// validExpected checks request bindings that do not depend on a continuation position.
 func validExpected(value Payload) bool {
 	return value.Resource != "" && value.Limit >= 1 && value.Limit <= 1000 && value.Sort != ""
 }
 
+// parsePayload accepts only the complete cursor field set with exact JSON value types.
 func parsePayload(data []byte) (Payload, error) {
 	object, err := strictObject(data)
 	if err != nil || len(object) != 7 {
@@ -133,6 +139,7 @@ func parsePayload(data []byte) (Payload, error) {
 	return value, nil
 }
 
+// strictObject rejects duplicate keys, invalid JSON, and fields outside the cursor contract.
 func strictObject(data []byte) (map[string]any, error) {
 	object, err := strictjson.Object(data)
 	if err != nil || strictjson.RejectUnknownFields(object, "v", "r", "f", "l", "s", "a", "n") != nil {
@@ -141,6 +148,7 @@ func strictObject(data []byte) (map[string]any, error) {
 	return object, nil
 }
 
+// integer accepts a JSON number only when its literal fits a native integer without coercion.
 func integer(value any) (int, bool) {
 	number, ok := value.(json.Number)
 	if !ok {
@@ -150,6 +158,7 @@ func integer(value any) (int, bool) {
 	return parsed, err == nil
 }
 
+// stringMap accepts an object whose filter values are all strings, including an empty object.
 func stringMap(value any) (map[string]string, bool) {
 	object, ok := value.(map[string]any)
 	if !ok {
@@ -166,12 +175,14 @@ func stringMap(value any) (map[string]string, bool) {
 	return filters, true
 }
 
+// cloneFilters returns an independent, nonnil map so empty filters encode as an object rather than null.
 func cloneFilters(filters map[string]string) map[string]string {
 	clone := make(map[string]string, len(filters))
 	maps.Copy(clone, filters)
 	return clone
 }
 
+// sameFilters compares filter counts and values using the cursor's effective request-binding rules.
 func sameFilters(first, second map[string]string) bool {
 	if len(first) != len(second) {
 		return false

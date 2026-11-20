@@ -31,6 +31,7 @@ func NegotiateMediaType(accept string, available ...string) (string, bool) {
 				}
 			}
 			specificity := mediaRangeSpecificity(mediaType, candidate)
+			// An exact exclusion overrides a broader wildcard's acceptance, regardless of its quality.
 			if specificity > candidateSpecificity || specificity == candidateSpecificity && quality > candidateQuality {
 				candidateQuality, candidateSpecificity = quality, specificity
 			}
@@ -45,6 +46,7 @@ func NegotiateMediaType(accept string, available ...string) (string, bool) {
 	return bestType, true
 }
 
+// mediaRangeSpecificity ranks exact, type-wildcard, and universal matches, returning -1 when no match exists.
 func mediaRangeSpecificity(mediaRange, candidate string) int {
 	if mediaRange == "*/*" {
 		return 0

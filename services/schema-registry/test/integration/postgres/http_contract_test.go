@@ -25,12 +25,14 @@ import (
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 )
 
+// networkResult retains complete network response evidence after the response body closes.
 type networkResult struct {
 	status int
 	header http.Header
 	body   []byte
 }
 
+// requestNetwork captures a complete optionally conditional response and closes its body for protocol contract assertions.
 func requestNetwork(t *testing.T, client *http.Client, method, target, tag string) networkResult {
 	t.Helper()
 	request, err := http.NewRequestWithContext(t.Context(), method, target, nil)
@@ -46,6 +48,7 @@ func requestNetwork(t *testing.T, client *http.Client, method, target, tag strin
 	return networkResult{status: response.StatusCode, header: response.Header, body: body}
 }
 
+// boundaryServer connects the production router and use cases to a real PostgreSQL read store with bounded admission.
 func boundaryServer(store *storage.Store, checker storage.ReadinessChecker) *httpapi.Server {
 	reader := release.NewPostgresReader(store)
 	return httpapi.NewWithServices(introspection.Config{
@@ -54,6 +57,7 @@ func boundaryServer(store *storage.Store, checker storage.ReadinessChecker) *htt
 	}, checker, release.New(reader), artifact.New(reader))
 }
 
+// TestPopulatedRuntimeHTTPContract verifies runtime-role reads expose exact content, version headers, GET/HEAD validators, redirects, and cross-kind/history pagination over HTTP.
 func (s *runtimePoolSuite) TestPopulatedRuntimeHTTPContract() {
 	t := s.T()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -158,6 +162,8 @@ func (s *runtimePoolSuite) TestPopulatedRuntimeHTTPContract() {
 	assert.Nil(t, history.NextCursor)
 }
 
+// TestPackagePageRejectsCorruptLaterProgramOverHTTP verifies a later corrupt program defeats conditional success and rejects the whole page without items or validators.
+// The unaffected first mapping remains readable after the failed transaction.
 func (s *readStoreSuite) TestPackagePageRejectsCorruptLaterProgramOverHTTP() {
 	t := s.T()
 	store := s.candidateStore()

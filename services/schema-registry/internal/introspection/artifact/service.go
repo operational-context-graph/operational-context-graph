@@ -83,6 +83,8 @@ func (s *Service) SchemaStores(ctx context.Context, version, artifactType string
 	return result, err
 }
 
+// read resolves current and optional selected releases before running an artifact operation in the same snapshot.
+// It distinguishes a missing release from a missing item and preserves safely resolved versions on failures.
 func (s *Service) read(ctx context.Context, selected string, fn func(context.Context, release.Snapshot) error) (model.CurrentState, error) {
 	var current model.CurrentState
 	err := s.reader.Read(ctx, func(readCtx context.Context, snapshot release.Snapshot) error {
@@ -91,6 +93,7 @@ func (s *Service) read(ctx context.Context, selected string, fn func(context.Con
 		}
 		current = snapshot.CurrentState()
 		if selected != "" {
+			// Selection failures must not report an artifact-specific absence or an unresolved selected version.
 			if _, err := snapshot.Release(readCtx, selected); err != nil {
 				if errors.Is(err, postgres.ErrNotFound) {
 					err = fmt.Errorf("%w: %w", ErrReleaseNotFound, err)
@@ -106,6 +109,7 @@ func (s *Service) read(ctx context.Context, selected string, fn func(context.Con
 	return current, err
 }
 
+// requestError attaches resolved release metadata while retaining the underlying error classification.
 func requestError(current model.CurrentState, selected string, err error) error {
 	return release.WithRequestMetadata(current, selected, err)
 }
@@ -289,6 +293,8 @@ func (s *Service) SourceMappingMetadata(ctx context.Context, version, mappingTyp
 // schemaMetadataCache belongs to one read snapshot and one selected release only.
 type schemaMetadataCache map[string]model.Artifact
 
+// loadSourceMapping verifies descriptor, projection, dependency, and program-binding agreement before returning metadata.
+// schemas MUST belong to this snapshot and selected release; returned metadata omits content bytes.
 func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, mappingType string, schemas schemaMetadataCache) (model.SourceMapping, error) {
 	descriptor, err := loadDescriptor(ctx, snapshot, version, "source-mapping", mappingType)
 	if err != nil {
@@ -314,6 +320,7 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 		resources[resource.Name] = resource
 	}
 	referenced := make(map[string]bool)
+	// Bind opaque programs by name and digest; introspection never evaluates their contents.
 	bind := func(reference sourcemappingmodel.ProgramReference, projected model.ProgramBinding) bool {
 		resource, exists := resources[reference.ProgramRef]
 		referenced[reference.ProgramRef] = true
@@ -324,6 +331,7 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 			return postgres.ErrInconsistentState
 		}
 		selected, cached := schemas[artifactType]
+		// Cache lookups, not validation: every reference still checks revision, target class, and dependency membership.
 		if !cached {
 			var err error
 			selected, err = selectedSchemaMetadata(ctx, snapshot, version, artifactType)
@@ -373,8 +381,10 @@ func loadSourceMapping(ctx context.Context, snapshot release.Snapshot, version, 
 	return model.SourceMapping{Descriptor: descriptor, Detail: detail}, nil
 }
 
+// selectedSchemaMetadata prefers metadata-only reads and supports snapshots with only the full-artifact contract.
 func selectedSchemaMetadata(ctx context.Context, snapshot release.Snapshot, version, artifactType string) (model.Artifact, error) {
 	if reader, ok := snapshot.(interface {
+		// ReleaseArtifactMetadata resolves selected metadata without allocating schema payload bytes.
 		ReleaseArtifactMetadata(context.Context, string, string, string) (model.Artifact, error)
 	}); ok {
 		return reader.ReleaseArtifactMetadata(ctx, version, "schema", artifactType)
@@ -382,6 +392,7 @@ func selectedSchemaMetadata(ctx context.Context, snapshot release.Snapshot, vers
 	return snapshot.ReleaseArtifact(ctx, version, "schema", artifactType)
 }
 
+// sourceMappingDependencyError classifies missing required mapping dependencies as inconsistent state, not an absent mapping.
 func sourceMappingDependencyError(err error) error {
 	if errors.Is(err, postgres.ErrNotFound) {
 		return fmt.Errorf("mapping dependency: %w", postgres.ErrInconsistentState)
@@ -389,6 +400,8 @@ func sourceMappingDependencyError(err error) error {
 	return err
 }
 
+// assembleSourceMappingPackage loads verified program bytes and unique schema documents from one snapshot.
+// It bounds retained content and returns deterministic program, schema, and store ordering without executing programs.
 func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot, version string, mapping model.SourceMapping) (model.SourceMappingPackage, error) {
 	programNames := make(map[string]bool)
 	if condition := mapping.Detail.Condition; condition != nil {
@@ -407,6 +420,7 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	var budget int64
+	// Base64 expands program bytes in JSON; reject an oversized lower bound before allocating program content.
 	for _, resource := range result.Programs {
 		budget += (resource.Size + 2) / 3 * 4
 	}
@@ -514,6 +528,7 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 	return result, nil
 }
 
+// compactSchemaDocument removes JSON whitespace for generated packages without changing stored integrity metadata.
 func compactSchemaDocument(value Descriptor) (Descriptor, error) {
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, value.Artifact.Payload.Bytes); err != nil {
@@ -551,6 +566,7 @@ func (s *Service) SourceMappings(ctx context.Context, version string, filter mod
 				continue
 			}
 			if index == limit-1 {
+				// The final requested item is a pagination sentinel, not a response item requiring full enrichment.
 				mappings = append(mappings, model.SourceMapping{Descriptor: Descriptor{Artifact: item}})
 				break
 			}
@@ -622,6 +638,7 @@ func (s *Service) SourceMappingPackages(ctx context.Context, version string, fil
 	return result, err
 }
 
+// extensionBytes counts extensions as JSON emits them and returns an over-budget value for invalid JSON.
 func extensionBytes(raw []byte) int64 {
 	if len(raw) == 0 {
 		return 0
@@ -633,8 +650,8 @@ func extensionBytes(raw []byte) int64 {
 	return int64(len(encoded))
 }
 
-// Every counted value occurs in the wire model. This lower bound limits retained
-// domain records; transport verifies each complete item and the final envelope.
+// minimumSourceMappingBytes bounds retained metadata using values present in the wire model.
+// Transport validation still checks each complete item and the final envelope.
 func minimumSourceMappingBytes(mapping model.SourceMapping, version string) int64 {
 	size := extensionBytes(mapping.Descriptor.Artifact.Extensions)
 	for _, transformation := range mapping.Detail.Transformations {
@@ -643,6 +660,7 @@ func minimumSourceMappingBytes(mapping model.SourceMapping, version string) int6
 	return size
 }
 
+// loadDescriptor resolves a release-selected artifact and loads its verified content and relationships.
 func loadDescriptor(ctx context.Context, snapshot release.Snapshot, version, kind, artifactType string) (Descriptor, error) {
 	value, err := snapshot.ReleaseArtifact(ctx, version, kind, artifactType)
 	if err != nil {
@@ -651,6 +669,7 @@ func loadDescriptor(ctx context.Context, snapshot release.Snapshot, version, kin
 	return loadDescriptorByArtifact(ctx, snapshot, version, value)
 }
 
+// loadDescriptorByArtifact checks payload integrity before loading resources, dependencies, and optional mapping details.
 func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, version string, value model.Artifact) (Descriptor, error) {
 	if !validPayload(value.Payload) {
 		return Descriptor{}, fmt.Errorf("artifact payload integrity: %w", postgres.ErrInconsistentState)
@@ -674,6 +693,7 @@ func loadDescriptorByArtifact(ctx context.Context, snapshot release.Snapshot, ve
 	return descriptor, nil
 }
 
+// validPayload verifies exact byte count, the artifact size limit, and the declared SHA-256 digest.
 func validPayload(value model.ByteDescriptor) bool {
 	digest := sha256.Sum256(value.Bytes)
 	return value.Size >= 0 && value.Size <= schemaartifacts.MaxArtifactBytes && int64(len(value.Bytes)) == value.Size && value.Digest == "sha-256:"+hex.EncodeToString(digest[:])

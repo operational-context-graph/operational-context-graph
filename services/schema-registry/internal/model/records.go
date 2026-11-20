@@ -20,7 +20,8 @@ type Release struct {
 type CurrentState struct {
 	SchemaVersion      string
 	ActivationSequence int64
-	SnapshotSequence   int64
+	// SnapshotSequence caps history pages independently of the current pointer, which may select an older release.
+	SnapshotSequence int64
 }
 
 // Artifact is an immutable revision-bound record.
@@ -41,7 +42,8 @@ type ByteDescriptor struct {
 	MediaType string
 	Digest    string
 	Size      int64
-	Bytes     []byte
+	// Bytes may be nil for metadata-only reads; Digest and Size still describe authoritative stored content.
+	Bytes []byte
 }
 
 // Resource is an immutable named artifact resource.
@@ -81,19 +83,20 @@ type ArtifactFilter struct {
 	ExecutionProfile   string
 }
 
-// SchemaContextBinding binds a selected schema revision to a selected JSON-LD schema context revision.
+// SchemaContextBinding binds a selected schema revision to a selected JavaScript Object Notation for Linked Data (JSON-LD) context.
 type SchemaContextBinding struct {
 	SchemaVersion   string
 	SchemaRevision  string
 	ContextRevision string
 }
 
-// URIEntry resolves an exact URI or IRI within one release.
+// URIEntry resolves an exact Uniform Resource Identifier (URI) or Internationalized Resource Identifier (IRI) within one release.
 type URIEntry struct {
 	SchemaVersion    string
 	URI              string
 	ArtifactRevision string
-	ResourceName     *string
+	// ResourceName is nil when the catalog selects the artifact payload rather than a named resource.
+	ResourceName *string
 }
 
 // StorageEntry assigns one schema identity to a logical Operational Context Graph store.
@@ -119,9 +122,10 @@ type SourceMappingTransformation struct {
 
 // Descriptor combines immutable artifact metadata, resources, and dependencies.
 type Descriptor struct {
-	Artifact           Artifact
-	Resources          []Resource
-	Dependencies       []Dependency
+	Artifact     Artifact
+	Resources    []Resource
+	Dependencies []Dependency
+	// SourceArtifactType is resolved release-scoped mapping metadata, not immutable artifact identity.
 	SourceArtifactType string
 }
 
@@ -147,11 +151,14 @@ type SourceMappingDetail struct {
 
 // SourceMappingPackage contains one release-consistent mapping and its dependencies.
 type SourceMappingPackage struct {
-	Mapping  Descriptor
-	Detail   SourceMappingDetail
+	Mapping Descriptor
+	Detail  SourceMappingDetail
+	// Programs contains only unique referenced program resources; ancillary resources remain descriptor metadata.
 	Programs []Resource
-	Schemas  []Descriptor
-	Stores   []StorageEntry
+	// Schemas places the source first and sorts remaining unique schemas by type and revision.
+	Schemas []Descriptor
+	// Stores contains the deduplicated, sorted union of canonical target placements.
+	Stores []StorageEntry
 }
 
 // ProjectionFamily names one independently verified normalized projection.

@@ -59,10 +59,12 @@ func MatchesIfNoneMatch(header, tag string) bool {
 	return false
 }
 
+// validETag accepts quoted validators without embedded quotes or line breaks.
 func validETag(tag string) bool {
 	return len(tag) >= 2 && tag[0] == '"' && tag[len(tag)-1] == '"' && !strings.ContainsAny(tag[1:len(tag)-1], "\r\n\"")
 }
 
+// validDigest accepts only the registry's lowercase, prefixed SHA-256 digest format.
 func validDigest(digest string) bool {
 	if len(digest) != len("sha-256:")+64 || !strings.HasPrefix(digest, "sha-256:") {
 		return false
@@ -75,6 +77,7 @@ func validDigest(digest string) bool {
 	return true
 }
 
+// ErrUnsafeResponseMetadata identifies metadata that cannot safely form a supported response or redirect.
 var ErrUnsafeResponseMetadata = errors.New("unsafe response metadata")
 
 // Representation is a completely assembled response. WriteRepresentation
@@ -117,6 +120,7 @@ func RelativeLink(segments ...string) (string, error) {
 	return "/" + strings.Join(escaped, "/"), nil
 }
 
+// escapePathSegment percent-encodes every byte except unreserved URI characters, including slashes and existing percent signs.
 func escapePathSegment(segment string) string {
 	var builder strings.Builder
 	for _, value := range []byte(segment) {
@@ -129,10 +133,14 @@ func escapePathSegment(segment string) string {
 	return builder.String()
 }
 
+// containsControl detects Unicode control characters that cannot safely appear in response metadata.
 func containsControl(value string) bool {
 	return strings.IndexFunc(value, unicode.IsControl) >= 0
 }
 
+// WriteRepresentation validates and encodes a response before committing success headers.
+// It applies representation-specific validators, suppresses HEAD bodies, and returns bodyless 406 for unacceptable codings.
+// Errors before commitment leave the writer available for an error response; write failures may follow commitment.
 func WriteRepresentation(writer http.ResponseWriter, value Representation) error {
 	if err := validateRepresentation(value); err != nil {
 		return err
@@ -154,6 +162,7 @@ func WriteRepresentation(writer http.ResponseWriter, value Representation) error
 		ctx = context.Background()
 	}
 	body, err := EncodeRepresentationContext(ctx, value.Body, coding)
+	// Encoding must finish before commitment so cancellation and size failures cannot produce partial success responses.
 	if err != nil {
 		return err
 	}
@@ -220,6 +229,7 @@ func WriteRedirect(writer http.ResponseWriter, value Redirect) error {
 	return nil
 }
 
+// validateRepresentation requires a body-capable success status, GET or HEAD, and syntactically safe metadata.
 func validateRepresentation(value Representation) error {
 	if value.Status < http.StatusOK || value.Status > 299 || value.Status == http.StatusNoContent || value.Status == http.StatusResetContent || value.MediaType == "" || containsControl(value.MediaType) || containsControl(value.Schema) || containsControl(value.Selected) || containsControl(value.Digest) {
 		return ErrUnsafeResponseMetadata
@@ -233,6 +243,10 @@ func validateRepresentation(value Representation) error {
 	return nil
 }
 
+// validRedirectLocation accepts absolute-path request URIs without authority,
+// credentials, control characters, backslashes, or nonempty parsed queries.
+// url.ParseRequestURI treats raw '#' text as path content and allows a trailing '?' with an empty query.
+// This check therefore does not guarantee fragment-free or query-marker-free redirect destinations.
 func validRedirectLocation(location string) bool {
 	if location == "" || containsControl(location) || strings.HasPrefix(location, "//") || strings.Contains(location, "\\") {
 		return false

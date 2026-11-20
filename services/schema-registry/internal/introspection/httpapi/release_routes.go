@@ -18,6 +18,7 @@ import (
 	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
+// registerReleaseRoutes installs GET and HEAD discovery routes when a release service exists.
 func (s *Server) registerReleaseRoutes() {
 	if s.releases == nil {
 		return
@@ -37,6 +38,7 @@ func (s *Server) registerReleaseRoutes() {
 	}
 }
 
+// registry serves current release identity and server-owned discovery links from one read snapshot.
 func (s *Server) registry(c *gin.Context) {
 	value, err := s.releases.Discovery(c.Request.Context())
 	if err != nil {
@@ -51,6 +53,7 @@ func (s *Server) registry(c *gin.Context) {
 	})
 }
 
+// defaultDiscoveryLinks builds relative discovery paths for a validated current schema version.
 func defaultDiscoveryLinks(version string) v1.Links {
 	return v1.Links{
 		v1.LinkTypeSelf:           "/v1/registry",
@@ -63,6 +66,7 @@ func defaultDiscoveryLinks(version string) v1.Links {
 	}
 }
 
+// listReleases serves a descending activation page bound to the cursor's original snapshot ceiling.
 func (s *Server) listReleases(c *gin.Context) {
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "limit", "cursor")
 	if err != nil {
@@ -93,6 +97,7 @@ func (s *Server) listReleases(c *gin.Context) {
 		before, snapshot = &last, &ceiling
 	}
 	page, err := s.releases.List(c.Request.Context(), before, snapshot, limit+1)
+	// One extra row detects continuation without exposing it in the returned page.
 	if err != nil {
 		s.writeReleaseError(c, err)
 		return
@@ -120,6 +125,7 @@ func (s *Server) listReleases(c *gin.Context) {
 	})
 }
 
+// releaseDescriptor serves selected release metadata, including its authoritative change summary when present.
 func (s *Server) releaseDescriptor(c *gin.Context) {
 	version := c.Param("schemaVersion")
 	if !artifactmodel.ValidVersion(version) {
@@ -134,6 +140,7 @@ func (s *Server) releaseDescriptor(c *gin.Context) {
 	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, releaseItem(value.Release, true))
 }
 
+// releaseManifest serves validated canonical manifest bytes with their stored digest and negotiated content coding.
 func (s *Server) releaseManifest(c *gin.Context) {
 	version := c.Param("schemaVersion")
 	if !artifactmodel.ValidVersion(version) {
@@ -158,6 +165,7 @@ func (s *Server) releaseManifest(c *gin.Context) {
 	}
 }
 
+// changes validates comparison endpoints and serves their net change summary rather than intermediate changes.
 func (s *Server) changes(c *gin.Context) {
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "from", "to")
 	if err != nil || values.Get("from") == "" || values.Get("to") == "" || !artifactmodel.ValidVersion(values.Get("from")) || !artifactmodel.ValidVersion(values.Get("to")) {
@@ -173,6 +181,7 @@ func (s *Server) changes(c *gin.Context) {
 	s.writeJSON(c, http.StatusOK, current.SchemaVersion, "", body)
 }
 
+// releaseItem builds release metadata and compatibility, optionally retaining the complete stored change summary.
 func releaseItem(item model.Release, includeChanges bool) v1.Release {
 	var previous *v1.ReleaseReference
 	if item.PreviousSchemaVersion != nil && item.PreviousManifestDigest != nil {
@@ -204,6 +213,7 @@ func releaseItem(item model.Release, includeChanges bool) v1.Release {
 	return result
 }
 
+// buildChanges projects net changes into the wire contract with endpoint links and nonnil change collections.
 func buildChanges(from, to string, value manifestmodel.Changes) v1.Changes {
 	result := v1.Changes{
 		FromSchemaVersion:     from,
@@ -262,6 +272,7 @@ func buildChanges(from, to string, value manifestmodel.Changes) v1.Changes {
 	return result
 }
 
+// writeJSON negotiates and marshals JSON before committing a response with resolved version metadata.
 func (s *Server) writeJSON(c *gin.Context, status int, schema, selected string, value any) {
 	if _, ok := NegotiateMediaType(c.GetHeader("Accept"), "application/json"); !ok {
 		s.writeReleaseErrorResponse(c, NotAcceptable, 0, ErrorMetadata{SchemaVersion: schema, SelectedSchemaVersion: selected})
@@ -277,14 +288,17 @@ func (s *Server) writeJSON(c *gin.Context, status int, schema, selected string, 
 	}
 }
 
+// writeReleaseRepresentationError reports a precommit representation failure without losing resolved version headers.
 func (s *Server) writeReleaseRepresentationError(c *gin.Context, metadata ErrorMetadata) {
 	s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, metadata)
 }
 
+// writeCursorError maps cursor failures to a stable validation code without disclosing decoder details.
 func (s *Server) writeCursorError(c *gin.Context, err error) {
 	s.writeReleaseValidationError(c, InvalidCursor)
 }
 
+// writeReleaseValidationError resolves current registry availability before returning an application validation error.
 func (s *Server) writeReleaseValidationError(c *gin.Context, code ErrorCode) {
 	discovery, err := s.releases.Discovery(c.Request.Context())
 	if err != nil {
@@ -297,6 +311,7 @@ func (s *Server) writeReleaseValidationError(c *gin.Context, code ErrorCode) {
 	s.writeReleaseErrorResponse(c, code, 0, ErrorMetadata{SchemaVersion: discovery.Current.SchemaVersion})
 }
 
+// writeReleaseErrorResponse preserves snapshot headers and suppresses error bodies for HEAD requests.
 func (s *Server) writeReleaseErrorResponse(c *gin.Context, code ErrorCode, retryAfter time.Duration, metadata ErrorMetadata) {
 	if c.Request.Method == http.MethodHead {
 		writeHeadError(c.Writer, code, "", nil, retryAfter, metadata)
@@ -304,6 +319,8 @@ func (s *Server) writeReleaseErrorResponse(c *gin.Context, code ErrorCode, retry
 	}
 	WriteErrorWithMetadata(c.Writer, code, "", nil, retryAfter, metadata)
 }
+
+// writeReleaseError maps storage and comparison failures to public codes, retry advice, and resolved snapshot headers.
 func (s *Server) writeReleaseError(c *gin.Context, err error) {
 	var code ErrorCode
 	var retryAfter time.Duration

@@ -13,6 +13,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
+// ContentCoding identifies the identity or gzip representation selected for a response.
 type ContentCoding string
 
 const (
@@ -20,6 +21,7 @@ const (
 	Gzip     ContentCoding = "gzip"
 )
 
+// ErrRepresentationTooLarge identifies identity content exceeding the generated-response limit before compression.
 var ErrRepresentationTooLarge = errors.New("identity representation exceeds 64 MiB")
 
 // NegotiateCoding selects identity or deterministic gzip.
@@ -54,6 +56,7 @@ func NegotiateCoding(acceptEncoding string) (ContentCoding, bool) {
 	return "", false
 }
 
+// parseCodingQualities retains the highest quality for each coding and treats invalid quality values as unacceptable.
 func parseCodingQualities(header string) map[string]float64 {
 	qualities := make(map[string]float64)
 	for _, item := range strings.Split(header, ",") {
@@ -107,6 +110,7 @@ func EncodeRepresentationContext(ctx context.Context, identity []byte, coding Co
 		return nil, err
 	}
 	writer.ModTime = time.Unix(0, 0)
+	// Fixed gzip metadata gives identical content identical encoded bytes and representation validators.
 	writer.OS = 255
 	for len(identity) > 0 {
 		if err := ctx.Err(); err != nil {
@@ -126,6 +130,7 @@ func EncodeRepresentationContext(ctx context.Context, identity []byte, coding Co
 	return compressed.Bytes(), nil
 }
 
+// decompress decodes a complete gzip response for exact-byte representation checks in package tests.
 func decompress(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {

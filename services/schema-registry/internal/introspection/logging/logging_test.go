@@ -12,6 +12,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/config/introspection"
 )
 
+// TestLoggerEscapesAndTruncatesStringFields verifies request-derived strings stay bounded and JSON escaping preserves their retained content.
 func TestLoggerEscapesAndTruncatesStringFields(t *testing.T) {
 	var output bytes.Buffer
 	logger := newLogger(introspection.LoggingConfig{Level: "info", MaxFieldLength: 4}, &output)
@@ -22,10 +23,12 @@ func TestLoggerEscapesAndTruncatesStringFields(t *testing.T) {
 	assert.Equal(t, "\"\nab", record["path"])
 }
 
+// TestTruncatePreservesValidUTF8 verifies truncation removes a split multibyte rune rather than emitting invalid text.
 func TestTruncatePreservesValidUTF8(t *testing.T) {
 	assert.Equal(t, "a", truncate("a€", 2))
 }
 
+// TestLoggerFiltersConfiguredLevels verifies each severity threshold, the unknown-level info fallback, and preserved nonstring attributes.
 func TestLoggerFiltersConfiguredLevels(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -57,6 +60,7 @@ func TestLoggerFiltersConfiguredLevels(t *testing.T) {
 	assert.NotNil(t, New(introspection.LoggingConfig{Level: "info", MaxFieldLength: 100}))
 }
 
+// TestTruncateBoundaries verifies empty, zero-limit, exact-limit, and over-limit strings retain only the expected valid prefix.
 func TestTruncateBoundaries(t *testing.T) {
 	for _, test := range []struct {
 		value, want string

@@ -1,3 +1,17 @@
+/*
+Controlled request-snapshot contract
+
+This test models two immutable repository views without PostgreSQL or release-state transitions.
+Their current versions differ, while both retain the same historical mapping release.
+Requests cover discovery, candidate filters, direct packages, and both nested package pages.
+
+Each request MUST enter exactly one read boundary.
+Its complete response MUST match the assigned fixture's sequential baseline, including headers and body bytes.
+Before-and-after serialization verifies that request handling does not mutate either fixture.
+Channels establish ordering explicitly; sleeps do not establish snapshot consistency.
+Once workers start, the parent joins them before fatal assertions or shared-fixture comparisons.
+*/
+
 package httpapi
 
 import (
@@ -18,20 +32,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 )
 
-/*
-Controlled request-snapshot contract
-
-This test models two immutable repository views without PostgreSQL or release-state transitions.
-Their current versions differ, while both retain the same historical mapping release.
-Requests cover discovery, candidate filters, direct packages, and both nested package pages.
-
-Each request MUST enter exactly one read boundary.
-Its complete response MUST match the assigned fixture's sequential baseline, including headers and body bytes.
-Before-and-after serialization verifies that request handling does not mutate either fixture.
-Channels establish ordering explicitly; sleeps do not establish snapshot consistency.
-Once workers start, the parent joins them before fatal assertions or shared-fixture comparisons.
-*/
-
+// controlledReadKey isolates the request's assigned snapshot state in context values.
 type controlledReadKey struct{}
 
 // controlledRead binds one request to its supplied snapshot and counts read-boundary entries.
@@ -47,6 +48,7 @@ type controlledSnapshotReader struct {
 	resume  <-chan struct{}
 }
 
+// Read counts the request's boundary entries and waits at a cancellation-aware barrier before exposing its assigned snapshot.
 func (r controlledSnapshotReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	read := ctx.Value(controlledReadKey{}).(*controlledRead)
 	read.calls.Add(1)
@@ -112,6 +114,7 @@ func TestConcurrentCurrentAndMappingReadsKeepIndependentSnapshots(t *testing.T) 
 	handler := server.Handler()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// result ties a complete response and read count to the assigned fixture and request path.
 	type result struct {
 		index    int
 		path     string

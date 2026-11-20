@@ -18,12 +18,22 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
+// TestWriteRepresentationEncodesGzipAndSuppressesHeadBody verifies gzip integrity headers and HEAD parity for encoded length and validators without a body.
 func TestWriteRepresentationEncodesGzipAndSuppressesHeadBody(t *testing.T) {
 	identity := []byte(`{"ok":true}`)
 	digestSum := sha256.Sum256(identity)
 	digest := "sha-256:" + hex.EncodeToString(digestSum[:])
 	response := httptest.NewRecorder()
-	err := WriteRepresentation(response, Representation{Status: http.StatusOK, MediaType: "application/json", Body: identity, Schema: "1.0.0", Digest: digest, Method: http.MethodGet, AcceptCoding: "gzip"})
+	err := WriteRepresentation(response, Representation{
+		Status:       http.StatusOK,
+		MediaType:    "application/json",
+		Body:         identity,
+		Schema:       "1.0.0",
+		Digest:       digest,
+		Method:       http.MethodGet,
+		AcceptCoding: "gzip"},
+	)
+
 	require.NoError(t, err)
 	assert.Equal(t, "gzip", response.Header().Get("Content-Encoding"))
 	assert.Equal(t, "Accept-Encoding", response.Header().Get("Vary"))
@@ -31,20 +41,35 @@ func TestWriteRepresentationEncodesGzipAndSuppressesHeadBody(t *testing.T) {
 	assert.Equal(t, digest, response.Header().Get("Artifact-Digest"))
 	assert.NotEmpty(t, response.Header().Get("ETag"))
 	assert.Equal(t, strconv.Itoa(response.Body.Len()), response.Header().Get("Content-Length"))
+
 	plain, err := decompress(response.Body.Bytes())
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"ok":true}`, string(plain))
+
 	head := httptest.NewRecorder()
-	require.NoError(t, WriteRepresentation(head, Representation{Status: http.StatusOK, MediaType: "application/json", Body: []byte(`{}`), Method: http.MethodHead, AcceptCoding: "gzip"}))
+	require.NoError(t, WriteRepresentation(head, Representation{
+		Status:       http.StatusOK,
+		MediaType:    "application/json",
+		Body:         []byte(`{}`),
+		Method:       http.MethodHead,
+		AcceptCoding: "gzip",
+	}))
 	assert.Empty(t, head.Body.String())
 	assert.Equal(t, "gzip", head.Header().Get("Content-Encoding"))
 
 	get := httptest.NewRecorder()
-	require.NoError(t, WriteRepresentation(get, Representation{Status: http.StatusOK, MediaType: "application/json", Body: []byte(`{}`), Method: http.MethodGet, AcceptCoding: "gzip"}))
+	require.NoError(t, WriteRepresentation(get, Representation{
+		Status:       http.StatusOK,
+		MediaType:    "application/json",
+		Body:         []byte(`{}`),
+		Method:       http.MethodGet,
+		AcceptCoding: "gzip",
+	}))
 	assert.Equal(t, get.Header().Get("Content-Length"), head.Header().Get("Content-Length"))
 	assert.Equal(t, get.Header().Get("ETag"), head.Header().Get("ETag"))
 }
 
+// TestWriteRepresentationReturnsBodyless406ForForbiddenCodings verifies explicit exclusion of supported codings returns no content or coding metadata.
 func TestWriteRepresentationReturnsBodyless406ForForbiddenCodings(t *testing.T) {
 	response := httptest.NewRecorder()
 	err := WriteRepresentation(response, Representation{
@@ -62,6 +87,7 @@ func TestWriteRepresentationReturnsBodyless406ForForbiddenCodings(t *testing.T) 
 	assert.Empty(t, response.Header().Get("Vary"))
 }
 
+// TestWriteRepresentationDoesNotCommitAfterClientCancellation verifies canceled encoding returns context.Canceled without setting headers or writing content.
 func TestWriteRepresentationDoesNotCommitAfterClientCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -80,6 +106,7 @@ func TestWriteRepresentationDoesNotCommitAfterClientCancellation(t *testing.T) {
 	assert.Empty(t, response.Body.String())
 }
 
+// TestWriteRepresentationStopsOnClientDisconnect verifies a real transport disconnect cancels in-progress compression within the test deadline.
 func TestWriteRepresentationStopsOnClientDisconnect(t *testing.T) {
 	body := bytes.Repeat([]byte("x"), int(limits.MaxGeneratedJSONBytes))
 	started := make(chan struct{})
@@ -112,6 +139,8 @@ func TestWriteRepresentationStopsOnClientDisconnect(t *testing.T) {
 	}
 }
 
+// TestValidatorsAreRepresentationSpecific verifies identity and gzip validators differ and conditional
+// matching accepts lists and wildcards, not malformed tags.
 func TestValidatorsAreRepresentationSpecific(t *testing.T) {
 	identity, err := EncodeRepresentation([]byte("body"), Identity)
 	require.NoError(t, err)
@@ -123,6 +152,8 @@ func TestValidatorsAreRepresentationSpecific(t *testing.T) {
 	assert.False(t, MatchesIfNoneMatch("malformed", ETag(identity)))
 }
 
+// TestETagUsesSelectedRepresentationAndExactIdentityDigest verifies valid stored identity digests
+// remain validators while gzip and changed catalog evidence produce different tags.
 func TestETagUsesSelectedRepresentationAndExactIdentityDigest(t *testing.T) {
 	identity := []byte(`{"items":[],"nextCursor":"opaque"}`)
 	gzip, err := EncodeRepresentation(identity, Gzip)
@@ -137,16 +168,29 @@ func TestETagUsesSelectedRepresentationAndExactIdentityDigest(t *testing.T) {
 	assert.NotEqual(t, RedirectETag("/v1/releases/1.0.0", []byte("first")), RedirectETag("/v1/releases/1.0.0", []byte("second")))
 }
 
+// TestWriteRepresentationAppliesConditionalResponse verifies unchanged selected content returns bodyless 304 while updating current-version headers and omitting content length.
 func TestWriteRepresentationAppliesConditionalResponse(t *testing.T) {
 	body := []byte(`{"items":[],"nextCursor":"stable-cursor"}`)
 	first := httptest.NewRecorder()
 	require.NoError(t, WriteRepresentation(first, Representation{
-		Status: http.StatusOK, MediaType: "application/json", Body: body, Schema: "1.0.0", Method: http.MethodGet, AcceptCoding: "gzip",
+		Status:       http.StatusOK,
+		MediaType:    "application/json",
+		Body:         body,
+		Schema:       "1.0.0",
+		Method:       http.MethodGet,
+		AcceptCoding: "gzip",
 	}))
 
 	conditional := httptest.NewRecorder()
 	require.NoError(t, WriteRepresentation(conditional, Representation{
-		Status: http.StatusOK, MediaType: "application/json", Body: body, Schema: "2.0.0", Selected: "1.0.0", Method: http.MethodGet, AcceptCoding: "gzip", IfNoneMatch: first.Header().Get("ETag"),
+		Status:       http.StatusOK,
+		MediaType:    "application/json",
+		Body:         body,
+		Schema:       "2.0.0",
+		Selected:     "1.0.0",
+		Method:       http.MethodGet,
+		AcceptCoding: "gzip",
+		IfNoneMatch:  first.Header().Get("ETag"),
 	}))
 	assert.Equal(t, http.StatusNotModified, conditional.Code)
 	assert.Empty(t, conditional.Body.String())
@@ -158,6 +202,7 @@ func TestWriteRepresentationAppliesConditionalResponse(t *testing.T) {
 	assert.Empty(t, conditional.Header().Get("Content-Length"))
 }
 
+// TestIfNoneMatchAcceptsListsWildcardsAndRejectsMalformedTags verifies weak comparison works within lists and malformed quoting never matches.
 func TestIfNoneMatchAcceptsListsWildcardsAndRejectsMalformedTags(t *testing.T) {
 	tag := `"sha-256:abc"`
 	assert.True(t, MatchesIfNoneMatch(`"other", W/`+tag, tag))
@@ -166,12 +211,14 @@ func TestIfNoneMatchAcceptsListsWildcardsAndRejectsMalformedTags(t *testing.T) {
 	assert.False(t, MatchesIfNoneMatch(`"unterminated`, tag))
 }
 
+// TestRelativeLinkIsServerOwnedAndEscapesEachSegmentOnce verifies slashes, percent sequences, and Unicode remain escaped data inside server-owned path segments.
 func TestRelativeLinkIsServerOwnedAndEscapesEachSegmentOnce(t *testing.T) {
 	link, err := RelativeLink("v1", "releases", "1.0.0", "resources", "name/%2f/%2e/✓")
 	require.NoError(t, err)
 	assert.Equal(t, "/v1/releases/1.0.0/resources/name%2F%252f%2F%252e%2F%E2%9C%93", link)
 }
 
+// TestRelativeLinkRejectsUnsafeSegments verifies empty, traversal, and Unicode-control-containing segments cannot become response links.
 func TestRelativeLinkRejectsUnsafeSegments(t *testing.T) {
 	for _, segment := range []string{"", ".", "..", "name\r\nLocation: https://invalid", "name\u0085"} {
 		_, err := RelativeLink("v1", segment)
@@ -179,11 +226,18 @@ func TestRelativeLinkRejectsUnsafeSegments(t *testing.T) {
 	}
 }
 
+// TestWriteRedirectIsConditionalAndDoesNotUseRequestAuthority verifies relative redirect targets,
+// version metadata, and bodyless revalidation without request-derived authority.
 func TestWriteRedirectIsConditionalAndDoesNotUseRequestAuthority(t *testing.T) {
 	location, err := RelativeLink("v1", "releases", "1.0.0")
 	require.NoError(t, err)
 	response := httptest.NewRecorder()
-	require.NoError(t, WriteRedirect(response, Redirect{Location: location, Schema: "2.0.0", Selected: "1.0.0", CatalogEntry: []byte("https://catalog.example/schema")}))
+	require.NoError(t, WriteRedirect(response, Redirect{
+		Location:     location,
+		Schema:       "2.0.0",
+		Selected:     "1.0.0",
+		CatalogEntry: []byte("https://catalog.example/schema"),
+	}))
 	assert.Equal(t, http.StatusTemporaryRedirect, response.Code)
 	assert.Equal(t, "/v1/releases/1.0.0", response.Header().Get("Location"))
 	assert.Equal(t, "2.0.0", response.Header().Get("Schema-Version"))
@@ -191,32 +245,49 @@ func TestWriteRedirectIsConditionalAndDoesNotUseRequestAuthority(t *testing.T) {
 	assert.Empty(t, response.Body.String())
 
 	conditional := httptest.NewRecorder()
-	require.NoError(t, WriteRedirect(conditional, Redirect{Location: location, Schema: "3.0.0", CatalogEntry: []byte("https://catalog.example/schema"), IfNoneMatch: response.Header().Get("ETag")}))
+	require.NoError(t, WriteRedirect(conditional, Redirect{
+		Location:     location,
+		Schema:       "3.0.0",
+		CatalogEntry: []byte("https://catalog.example/schema"),
+		IfNoneMatch:  response.Header().Get("ETag"),
+	}))
 	assert.Equal(t, http.StatusNotModified, conditional.Code)
 	assert.Empty(t, conditional.Body.String())
 	assert.Empty(t, conditional.Header().Get("Location"))
 	assert.Equal(t, "3.0.0", conditional.Header().Get("Schema-Version"))
 }
 
+// TestWriteRepresentationDoesNotCommitOnLateFailure verifies oversized content and injected header text fail without headers or partial success bodies.
 func TestWriteRepresentationDoesNotCommitOnLateFailure(t *testing.T) {
 	response := httptest.NewRecorder()
 	err := WriteRepresentation(response, Representation{
-		Status: http.StatusOK, MediaType: "application/json", Body: make([]byte, int(limits.MaxGeneratedJSONBytes)+1), Method: http.MethodGet,
+		Status:    http.StatusOK,
+		MediaType: "application/json",
+		Body:      make([]byte, int(limits.MaxGeneratedJSONBytes)+1),
+		Method:    http.MethodGet,
 	})
 	require.ErrorIs(t, err, ErrRepresentationTooLarge)
 	assert.Empty(t, response.Header())
 	assert.Empty(t, response.Body.String())
 
 	err = WriteRepresentation(response, Representation{
-		Status: http.StatusOK, MediaType: "application/json\r\nX-Injected: true", Body: []byte("{}"), Method: http.MethodGet,
+		Status:    http.StatusOK,
+		MediaType: "application/json\r\nX-Injected: true",
+		Body:      []byte("{}"),
+		Method:    http.MethodGet,
 	})
 	require.ErrorIs(t, err, ErrUnsafeResponseMetadata)
 	assert.Empty(t, response.Header())
 	assert.Empty(t, response.Body.String())
 }
 
+// TestWriteRedirectRejectsUnsafeLocationWithoutCommitting verifies header injection, authority references, and backslash targets fail without response commitment.
 func TestWriteRedirectRejectsUnsafeLocationWithoutCommitting(t *testing.T) {
-	for _, location := range []string{"/v1/releases/1.0.0\r\nLocation: https://invalid", "//attacker.example/path", "/\\attacker.example/path"} {
+	for _, location := range []string{
+		"/v1/releases/1.0.0\r\nLocation: https://invalid",
+		"//attacker.example/path",
+		"/\\attacker.example/path",
+	} {
 		response := httptest.NewRecorder()
 		err := WriteRedirect(response, Redirect{Location: location})
 		require.ErrorIs(t, err, ErrUnsafeResponseMetadata)
@@ -225,20 +296,31 @@ func TestWriteRedirectRejectsUnsafeLocationWithoutCommitting(t *testing.T) {
 	}
 }
 
+// TestWriteRepresentationRejectsBodyForbiddenStatus verifies a body-bearing representation cannot use a no-content status or commit metadata.
 func TestWriteRepresentationRejectsBodyForbiddenStatus(t *testing.T) {
 	response := httptest.NewRecorder()
-	err := WriteRepresentation(response, Representation{Status: http.StatusNoContent, MediaType: "application/json", Body: []byte("{}"), Method: http.MethodGet})
+	err := WriteRepresentation(response, Representation{
+		Status:    http.StatusNoContent,
+		MediaType: "application/json",
+		Body:      []byte("{}"),
+		Method:    http.MethodGet,
+	})
 	require.ErrorIs(t, err, ErrUnsafeResponseMetadata)
 	assert.Empty(t, response.Header())
 	assert.Empty(t, response.Body.String())
 }
 
+// TestRepresentationRejectsInvalidMediaAndMethod verifies malformed media types and nonread methods fail response validation.
 func TestRepresentationRejectsInvalidMediaAndMethod(t *testing.T) {
 	for _, test := range []struct{ mediaType, method string }{
 		{mediaType: "invalid media type", method: http.MethodGet},
 		{mediaType: "application/json", method: http.MethodPost},
 	} {
-		err := validateRepresentation(Representation{Status: http.StatusOK, MediaType: test.mediaType, Method: test.method})
+		err := validateRepresentation(Representation{
+			Status:    http.StatusOK,
+			MediaType: test.mediaType,
+			Method:    test.method,
+		})
 		require.ErrorIs(t, err, ErrUnsafeResponseMetadata)
 	}
 }

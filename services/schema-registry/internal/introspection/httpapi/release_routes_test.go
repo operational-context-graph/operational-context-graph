@@ -25,11 +25,13 @@ import (
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 )
 
+// releaseTestReader exposes controlled release state or a boundary failure for route tests.
 type releaseTestReader struct {
 	snapshot *releaseTestSnapshot
 	err      error
 }
 
+// Read invokes the route's snapshot callback unless an injected storage failure prevents it.
 func (r releaseTestReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	if r.err != nil {
 		return r.err
@@ -37,6 +39,7 @@ func (r releaseTestReader) Read(ctx context.Context, fn func(context.Context, re
 	return fn(ctx, r.snapshot)
 }
 
+// releaseTestSnapshot controls release visibility, pagination, lineage, and pointer changes for HTTP contract checks.
 type releaseTestSnapshot struct {
 	current             model.CurrentState
 	releases            []model.Release
@@ -48,7 +51,10 @@ type releaseTestSnapshot struct {
 	lineageErr          error
 }
 
+// CurrentState returns controlled current and paging coordinates.
 func (s *releaseTestSnapshot) CurrentState() model.CurrentState { return s.current }
+
+// CurrentRelease resolves fixture state before an optional hook simulates a concurrent pointer change.
 func (s *releaseTestSnapshot) CurrentRelease(context.Context) (model.Release, error) {
 	result, err := s.Release(context.Background(), s.current.SchemaVersion)
 	if s.afterCurrentRelease != nil {
@@ -58,6 +64,8 @@ func (s *releaseTestSnapshot) CurrentRelease(context.Context) (model.Release, er
 	}
 	return result, err
 }
+
+// Release hides explicitly inactive fixtures and reports absent versions as ErrNotFound.
 func (s *releaseTestSnapshot) Release(_ context.Context, version string) (model.Release, error) {
 	if s.hidden[version] {
 		return model.Release{}, postgres.ErrNotFound
@@ -69,6 +77,8 @@ func (s *releaseTestSnapshot) Release(_ context.Context, version string) (model.
 	}
 	return model.Release{}, postgres.ErrNotFound
 }
+
+// ReleasesAt applies exclusive continuation and inclusive ceiling bounds, unless a custom page supplies controlled shapes.
 func (s *releaseTestSnapshot) ReleasesAt(_ context.Context, before *int64, max int64, limit int) ([]model.Release, error) {
 	if s.page != nil {
 		return s.page(before, max, limit), nil
@@ -84,6 +94,8 @@ func (s *releaseTestSnapshot) ReleasesAt(_ context.Context, before *int64, max i
 	}
 	return result, nil
 }
+
+// IsAncestor supplies connected ancestry by default and supports disconnected or corrupt lineage overrides.
 func (s *releaseTestSnapshot) IsAncestor(context.Context, string, string) (bool, error) {
 	if s.lineageErr != nil {
 		return false, s.lineageErr
@@ -93,6 +105,8 @@ func (s *releaseTestSnapshot) IsAncestor(context.Context, string, string) (bool,
 	}
 	return *s.ancestor, nil
 }
+
+// Artifact supplies comparison bytes, falling back to any configured artifact when no exact fixture revision exists.
 func (s *releaseTestSnapshot) Artifact(_ context.Context, revision string) (model.Artifact, error) {
 	value, ok := s.artifacts[revision]
 	if !ok {
@@ -103,40 +117,63 @@ func (s *releaseTestSnapshot) Artifact(_ context.Context, revision string) (mode
 	}
 	return value, nil
 }
+
+// ReleaseArtifact reports absent selections outside the release-route fixture's scope.
 func (*releaseTestSnapshot) ReleaseArtifact(context.Context, string, string, string) (model.Artifact, error) {
 	return model.Artifact{}, postgres.ErrNotFound
 }
+
+// ReleaseArtifacts reports absent collections outside the release-route fixture's scope.
 func (*releaseTestSnapshot) ReleaseArtifacts(context.Context, string, model.ArtifactFilter, *string, *string, int) ([]model.Artifact, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// ArtifactHistory reports absent logical history in release-route fixtures.
 func (*releaseTestSnapshot) ArtifactHistory(context.Context, string, string, *int64, int64, int) ([]model.ReleaseArtifact, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// Resources reports absent resource metadata in release-route fixtures.
 func (*releaseTestSnapshot) Resources(context.Context, string) ([]model.Resource, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// Resource reports absent resource content in release-route fixtures.
 func (*releaseTestSnapshot) Resource(context.Context, string, string) (model.Resource, error) {
 	return model.Resource{}, postgres.ErrNotFound
 }
+
+// Dependencies reports absent projected dependencies outside comparison payload evidence.
 func (*releaseTestSnapshot) Dependencies(context.Context, string) ([]model.Dependency, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// ContextBindings reports absent context projections in release-route fixtures.
 func (*releaseTestSnapshot) ContextBindings(context.Context, string, string) ([]model.SchemaContextBinding, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// StorageEntries reports absent logical store projections in release-route fixtures.
 func (*releaseTestSnapshot) StorageEntries(context.Context, string, string) ([]model.StorageEntry, error) {
 	return nil, postgres.ErrNotFound
 }
+
+// URIEntry reports absent URI catalog projections in release-route fixtures.
 func (*releaseTestSnapshot) URIEntry(context.Context, string, string) (model.URIEntry, error) {
 	return model.URIEntry{}, postgres.ErrNotFound
 }
+
+// SourceMapping reports absent logical mapping details in release-route fixtures.
 func (*releaseTestSnapshot) SourceMapping(context.Context, string, string) (model.SourceMappingDetail, error) {
 	return model.SourceMappingDetail{}, postgres.ErrNotFound
 }
+
+// SourceMappingByRevision reports absent revision mapping details in release-route fixtures.
 func (*releaseTestSnapshot) SourceMappingByRevision(context.Context, string, string) (model.SourceMappingDetail, error) {
 	return model.SourceMappingDetail{}, postgres.ErrNotFound
 }
 
+// TestReleaseDiscoveryAndManifestConditionals verifies discovery links, exact manifest bytes, version headers, HEAD parity, and representation-specific conditional responses.
 func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	manifest := mustTestManifest(t)
 	release := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, SourceRepository: "https://git.example.test/schema-model", SourceCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ActivationSequence: 1}
@@ -199,6 +236,7 @@ func TestReleaseDiscoveryAndManifestConditionals(t *testing.T) {
 	assert.Empty(t, response.Body.String())
 }
 
+// TestRegistryDiscoveryUsesOneControlledCurrentReleaseSnapshot verifies pointer changes cannot mix release identity, digest, links, and response headers.
 func TestRegistryDiscoveryUsesOneControlledCurrentReleaseSnapshot(t *testing.T) {
 	first := model.Release{SchemaVersion: "1.0.0", ManifestDigest: "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	second := model.Release{SchemaVersion: "1.1.0", ManifestDigest: "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
@@ -233,6 +271,7 @@ func TestRegistryDiscoveryUsesOneControlledCurrentReleaseSnapshot(t *testing.T) 
 	assert.Equal(t, "/v1/releases/1.1.0", secondBody.Links["release"])
 }
 
+// TestReleaseRoutesMapPreCommitRepresentationFailure verifies failed response construction returns a safe integrity error instead of committing success.
 func TestReleaseRoutesMapPreCommitRepresentationFailure(t *testing.T) {
 	manifest := mustTestManifest(t)
 	current := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, ActivationSequence: 1}
@@ -248,6 +287,8 @@ func TestReleaseRoutesMapPreCommitRepresentationFailure(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"code":"inconsistent-registry-state"`)
 }
 
+// TestReleaseCollectionPaginatesControlledSnapshot verifies descending pages retain their original activation ceiling after newer releases appear.
+// Items preserve predecessor, provenance, compatibility, and links; invalid or repeated query parameters return bad-request responses.
 func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 	previousVersion, previousDigest := "1.0.0", "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	snapshot := &releaseTestSnapshot{current: model.CurrentState{SchemaVersion: "2.0.0", ActivationSequence: 2, SnapshotSequence: 2}, releases: []model.Release{
@@ -290,6 +331,8 @@ func TestReleaseCollectionPaginatesControlledSnapshot(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, serveStatus(server, "/v1/releases?limit=1001"))
 }
 
+// TestReleaseCollectionDefaultAndSingleEntryShapes verifies default limits and single-entry pages produce complete envelopes without unnecessary cursors.
+// Initial releases use null predecessor and continuation fields and omit absent compatibility metadata.
 func TestReleaseCollectionDefaultAndSingleEntryShapes(t *testing.T) {
 	snapshot := &releaseTestSnapshot{current: model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1}, releases: []model.Release{{SchemaVersion: "1.0.0", ManifestDigest: "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SourceRepository: "https://git.example.test/repo", SourceCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ActivationSequence: 1}}}
 	server := releaseTestServer(snapshot)
@@ -301,6 +344,7 @@ func TestReleaseCollectionDefaultAndSingleEntryShapes(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), `"compatibility"`)
 }
 
+// TestReleaseCollectionSupportsEmptyAndMaximumPages verifies empty collections remain arrays and the maximum page limit is accepted.
 func TestReleaseCollectionSupportsEmptyAndMaximumPages(t *testing.T) {
 	current := model.Release{SchemaVersion: "1.0.0", ActivationSequence: 1}
 	empty := &releaseTestSnapshot{current: model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1}, releases: []model.Release{current}, page: func(*int64, int64, int) []model.Release { return nil }}
@@ -326,6 +370,8 @@ func TestReleaseCollectionSupportsEmptyAndMaximumPages(t *testing.T) {
 	assert.NotNil(t, page.NextCursor)
 }
 
+// TestReleaseRoutesMapNoActiveAndNotFound verifies unavailable registry state and unknown releases map to distinct public errors.
+// No-active-release responses omit version headers; malformed selected versions retain only the resolved current version.
 func TestReleaseRoutesMapNoActiveAndNotFound(t *testing.T) {
 	server := releaseTestServer(&releaseTestSnapshot{})
 	server.releases = release.New(releaseTestReader{err: postgres.ErrNoActiveRelease})
@@ -355,6 +401,7 @@ func TestReleaseRoutesMapNoActiveAndNotFound(t *testing.T) {
 	assert.Empty(t, response.Body.String())
 }
 
+// TestReleaseValidationErrorsReportNoActiveRelease verifies missing current activation takes precedence over invalid application parameters.
 func TestReleaseValidationErrorsReportNoActiveRelease(t *testing.T) {
 	server := releaseTestServer(&releaseTestSnapshot{})
 	server.releases = release.New(releaseTestReader{err: postgres.ErrNoActiveRelease})
@@ -386,6 +433,7 @@ func TestReleaseValidationErrorsReportNoActiveRelease(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"code":"no-active-release"`)
 }
 
+// TestReleaseCollectionAcceptsCursorAfterElapsedTime verifies a valid continuation succeeds without a cursor-expired error.
 func TestReleaseCollectionAcceptsCursorAfterElapsedTime(t *testing.T) {
 	server := releaseTestServer(&releaseTestSnapshot{current: model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1}, releases: []model.Release{{SchemaVersion: "1.0.0", ActivationSequence: 1}}})
 	token, err := server.cursors.Encode(pagination.Payload{Resource: "releases", Limit: 1, Sort: "activation-desc", Filters: map[string]string{}, Last: "1", Snapshot: "1"})
@@ -397,6 +445,7 @@ func TestReleaseCollectionAcceptsCursorAfterElapsedTime(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), `"cursor-expired"`)
 }
 
+// TestManifestSupportsGzipAndRejectsNoncanonicalBytes verifies negotiated gzip preserves exact canonical content and invalid stored manifests fail before success.
 func TestManifestSupportsGzipAndRejectsNoncanonicalBytes(t *testing.T) {
 	manifest := mustTestManifest(t)
 	release := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, SourceRepository: "https://git.example.test/schema-model", SourceCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ActivationSequence: 1}
@@ -440,6 +489,7 @@ func TestManifestSupportsGzipAndRejectsNoncanonicalBytes(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, serveStatus(server, "/v1/releases/1.0.0/manifest"))
 }
 
+// TestReleaseHeadErrorsSuppressBodiesAfterNegotiation verifies unacceptable media requests retain resolved version headers and return bodyless HEAD errors.
 func TestReleaseHeadErrorsSuppressBodiesAfterNegotiation(t *testing.T) {
 	manifest := mustTestManifest(t)
 	current := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, ActivationSequence: 1}
@@ -456,6 +506,7 @@ func TestReleaseHeadErrorsSuppressBodiesAfterNegotiation(t *testing.T) {
 	}
 }
 
+// TestReleaseDescriptorSupportsHeadAndOptionalFields verifies descriptor HEAD parity and correct inclusion or omission of predecessor and change metadata.
 func TestReleaseDescriptorSupportsHeadAndOptionalFields(t *testing.T) {
 	initial := mustTestManifest(t)
 	currentManifest := versionedManifest(t, initial, "1.0.1", digest(initial))
@@ -499,6 +550,7 @@ func TestReleaseDescriptorSupportsHeadAndOptionalFields(t *testing.T) {
 	assert.Empty(t, response.Body.String())
 }
 
+// TestReleaseRoutesHideInactiveRelease verifies stored but unactivated releases remain unavailable through release discovery endpoints.
 func TestReleaseRoutesHideInactiveRelease(t *testing.T) {
 	manifest := mustTestManifest(t)
 	current := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, ActivationSequence: 1}
@@ -513,6 +565,7 @@ func TestReleaseRoutesHideInactiveRelease(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, serveStatus(server, "/v1/releases/2.1.0/manifest"))
 }
 
+// TestHistoricalManifestReadsRemainIdenticalForConcurrentCallers verifies simultaneous historical reads return identical immutable bytes and validators.
 func TestHistoricalManifestReadsRemainIdenticalForConcurrentCallers(t *testing.T) {
 	manifest := mustTestManifest(t)
 	release := model.Release{SchemaVersion: "1.0.0", ManifestDigest: digest(manifest), ManifestBytes: manifest, ActivationSequence: 1}
@@ -538,6 +591,7 @@ func TestHistoricalManifestReadsRemainIdenticalForConcurrentCallers(t *testing.T
 	}
 }
 
+// TestReleaseDescriptorExposesCompleteChangeSummary verifies selected metadata retains the complete authoritative summary and its compatibility classification.
 func TestReleaseDescriptorExposesCompleteChangeSummary(t *testing.T) {
 	manifest := manifestWithInitialChanges(t, mustTestManifest(t))
 	changes := []byte(`{"compatibility":"initial","artifacts":[],"schemaContextBindings":[],"uriCatalog":[],"storageCatalog":[]}`)
@@ -550,17 +604,21 @@ func TestReleaseDescriptorExposesCompleteChangeSummary(t *testing.T) {
 	assert.Contains(t, response.Body.String(), `"changes":{"compatibility":"initial","artifacts":[],"schemaContextBindings":[],"uriCatalog":[],"storageCatalog":[]}`)
 }
 
+// serveStatus obtains an in-process GET status for route failure assertions.
 func serveStatus(server *Server, path string) int {
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 	return response.Code
 }
 
+// releaseTestServer wires controlled release state into a server with test admission and readiness settings.
 func releaseTestServer(snapshot *releaseTestSnapshot) *Server {
 	cfg := testConfig()
 	cfg.Admission.MaxInFlight = 64
 	return NewWithReleaseService(cfg, &fakeChecker{}, release.New(releaseTestReader{snapshot: snapshot}))
 }
+
+// mustTestManifest loads the canonical initial-release fixture and fails the caller if unavailable.
 func mustTestManifest(t *testing.T) []byte {
 	t.Helper()
 	value, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", "valid-initial.json"))
@@ -569,6 +627,8 @@ func mustTestManifest(t *testing.T) []byte {
 	require.NoError(t, err)
 	return canonical
 }
+
+// versionedManifest creates canonical release bytes with the requested version and predecessor evidence for pagination fixtures.
 func versionedManifest(t *testing.T, input []byte, version, previousDigest string) []byte {
 	t.Helper()
 	var value map[string]any
@@ -581,6 +641,8 @@ func versionedManifest(t *testing.T, input []byte, version, previousDigest strin
 	require.NoError(t, err)
 	return canonical
 }
+
+// manifestWithInitialChanges adds a complete initial change summary while preserving canonical manifest encoding.
 func manifestWithInitialChanges(t *testing.T, input []byte) []byte {
 	t.Helper()
 	var value map[string]any
@@ -592,6 +654,8 @@ func manifestWithInitialChanges(t *testing.T, input []byte) []byte {
 	require.NoError(t, err)
 	return canonical
 }
+
+// digest supplies exact-byte SHA-256 integrity metadata for HTTP fixtures.
 func digest(value []byte) string {
 	sum := sha256.Sum256(value)
 	return "sha-256:" + hex.EncodeToString(sum[:])

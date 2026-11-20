@@ -20,6 +20,7 @@ import (
 	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
 
+// registerSchemaRoutes installs read-only schema and source-mapping routes when an artifact service exists.
 func (s *Server) registerSchemaRoutes() {
 	if s.artifacts == nil {
 		return
@@ -45,10 +46,12 @@ func (s *Server) registerSchemaRoutes() {
 	}
 }
 
+// validSchemaPath validates a release version and logical schema or mapping type before lookup.
 func validSchemaPath(version, artifactType string) bool {
 	return artifactmodel.ValidVersion(version) && artifactmodel.ValidLogicalType(artifactType)
 }
 
+// schemas serves release-selected schemas with exact class and dependency filters and type-ordered pagination.
 func (s *Server) schemas(c *gin.Context) {
 	version := c.Param("schemaVersion")
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery, "schemaClass", "dependsOnRevision", "limit", "cursor")
@@ -116,6 +119,7 @@ func (s *Server) schemas(c *gin.Context) {
 	})
 }
 
+// schemaMetadata serves a selected schema descriptor with release-dependent relationship links.
 func (s *Server) schemaMetadata(c *gin.Context) {
 	version, artifactType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, artifactType) {
@@ -130,6 +134,7 @@ func (s *Server) schemaMetadata(c *gin.Context) {
 	s.writeJSON(c, http.StatusOK, value.Current.SchemaVersion, version, descriptor(value.Value, version))
 }
 
+// schemaContent checks media type, byte count, and digest before serving exact selected schema JSON.
 func (s *Server) schemaContent(c *gin.Context) {
 	version, artifactType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, artifactType) {
@@ -158,6 +163,7 @@ func (s *Server) schemaContent(c *gin.Context) {
 	})
 }
 
+// schemaContexts serves the complete verified set of contexts bound to a release-selected schema.
 func (s *Server) schemaContexts(c *gin.Context) {
 	version, artifactType := c.Param("schemaVersion"), c.Param("artifactType")
 	values, err := ParseAndValidateQuery(c.Request.URL.RawQuery)
@@ -188,6 +194,7 @@ func (s *Server) schemaContexts(c *gin.Context) {
 	})
 }
 
+// parsedDocument copies valid JSON without coercing boolean schemas or sharing the artifact's backing slice.
 func parsedDocument(value artifact.Descriptor) (json.RawMessage, error) {
 	if !json.Valid(value.Artifact.Payload.Bytes) {
 		return nil, postgres.ErrInconsistentState
@@ -195,6 +202,7 @@ func parsedDocument(value artifact.Descriptor) (json.RawMessage, error) {
 	return append(json.RawMessage(nil), value.Artifact.Payload.Bytes...), nil
 }
 
+// schemaPackage serves the schema and all bound context documents only after every document validates.
 func (s *Server) schemaPackage(c *gin.Context) {
 	version, artifactType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, artifactType) {
@@ -212,6 +220,7 @@ func (s *Server) schemaPackage(c *gin.Context) {
 		return
 	}
 	contexts := make([]v1.SchemaDocument, 0, len(value.Value.Contexts))
+	// Validate the whole package before commitment so an invalid later context cannot leak a partial success body.
 	for _, item := range value.Value.Contexts {
 		document, err := parsedDocument(item)
 		if err != nil {
@@ -237,14 +246,22 @@ func (s *Server) schemaPackage(c *gin.Context) {
 	})
 }
 
+// enrichedMapping delegates verified mapping metadata to the shared wire-model builder.
 func enrichedMapping(value model.SourceMapping, version string) v1.SourceMapping {
 	return BuildMapping(value, version)
 }
 
-func (s *Server) mappings(c *gin.Context)              { s.mappingCollection(c, false, false) }
-func (s *Server) schemaMapping(c *gin.Context)         { s.mappingCollection(c, true, false) }
+// mappings serves the release-wide filtered mapping collection.
+func (s *Server) mappings(c *gin.Context) { s.mappingCollection(c, false, false) }
+
+// schemaMapping serves mappings selected for the source schema named in the path.
+func (s *Server) schemaMapping(c *gin.Context) { s.mappingCollection(c, true, false) }
+
+// schemaMappingPackages serves complete mapping packages for the source schema named in the path.
 func (s *Server) schemaMappingPackages(c *gin.Context) { s.mappingCollection(c, true, true) }
 
+// mappingCollection validates route-specific filters and serves one bounded mapping or package page from one read snapshot.
+// nested binds the source schema to the path; packages selects embedded schema and program content.
 func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	version := c.Param("schemaVersion")
 	allowed := []string{"sourceArtifactType", "targetArtifactType", "engineLanguage", "executionProfile", "limit", "cursor"}
@@ -316,6 +333,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	packageItems := make([]v1.SourceMappingPackage, 0)
 	matchedTypes := make([]string, 0)
 	encodedItems := 0
+	// Bound aggregate item bytes as well as each package; the final envelope receives a separate exact-size check.
 	withinItemBudget := func(value any) bool {
 		encoded, err := json.Marshal(value)
 		if err != nil {
@@ -369,6 +387,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	}
 	next := (*string)(nil)
 	if len(matchedTypes) > limit {
+		// Continue after the last returned matching type, not the extra sentinel or an unfiltered artifact.
 		last := matchedTypes[limit-1]
 		token, encodeErr := s.cursors.Encode(pagination.Payload{Resource: resource, Limit: limit, Sort: "artifact-type", Filters: filters, Last: last, Snapshot: version})
 		if encodeErr != nil {
@@ -397,6 +416,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	})
 }
 
+// mappingMetadata serves verified engine, schema, and opaque program-binding metadata for one selected mapping.
 func (s *Server) mappingMetadata(c *gin.Context) {
 	version, mappingType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, mappingType) {
@@ -415,6 +435,7 @@ func (s *Server) mappingMetadata(c *gin.Context) {
 	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, enrichedMapping(value.Value, version))
 }
 
+// mappingPackage serves verified schema documents and Base64 program content without executing the programs.
 func (s *Server) mappingPackage(c *gin.Context) {
 	version, mappingType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, mappingType) {
@@ -438,10 +459,12 @@ func (s *Server) mappingPackage(c *gin.Context) {
 	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, body)
 }
 
+// mappingPackageBody delegates package sizing and content encoding to the shared representation builder.
 func mappingPackageBody(value model.SourceMappingPackage, version string) (v1.SourceMappingPackage, error) {
 	return BuildMappingPackage(value, version)
 }
 
+// schemaStores serves logical placement metadata for a selected schema, including an empty set for source records.
 func (s *Server) schemaStores(c *gin.Context) {
 	version, artifactType := c.Param("schemaVersion"), c.Param("artifactType")
 	if !validSchemaPath(version, artifactType) {
@@ -477,6 +500,7 @@ func (s *Server) schemaStores(c *gin.Context) {
 	})
 }
 
+// writeBoundedJSON validates exact identity size and negotiation before committing a generated JSON response.
 func (s *Server) writeBoundedJSON(c *gin.Context, schema, selected string, value any) {
 	body, err := json.Marshal(value)
 	if err != nil || int64(len(body)) > limits.MaxGeneratedJSONBytes {

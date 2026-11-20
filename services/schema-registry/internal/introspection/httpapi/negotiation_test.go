@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNegotiateMediaType verifies absent Accept defaults, quality and specificity precedence, wildcard matching, and rejection when no representation is acceptable.
 func TestNegotiateMediaType(t *testing.T) {
 	available := []string{"application/json", "application/schema+json"}
 	cases := []struct {

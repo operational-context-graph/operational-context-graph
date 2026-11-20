@@ -18,6 +18,7 @@ import (
 
 const testVersion = "1.2.3"
 
+// testBytes supplies exact content integrity metadata for shared representation fixtures.
 func testBytes(content []byte, mediaType string) model.ByteDescriptor {
 	return model.ByteDescriptor{
 		MediaType: mediaType,
@@ -27,6 +28,7 @@ func testBytes(content []byte, mediaType string) model.ByteDescriptor {
 	}
 }
 
+// testPackage supplies complete mapping metadata, schema documents, shared program bindings, and target stores for builder assertions.
 func testPackage(program []byte) model.SourceMappingPackage {
 	sourceClass, targetClass, targetVersion := "source-record", "entity-type", testVersion
 	source := model.Descriptor{Artifact: model.Artifact{
@@ -44,8 +46,14 @@ func testPackage(program []byte) model.SourceMappingPackage {
 	condition := model.Resource{ArtifactRevision: "rev-mapping", Name: "condition.bin", Role: "program", ByteDescriptor: testBytes([]byte{0, 0xff, 0x80}, "application/octet-stream")}
 	transformation := model.Resource{ArtifactRevision: "rev-mapping", Name: "transform.bin", Role: "program", ByteDescriptor: testBytes(program, "application/octet-stream")}
 	ancillary := model.Resource{
-		ArtifactRevision: "rev-mapping", Name: "ancillary.bin", Role: "attachment",
-		ByteDescriptor: model.ByteDescriptor{MediaType: "application/octet-stream", Digest: "sha256:metadata-only", Size: 16 << 20},
+		ArtifactRevision: "rev-mapping",
+		Name:             "ancillary.bin",
+		Role:             "attachment",
+		ByteDescriptor: model.ByteDescriptor{
+			MediaType: "application/octet-stream",
+			Digest:    "sha256:metadata-only",
+			Size:      16 << 20,
+		},
 	}
 	mapping := model.Descriptor{
 		Artifact: model.Artifact{
@@ -68,8 +76,18 @@ func testPackage(program []byte) model.SourceMappingPackage {
 			TargetSchemaVersion: testVersion, ExecutionProfile: "opaque-profile", EngineLanguage: "opaque-language", EngineLanguageVersion: "2026",
 			Condition: &model.ProgramBinding{ProgramName: condition.Name, ProgramDigest: condition.Digest},
 			Transformations: []model.SourceMappingTransformation{
-				{ProgramBinding: model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest}, TargetArtifactType: "device", TargetRevision: "rev-target", Cardinality: "one"},
-				{ProgramBinding: model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest}, TargetArtifactType: "incoming", TargetRevision: "rev-source", Cardinality: "many"},
+				{
+					ProgramBinding:     model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest},
+					TargetArtifactType: "device",
+					TargetRevision:     "rev-target",
+					Cardinality:        "one",
+				},
+				{
+					ProgramBinding:     model.ProgramBinding{ProgramName: transformation.Name, ProgramDigest: transformation.Digest},
+					TargetArtifactType: "incoming",
+					TargetRevision:     "rev-source",
+					Cardinality:        "many",
+				},
 			},
 		},
 		Programs: []model.Resource{condition, transformation},
@@ -81,6 +99,7 @@ func testPackage(program []byte) model.SourceMappingPackage {
 	}
 }
 
+// testJSON serializes fixture or response models and fails the caller on unexpected encoding errors.
 func testJSON(t testing.TB, value any) []byte {
 	t.Helper()
 	encoded, err := json.Marshal(value)
@@ -88,6 +107,7 @@ func testJSON(t testing.TB, value any) []byte {
 	return encoded
 }
 
+// requireJSONKeys verifies the wire object contains exactly the expected contract fields.
 func requireJSONKeys(t testing.TB, value any, keys ...string) {
 	t.Helper()
 	var fields map[string]json.RawMessage
@@ -99,6 +119,7 @@ func requireJSONKeys(t testing.TB, value any, keys ...string) {
 	require.ElementsMatch(t, keys, actual)
 }
 
+// TestBuildDescriptor verifies complete artifact, resource, dependency, extension, and release-dependent link metadata in the shared wire model.
 func TestBuildDescriptor(t *testing.T) {
 	for _, kind := range []string{"schema", "source-mapping", "context"} {
 		for _, version := range []string{"", testVersion} {
@@ -108,18 +129,58 @@ func TestBuildDescriptor(t *testing.T) {
 				before := testJSON(t, value)
 				got := BuildDescriptor(value, version)
 				expected := v1.ArtifactDescriptor{
-					SchemaVersion: version, Kind: artifactmodel.Kind(kind), ArtifactType: "device-mapping", ArtifactRevision: "rev-mapping",
-					CreatedUnderSchemaVersion: "1.0.0", TargetSchemaVersion: value.Artifact.TargetSchemaVersion,
-					CanonicalURI: "https://example.test/device-mapping",
-					Payload:      v1.Payload{MediaType: "application/json", Digest: value.Artifact.Payload.Digest, Size: 19, Href: "/v1/artifacts/rev-mapping"},
+					SchemaVersion:             version,
+					Kind:                      artifactmodel.Kind(kind),
+					ArtifactType:              "device-mapping",
+					ArtifactRevision:          "rev-mapping",
+					CreatedUnderSchemaVersion: "1.0.0",
+					TargetSchemaVersion:       value.Artifact.TargetSchemaVersion,
+					CanonicalURI:              "https://example.test/device-mapping",
+					Payload: v1.Payload{
+						MediaType: "application/json",
+						Digest:    value.Artifact.Payload.Digest,
+						Size:      19,
+						Href:      "/v1/artifacts/rev-mapping",
+					},
 					Resources: []v1.Resource{
-						{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Resources[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"},
-						{Name: "transform.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Resources[1].Digest, Size: 0, Href: "/v1/artifacts/rev-mapping/resources/transform.bin"},
-						{Name: "ancillary.bin", Role: "attachment", MediaType: "application/octet-stream", Digest: "sha256:metadata-only", Size: 16 << 20, Href: "/v1/artifacts/rev-mapping/resources/ancillary.bin"},
+						{
+							Name:      "condition.bin",
+							Role:      "program",
+							MediaType: "application/octet-stream",
+							Digest:    value.Resources[0].Digest,
+							Size:      3,
+							Href:      "/v1/artifacts/rev-mapping/resources/condition.bin",
+						},
+						{
+							Name:      "transform.bin",
+							Role:      "program",
+							MediaType: "application/octet-stream",
+							Digest:    value.Resources[1].Digest,
+							Size:      0,
+							Href:      "/v1/artifacts/rev-mapping/resources/transform.bin",
+						},
+						{
+							Name:      "ancillary.bin",
+							Role:      "attachment",
+							MediaType: "application/octet-stream",
+							Digest:    "sha256:metadata-only",
+							Size:      16 << 20,
+							Href:      "/v1/artifacts/rev-mapping/resources/ancillary.bin",
+						},
 					},
 					Dependencies: []v1.Dependency{
-						{Kind: "schema", ArtifactType: "incoming", ArtifactRevision: "rev-source", Href: "/v1/artifacts/rev-source/metadata"},
-						{Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-target", Href: "/v1/artifacts/rev-target/metadata"},
+						{
+							Kind:             "schema",
+							ArtifactType:     "incoming",
+							ArtifactRevision: "rev-source",
+							Href:             "/v1/artifacts/rev-source/metadata",
+						},
+						{
+							Kind:             "schema",
+							ArtifactType:     "device",
+							ArtifactRevision: "rev-target",
+							Href:             "/v1/artifacts/rev-target/metadata",
+						},
 					},
 					Extensions: json.RawMessage(`{"publisher":"mapping <&> 世界","number":9007199254740993}`),
 					Links: v1.Links{
@@ -127,6 +188,7 @@ func TestBuildDescriptor(t *testing.T) {
 						"history": "/v1/artifact-kinds/" + kind + "/device-mapping/history",
 					},
 				}
+
 				if version != "" {
 					expected.Links["self"] = "/v1/releases/1.2.3/artifacts/" + kind + "/device-mapping"
 					expected.Dependencies[0].Href = "/v1/releases/1.2.3/artifacts/schema/incoming"
@@ -142,6 +204,7 @@ func TestBuildDescriptor(t *testing.T) {
 						expected.Links["package"] = "/v1/releases/1.2.3/source-mappings/device-mapping/package"
 					}
 				}
+
 				require.Equal(t, expected, got)
 				require.Equal(t, testJSON(t, expected), testJSON(t, got))
 				require.Equal(t, before, testJSON(t, value), "descriptor building must not mutate its input")
@@ -150,6 +213,7 @@ func TestBuildDescriptor(t *testing.T) {
 	}
 }
 
+// TestBuildDescriptorEmptyCollectionsAndOptionalFields verifies absent optional metadata is omitted while empty relationship collections remain JSON arrays.
 func TestBuildDescriptorEmptyCollectionsAndOptionalFields(t *testing.T) {
 	got := BuildDescriptor(model.Descriptor{}, "")
 	require.NotNil(t, got.Resources)
@@ -163,19 +227,60 @@ func TestBuildDescriptorEmptyCollectionsAndOptionalFields(t *testing.T) {
 	require.Equal(t, artifactmodel.SchemaClassSource, *BuildDescriptor(schema, testVersion).SchemaClass)
 }
 
+// TestBuildMappingAndPackagePreserveCompleteContract verifies enriched mapping fields, ordered transformations, embedded schemas, opaque Base64 programs, and target stores.
 func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	value := testPackage([]byte{0, 0xff, 0x80, 0x7f})
 	before := testJSON(t, value)
 	mapping := BuildMapping(model.SourceMapping{Descriptor: value.Mapping, Detail: value.Detail}, testVersion)
+
 	require.Equal(t, BuildDescriptor(value.Mapping, testVersion), mapping.ArtifactDescriptor)
-	require.Equal(t, v1.SourceMappingSourceSchema{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, mapping.SourceSchema)
-	require.Equal(t, v1.SourceMappingEngine{ExecutionProfile: "opaque-profile", Language: "opaque-language", LanguageVersion: "2026"}, mapping.Engine)
-	condition := v1.Resource{Name: "condition.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[0].Digest, Size: 3, Href: "/v1/artifacts/rev-mapping/resources/condition.bin"}
-	program := v1.Resource{Name: "transform.bin", Role: "program", MediaType: "application/octet-stream", Digest: value.Programs[1].Digest, Size: 4, Href: "/v1/artifacts/rev-mapping/resources/transform.bin"}
+	require.Equal(t, v1.SourceMappingSourceSchema{
+		ArtifactRevision: "rev-source",
+		ArtifactType:     "incoming",
+		Content:          "/v1/releases/1.2.3/schemas/incoming/content",
+	}, mapping.SourceSchema)
+	require.Equal(t, v1.SourceMappingEngine{
+		ExecutionProfile: "opaque-profile",
+		Language:         "opaque-language",
+		LanguageVersion:  "2026",
+	}, mapping.Engine)
+
+	condition := v1.Resource{
+		Name:      "condition.bin",
+		Role:      "program",
+		MediaType: "application/octet-stream",
+		Digest:    value.Programs[0].Digest,
+		Size:      3,
+		Href:      "/v1/artifacts/rev-mapping/resources/condition.bin",
+	}
+	program := v1.Resource{
+		Name:      "transform.bin",
+		Role:      "program",
+		MediaType: "application/octet-stream",
+		Digest:    value.Programs[1].Digest,
+		Size:      4,
+		Href:      "/v1/artifacts/rev-mapping/resources/transform.bin",
+	}
 	require.Equal(t, &condition, mapping.Programs.Condition)
 	require.Equal(t, []v1.SourceMappingTransformation{
-		{Resource: program, TargetSchema: v1.SourceMappingSourceSchema{ArtifactRevision: "rev-target", ArtifactType: "device", Content: "/v1/releases/1.2.3/schemas/device/content"}, Cardinality: "one"},
-		{Resource: program, TargetSchema: v1.SourceMappingSourceSchema{ArtifactRevision: "rev-source", ArtifactType: "incoming", Content: "/v1/releases/1.2.3/schemas/incoming/content"}, Cardinality: "many"},
+		{
+			Resource: program,
+			TargetSchema: v1.SourceMappingSourceSchema{
+				ArtifactRevision: "rev-target",
+				ArtifactType:     "device",
+				Content:          "/v1/releases/1.2.3/schemas/device/content",
+			},
+			Cardinality: "one",
+		},
+		{
+			Resource: program,
+			TargetSchema: v1.SourceMappingSourceSchema{
+				ArtifactRevision: "rev-source",
+				ArtifactType:     "incoming",
+				Content:          "/v1/releases/1.2.3/schemas/incoming/content",
+			},
+			Cardinality: "many",
+		},
 	}, mapping.Programs.Transformations)
 
 	body, err := BuildMappingPackage(value, testVersion)
@@ -188,9 +293,17 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 		"mapping": "/v1/releases/1.2.3/source-mappings/device-mapping", "descriptor": "/v1/artifacts/rev-mapping",
 	}, body.Links)
 	require.Len(t, body.Programs, 2, "the already-deduplicated shared transformation appears once")
+
 	for index, expected := range value.Programs {
 		got := body.Programs[index]
-		require.Equal(t, v1.SourceMappingProgramContent{Name: expected.Name, Role: artifactmodel.ResourceRole(expected.Role), MediaType: expected.MediaType, Digest: expected.Digest, Size: expected.Size, Content: base64.StdEncoding.EncodeToString(expected.Bytes)}, got)
+		require.Equal(t, v1.SourceMappingProgramContent{
+			Name:      expected.Name,
+			Role:      artifactmodel.ResourceRole(expected.Role),
+			MediaType: expected.MediaType,
+			Digest:    expected.Digest,
+			Size:      expected.Size,
+			Content:   base64.StdEncoding.EncodeToString(expected.Bytes),
+		}, got)
 		decoded, err := base64.StdEncoding.DecodeString(got.Content)
 		require.NoError(t, err)
 		require.Equal(t, expected.Bytes, decoded)
@@ -220,6 +333,7 @@ func TestBuildMappingAndPackagePreserveCompleteContract(t *testing.T) {
 	requireJSONKeys(t, body.Schemas[0], "metadata", "document")
 }
 
+// TestBuildMappingWithoutConditionOrStores verifies absent conditions and empty placement sets preserve their intended optional and collection shapes.
 func TestBuildMappingWithoutConditionOrStores(t *testing.T) {
 	value := testPackage(nil)
 	value.Detail.Condition = nil
@@ -240,6 +354,7 @@ func TestBuildMappingWithoutConditionOrStores(t *testing.T) {
 	require.JSONEq(t, `{"transformations":[]}`, string(testJSON(t, mapping.Programs)))
 }
 
+// TestBuildMappingPackageRejectsMismatchedProgramBytes verifies declared program sizes must match actual bytes before a package can encode.
 func TestBuildMappingPackageRejectsMismatchedProgramBytes(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -264,6 +379,7 @@ func TestBuildMappingPackageRejectsMismatchedProgramBytes(t *testing.T) {
 	}
 }
 
+// TestBuildMappingPackageCopiesMutableJSON verifies response documents and extensions do not share mutable backing bytes with input models.
 func TestBuildMappingPackageCopiesMutableJSON(t *testing.T) {
 	value := testPackage([]byte{1, 2, 3})
 	before := testJSON(t, value)
@@ -283,6 +399,7 @@ func TestBuildMappingPackageCopiesMutableJSON(t *testing.T) {
 	require.Equal(t, before, testJSON(t, value), "output mutations must not change immutable domain inputs")
 }
 
+// TestBuildAndCountConcurrentImmutableInput verifies simultaneous building and sizing yield matching stable results without mutating shared fixture state.
 func TestBuildAndCountConcurrentImmutableInput(t *testing.T) {
 	value := testPackage(bytes.Repeat([]byte{0, 0xff, 0x80}, 1024))
 	before := testJSON(t, value)

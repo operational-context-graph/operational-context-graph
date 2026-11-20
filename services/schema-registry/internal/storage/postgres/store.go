@@ -60,6 +60,7 @@ func NewStore(pool *pgxpool.Pool, timeouts Timeouts) (*Store, error) {
 	return &Store{pool: pool, timeouts: timeouts}, nil
 }
 
+// validate rejects disabled or negative timeouts at the storage boundary.
 func (t Timeouts) validate() error {
 	if t.Acquire <= 0 || t.Query <= 0 || t.Statement <= 0 || t.Lock <= 0 || t.IdleInTransaction <= 0 {
 		return errors.New("all database timeouts must be positive")
@@ -69,6 +70,8 @@ func (t Timeouts) validate() error {
 
 // Read executes fn in one read-only repeatable-read snapshot. It acquires and
 // releases its connection before the caller can write a network response.
+// fn MUST NOT retain the snapshot beyond the callback.
+// The acquisition deadline also bounds the transaction; query time does not restart that budget.
 func (s *Store) Read(ctx context.Context, fn func(context.Context, *Snapshot) error) error {
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, s.timeouts.Acquire)
 	defer cancelAcquire()
@@ -87,6 +90,7 @@ func (s *Store) Read(ctx context.Context, fn func(context.Context, *Snapshot) er
 	completed := false
 	defer func() {
 		if !completed {
+			// Request cancellation must not prevent rollback from returning the connection to a usable state.
 			cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), s.timeouts.Query)
 			defer cancelCleanup()
 			_ = tx.Rollback(cleanupCtx)
@@ -120,6 +124,7 @@ func (s *Store) Read(ctx context.Context, fn func(context.Context, *Snapshot) er
 	return nil
 }
 
+// capped limits server-side transaction timeouts without changing acquisition or query budgets.
 func (t Timeouts) capped(limit time.Duration) Timeouts {
 	t.Statement = min(t.Statement, limit)
 	t.Lock = min(t.Lock, limit)
@@ -127,6 +132,7 @@ func (t Timeouts) capped(limit time.Duration) Timeouts {
 	return t
 }
 
+// setLocalTimeouts applies transaction-local PostgreSQL timeouts so pooled sessions retain no request-specific settings.
 func setLocalTimeouts(ctx context.Context, tx pgx.Tx, timeouts Timeouts) error {
 	values := []struct {
 		name  string
@@ -144,6 +150,8 @@ func setLocalTimeouts(ctx context.Context, tx pgx.Tx, timeouts Timeouts) error {
 	return nil
 }
 
+// readCurrentState resolves the singleton current pointer and maximum activation sequence within one transaction.
+// It distinguishes no active release from missing or invalid pointer evidence.
 func readCurrentState(ctx context.Context, tx pgx.Tx) (model.CurrentState, error) {
 	var schemaVersion *string
 	var activationSequence *int64
@@ -171,6 +179,7 @@ WHERE state.singleton = true`).Scan(&schemaVersion, &activationSequence, &snapsh
 }
 
 // Snapshot exposes repository queries confined to one transaction.
+// A snapshot is valid only during Store.Read's callback and MUST NOT serve concurrent queries.
 type Snapshot struct {
 	tx      pgx.Tx
 	Current model.CurrentState
@@ -250,6 +259,7 @@ LIMIT $3`
 		return nil, fmt.Errorf("iterate activated releases: %w", err)
 	}
 	releases := make([]model.Release, len(releaseRows))
+	// Fully consume rows before issuing projection queries on the transaction's single connection.
 	for index, release := range releaseRows {
 		if err := s.VerifyProjection(ctx, release.release.SchemaVersion, model.ProjectionRelease); err != nil {
 			return nil, err
@@ -616,6 +626,8 @@ ORDER BY dependency.dependency_kind COLLATE "C", dependency.dependency_artifact_
 	return dependencies, nil
 }
 
+// verifyRevisionProjection checks the requested family in every activated release selecting a revision.
+// It returns ErrNotFound when no activated selection establishes visibility.
 func (s *Snapshot) verifyRevisionProjection(ctx context.Context, revision string, family model.ProjectionFamily) error {
 	rows, err := s.tx.Query(ctx, `
 SELECT DISTINCT selection.schema_version
@@ -783,6 +795,7 @@ WHERE detail.schema_version = $1 AND detail.mapping_revision = $2 AND release.ac
 			return model.SourceMappingDetail{}, fmt.Errorf("scan mapping transformation: %w", err)
 		}
 		if ordinal != len(detail.Transformations) {
+			// Transformation order is semantic; gaps or duplicate ordinals invalidate the entire mapping.
 			return model.SourceMappingDetail{}, ErrInconsistentState
 		}
 		detail.Transformations = append(detail.Transformations, transformation)
@@ -849,6 +862,7 @@ func (s *Snapshot) VerifyProjection(ctx context.Context, schemaVersion string, f
 	return s.VerifyCommitment(ctx, schemaVersion, family, ProjectionCommitment(expected))
 }
 
+// sourceMappingProjectionRows derives sorted mapping rows from digest-verified descriptor payloads selected by a manifest.
 func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.Manifest) ([]string, error) {
 	rows := make([]string, 0)
 	for _, item := range value.Artifacts {
@@ -876,6 +890,8 @@ func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.
 	return rows, nil
 }
 
+// mappingDescriptorProjection resolves descriptor references against selected dependencies and program resources.
+// It rejects unused programs and encodes transformation ordinals so commitments preserve execution order.
 func mappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
 	if descriptor.ID != item.Type {
 		return nil, ErrInconsistentState
@@ -945,6 +961,7 @@ func MappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact
 	return mappingDescriptorProjection(value, item, descriptor)
 }
 
+// releaseManifestBytes loads authoritative bytes only for an activated release, returning ErrNotFound otherwise.
 func releaseManifestBytes(ctx context.Context, tx pgx.Tx, schemaVersion string) ([]byte, error) {
 	var bytes []byte
 	err := tx.QueryRow(ctx, `SELECT manifest_bytes FROM schema_registry.releases WHERE schema_version = $1 AND activated_sequence IS NOT NULL`, schemaVersion).Scan(&bytes)
@@ -957,6 +974,8 @@ func releaseManifestBytes(ctx context.Context, tx pgx.Tx, schemaVersion string) 
 	return bytes, nil
 }
 
+// manifestProjectionRows derives sorted commitment rows for fields embedded in an authoritative manifest.
+// Nonempty source-mapping families require descriptor bytes and return ErrInconsistentState here.
 func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.ProjectionFamily) ([]string, error) {
 	rows := make([]string, 0)
 	switch family {
@@ -1020,6 +1039,7 @@ func ManifestProjectionRows(value manifest.Manifest, bytes []byte, family model.
 	return manifestProjectionRows(value, bytes, family)
 }
 
+// manifestDigest returns the registry's lowercase, prefixed SHA-256 digest of exact bytes.
 func manifestDigest(bytes []byte) string {
 	sum := sha256.Sum256(bytes)
 	return "sha-256:" + hex.EncodeToString(sum[:])
@@ -1040,6 +1060,7 @@ func manifestChanges(bytes []byte) ([]byte, error) {
 	return append([]byte(nil), document.Changes...), nil
 }
 
+// projectionRow hex-encodes fields before joining them, preserving boundaries even when fields contain delimiters.
 func projectionRow(fields ...string) string {
 	encoded := make([]string, len(fields))
 	for index, field := range fields {
@@ -1048,6 +1069,7 @@ func projectionRow(fields ...string) string {
 	return strings.Join(encoded, ":")
 }
 
+// canonicalJSON normalizes extension values for projection comparison; nil maps and marshal failures produce an empty string.
 func canonicalJSON(value any) string {
 	if value == nil || (reflect.ValueOf(value).Kind() == reflect.Map && reflect.ValueOf(value).IsNil()) {
 		return ""
@@ -1059,6 +1081,7 @@ func canonicalJSON(value any) string {
 	return string(encoded)
 }
 
+// validBytes checks declared size, the 16 MiB artifact limit, and the digest of exact stored bytes.
 func validBytes(bytes []byte, size int64, digest string) bool {
 	if int64(len(bytes)) != size || size < 0 || size > 16*1024*1024 {
 		return false
@@ -1066,6 +1089,7 @@ func validBytes(bytes []byte, size int64, digest string) bool {
 	return manifestDigest(bytes) == digest
 }
 
+// requireActiveRelease returns ErrNotFound unless the selected release has an activation sequence.
 func requireActiveRelease(ctx context.Context, tx pgx.Tx, schemaVersion string) error {
 	var active bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM schema_registry.releases WHERE schema_version = $1 AND activated_sequence IS NOT NULL)`, schemaVersion).Scan(&active)
@@ -1078,6 +1102,7 @@ func requireActiveRelease(ctx context.Context, tx pgx.Tx, schemaVersion string) 
 	return nil
 }
 
+// requireReachableArtifact returns ErrNotFound unless an activated release makes the revision visible.
 func requireReachableArtifact(ctx context.Context, tx pgx.Tx, revision string) error {
 	var reachable bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM schema_registry.activated_revision_reachability WHERE artifact_revision = $1)`, revision).Scan(&reachable)
@@ -1090,6 +1115,7 @@ func requireReachableArtifact(ctx context.Context, tx pgx.Tx, revision string) e
 	return nil
 }
 
+// projectionRows loads comparable indexed rows and normalizes extension JSON without losing numeric precision.
 func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family model.ProjectionFamily) ([]string, error) {
 	query, err := projectionQuery(family)
 	if err != nil {
@@ -1126,6 +1152,7 @@ func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family
 				}
 				decoder := json.NewDecoder(bytes.NewReader(raw))
 				decoder.UseNumber()
+				// Float conversion could change extension numbers and falsely disagree with authoritative manifest values.
 				var extensions any
 				if decodeErr := decoder.Decode(&extensions); decodeErr != nil {
 					return nil, ErrInconsistentState
@@ -1149,6 +1176,7 @@ func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family
 	return values, nil
 }
 
+// projectionQuery selects a static, fully qualified query for each supported commitment family.
 func projectionQuery(family model.ProjectionFamily) (string, error) {
 	switch family {
 	case model.ProjectionRelease:
@@ -1176,6 +1204,7 @@ UNION ALL SELECT ARRAY['transformation', mapping_revision, ordinal::text, target
 // ProjectionCommitment hashes length-prefixed projection rows. The importer
 // passes sorted rows derived from one canonical manifest; requests compare it.
 func ProjectionCommitment(rows []string) []byte {
+	// Sorting a copy preserves caller order; length prefixes prevent ambiguity between adjacent row values.
 	copyRows := append([]string(nil), rows...)
 	sort.Strings(copyRows)
 	hash := sha256.New()
@@ -1192,6 +1221,7 @@ func ProjectionCommitmentHex(rows []string) string {
 	return hex.EncodeToString(ProjectionCommitment(rows))
 }
 
+// scanRelease decodes a single-release query and maps an absent row to ErrNotFound.
 func scanRelease(row pgx.Row) (model.Release, error) {
 	var release model.Release
 	err := row.Scan(
@@ -1208,11 +1238,13 @@ func scanRelease(row pgx.Row) (model.Release, error) {
 	return release, nil
 }
 
+// releaseRow retains a listed release and its activation sequence for chain validation.
 type releaseRow struct {
 	release  model.Release
 	sequence int64
 }
 
+// scanReleaseRow decodes the collection query's release and projection commitment columns.
 func scanReleaseRow(row pgx.Row) (releaseRow, error) {
 	var result releaseRow
 	err := row.Scan(
@@ -1231,6 +1263,7 @@ func scanReleaseRow(row pgx.Row) (releaseRow, error) {
 	return result, nil
 }
 
+// scanArtifact decodes artifact metadata and optional content, mapping absent rows to ErrNotFound.
 func scanArtifact(row pgx.Row) (model.Artifact, error) {
 	var artifact model.Artifact
 	err := row.Scan(
@@ -1247,6 +1280,7 @@ func scanArtifact(row pgx.Row) (model.Artifact, error) {
 	return artifact, nil
 }
 
+// scanArtifacts collects artifact rows and propagates query, scan, and iteration failures without returning a partial list.
 func scanArtifacts(ctx context.Context, tx pgx.Tx, query string, arguments ...any) ([]model.Artifact, error) {
 	rows, err := tx.Query(ctx, query, arguments...)
 	if err != nil {
@@ -1270,6 +1304,7 @@ func scanArtifacts(ctx context.Context, tx pgx.Tx, query string, arguments ...an
 	return artifacts, nil
 }
 
+// validateReleaseChain checks adjacent descending activations and matching predecessor identities in materialized release rows.
 func validateReleaseChain(releases []releaseRow) error {
 	for index, release := range releases {
 		if release.sequence <= 0 {
@@ -1288,6 +1323,7 @@ func validateReleaseChain(releases []releaseRow) error {
 	return nil
 }
 
+// equalBytes compares commitment bytes exactly, including their lengths.
 func equalBytes(left, right []byte) bool {
 	if len(left) != len(right) {
 		return false

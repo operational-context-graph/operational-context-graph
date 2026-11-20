@@ -33,14 +33,17 @@ type registryFixture struct {
 	bindings  []manifest.Binding
 }
 
+// TestFixtureLoadSuite runs database fixture-fidelity checks using migrated PostgreSQL tables.
 func TestFixtureLoadSuite(t *testing.T) {
 	runPostgreSQLSuite(t, new(fixtureLoadSuite))
 }
 
+// fixtureLoadSuite verifies validated release fixtures retain their declared selections and exact content after persistence.
 type fixtureLoadSuite struct {
 	PostgreSQLSuite
 }
 
+// TestLoadFixture verifies all catalog releases persist complete selections, including boolean, empty-byte, exact-size, and over-page-length fixtures.
 func (suite *fixtureLoadSuite) TestLoadFixture() {
 	for _, fixture := range fixtureCatalog(suite.T()) {
 		parsed, loadErr := loadValidatedFixture(suite.T(), suite.Context, suite.Database, fixture)
@@ -52,6 +55,7 @@ func (suite *fixtureLoadSuite) TestLoadFixture() {
 	}
 }
 
+// verifyLoadedFixture checks fixture-specific stored byte fidelity, inclusive artifact limits, and full collection cardinality.
 func verifyLoadedFixture(t *testing.T, ctx context.Context, database *sql.DB, fixture registryFixture) {
 	t.Helper()
 	switch fixture.name {
@@ -80,6 +84,7 @@ func verifyLoadedFixture(t *testing.T, ctx context.Context, database *sql.DB, fi
 	}
 }
 
+// fixtureCatalog supplies release reuse, rollback selection, inactive visibility, byte boundaries, large collections, and mapping candidate fixtures.
 func fixtureCatalog(t *testing.T) []registryFixture {
 	t.Helper()
 	initial := registryFixture{
@@ -127,6 +132,7 @@ func fixtureCatalog(t *testing.T) []registryFixture {
 	return []registryFixture{initial, multi, rollback, inactive, booleanSchema, emptyByte, exactSize, many, maximumServiceable, candidateFixture(t)}
 }
 
+// candidateFixture supplies two mappings sharing a source, repeated target references, opaque programs, and optional condition metadata.
 func candidateFixture(t testing.TB) registryFixture {
 	t.Helper()
 	version := "8.0.0"
@@ -164,6 +170,7 @@ func candidateFixture(t testing.TB) registryFixture {
 	return result
 }
 
+// fixtureSchema creates a canonical entity schema with synchronized payload integrity and optional named resources.
 func fixtureSchema(artifactType, revision, created string, payload []byte, resources []artifact.Resource) artifact.Artifact {
 	return artifact.Artifact{
 		Kind: artifact.KindSchema, Type: artifactType, Revision: revision, CreatedUnderSchemaVersion: created,
@@ -175,21 +182,25 @@ func fixtureSchema(artifactType, revision, created string, payload []byte, resou
 	}
 }
 
+// fixtureResource creates named resource content with matching digest, size, and bundle location.
 func fixtureResource(name, role, mediaType string, bytes []byte) artifact.Resource {
 	return artifact.Resource{Name: name, Role: artifact.ResourceRole(role), Descriptor: fixtureDescriptor(bytes, mediaType, "resources/"+name), Bytes: bytes}
 }
 
+// fixtureDescriptor supplies exact-byte metadata used consistently by manifest declarations and stored fixture content.
 func fixtureDescriptor(bytes []byte, mediaType, bundlePath string) artifact.Descriptor {
 	sum := sha256.Sum256(bytes)
 	return artifact.Descriptor{MediaType: mediaType, Digest: "sha-256:" + hex.EncodeToString(sum[:]), Size: int64(len(bytes)), BundlePath: bundlePath}
 }
 
+// fixtureRelease supplies validated predecessor identity and digest for constructing a connected fixture chain.
 func fixtureRelease(t *testing.T, fixture registryFixture) manifest.Release {
 	t.Helper()
 	parsed, _ := fixtureManifest(t, fixture)
 	return manifest.Release{Manifest: parsed, Digest: fixtureDigest(parsed.Raw)}
 }
 
+// fixtureManifest creates canonical release bytes and complete artifact context with sorted catalogs and derived change evidence.
 func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, manifest.Context) {
 	t.Helper()
 	entries := make([]map[string]any, 0, len(fixture.artifacts))
@@ -257,6 +268,7 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 	return parsed, manifest.Context{RegistryOrigin: fixtureOrigin, Artifacts: bound, History: history}
 }
 
+// descriptorMap converts fixture integrity metadata into manifest JSON and merges resource-specific fields when supplied.
 func descriptorMap(descriptor artifact.Descriptor, additions map[string]any) map[string]any {
 	result := map[string]any{
 		"mediaType": descriptor.MediaType, "digest": descriptor.Digest, "size": descriptor.Size, "bundlePath": descriptor.BundlePath,
@@ -267,6 +279,7 @@ func descriptorMap(descriptor artifact.Descriptor, additions map[string]any) map
 	return result
 }
 
+// fixtureDigest supplies exact-byte release and projection fixture integrity metadata.
 func fixtureDigest(bytes []byte) string {
 	sum := sha256.Sum256(bytes)
 	return "sha-256:" + hex.EncodeToString(sum[:])
@@ -425,6 +438,7 @@ ON CONFLICT (artifact_revision) DO NOTHING`); err != nil {
 	return tx.Commit()
 }
 
+// storeProjectionCommitments persists authoritative per-family evidence, deriving mapping rows from descriptor payloads rather than manifest-only fields.
 func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value manifest.Manifest) error {
 	for _, family := range []model.ProjectionFamily{model.ProjectionRelease, model.ProjectionArtifact, model.ProjectionResource, model.ProjectionDependency, model.ProjectionBinding, model.ProjectionURI, model.ProjectionStorage, model.ProjectionSourceMapping} {
 		rows, err := storage.ManifestProjectionRows(value, value.Raw, family)
@@ -461,6 +475,7 @@ func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value 
 	return nil
 }
 
+// previousVersion returns nullable predecessor version metadata for database insertion.
 func previousVersion(value manifest.Manifest) *string {
 	if value.PreviousRelease == nil {
 		return nil
@@ -468,6 +483,7 @@ func previousVersion(value manifest.Manifest) *string {
 	return &value.PreviousRelease.SchemaVersion
 }
 
+// databaseBytes represents empty content as a nonnil byte slice so required bytea columns do not receive SQL NULL.
 func databaseBytes(value []byte) []byte {
 	if value == nil {
 		return []byte{}
@@ -475,6 +491,7 @@ func databaseBytes(value []byte) []byte {
 	return value
 }
 
+// previousDigest returns nullable predecessor integrity metadata for database insertion.
 func previousDigest(value manifest.Manifest) *string {
 	if value.PreviousRelease == nil {
 		return nil

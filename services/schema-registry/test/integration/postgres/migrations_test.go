@@ -12,14 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMigrationsSuite runs schema constraints and runtime privilege checks against a disposable migrated PostgreSQL database.
 func TestMigrationsSuite(t *testing.T) {
 	runPostgreSQLSuite(t, new(migrationsSuite))
 }
 
+// migrationsSuite verifies storage boundaries independently of application-level manifest validation.
 type migrationsSuite struct {
 	PostgreSQLSuite
 }
 
+// TestMigrationsAndBoundaries verifies row constraints, uniqueness, reference integrity, shared mapping sources, and read-only runtime privileges.
+// It also verifies migrations provide no release-state transition routines or user-defined triggers.
 func (suite *migrationsSuite) TestMigrationsAndBoundaries() {
 	t := suite.T()
 	ctx := suite.Context
@@ -31,6 +35,7 @@ func (suite *migrationsSuite) TestMigrationsAndBoundaries() {
 	_, err = conn.ExecContext(ctx, `GRANT schema_registry_api TO schema_registry_runtime_test`)
 	require.NoError(t, err)
 
+	// Storage accepts structurally valid release metadata without interpreting its manifest payload.
 	t.Run("valid boundary row", func(t *testing.T) {
 		_, insertErr := conn.ExecContext(ctx, `
 INSERT INTO schema_registry.releases (
@@ -84,6 +89,7 @@ INSERT INTO schema_registry.releases (
 		})
 	}
 
+	// A release cannot select the same logical artifact identity twice.
 	t.Run("duplicate release selection is rejected", func(t *testing.T) {
 		insertArtifact(t, ctx, conn, "selection-revision", "selection", "https://registry.test/v1/resources/schema/selection/selection-revision")
 		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('1.0.0', 'schema', 'selection', 'selection-revision')`)
@@ -92,6 +98,7 @@ INSERT INTO schema_registry.releases (
 		require.Error(t, err)
 	})
 
+	// Canonical artifact locations and activation sequences each identify only one stored record.
 	t.Run("canonical URI and stored sequence are unique", func(t *testing.T) {
 		insertArtifact(t, ctx, conn, "canonical-one", "canonical-one", "https://registry.test/v1/resources/schema/canonical-one/canonical")
 		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('canonical-two', 'schema', 'canonical-two', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/canonical-one/canonical', 'application/schema+json', $1, 0, '')`, digest('e'))
@@ -102,6 +109,7 @@ INSERT INTO schema_registry.releases (
 		require.Error(t, insertErr)
 	})
 
+	// The storage pointer accepts a stored release; application reads separately enforce activated visibility.
 	t.Run("pre-populated current state accepts a stored release", func(t *testing.T) {
 		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, projection_commitment) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $2)`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", commitment())
 		require.NoError(t, insertErr)
@@ -109,6 +117,7 @@ INSERT INTO schema_registry.releases (
 		require.NoError(t, insertErr)
 	})
 
+	// Migrations establish read-model storage without implementing activation workflows inside the database.
 	t.Run("migration has no state-transition routines or triggers", func(t *testing.T) {
 		var routineCount int
 		require.NoError(t, conn.QueryRowContext(ctx, `
@@ -129,11 +138,13 @@ WHERE namespace.nspname = 'schema_registry'
 		require.Zero(t, triggerCount)
 	})
 
+	// A declared zero-length bytea value satisfies storage constraints independently of artifact format validation.
 	t.Run("zero length payload is valid", func(t *testing.T) {
 		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ('empty-payload', 'schema', 'empty-payload', '1.0.0', 'entity-type', 'https://registry.test/v1/resources/schema/empty-payload/empty-payload', 'application/schema+json', $1, 0, '')`, digest('a'))
 		require.NoError(t, insertErr)
 	})
 
+	// Mapping references must exist, but distinct mappings may share sources and repeat targets at different ordinals.
 	t.Run("missing references fail and shared mapping sources are accepted", func(t *testing.T) {
 		_, queryErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ('9.0.0', 'schema', 'missing', 'unknown-revision')`)
 		require.Error(t, queryErr)
@@ -175,6 +186,7 @@ WHERE namespace.nspname = 'schema_registry'
 		}
 	})
 
+	// The API role reads projected mapping tables but cannot mutate mapping or singleton state rows.
 	t.Run("runtime role is read only", func(t *testing.T) {
 		_, roleErr := conn.ExecContext(ctx, "SET ROLE schema_registry_api")
 		require.NoError(t, roleErr)
@@ -193,6 +205,7 @@ WHERE namespace.nspname = 'schema_registry'
 		require.NoError(t, roleErr)
 	})
 
+	// A runtime login cannot create temporary, registry, or migration tables or perform any registry mutation.
 	t.Run("runtime login assumes only read role", func(t *testing.T) {
 		runtimeURL := replaceDatabaseUser(databaseURL, "schema_registry_runtime_test", runtimePassword)
 		runtimeConn, openErr := sql.Open("pgx", runtimeURL)
@@ -218,24 +231,31 @@ WHERE namespace.nspname = 'schema_registry'
 	require.NoError(t, err)
 }
 
+// digest supplies a syntactically valid fixed digest for constraint tests, not byte-integrity verification.
+// The ignored argument keeps fixture call sites distinct without implying different digest values.
 func digest(_ byte) string {
 	return "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 
+// commitment supplies the required commitment length without asserting authoritative projection integrity.
 func commitment() []byte { return make([]byte, 32) }
 
+// insertArtifact supplies a structurally valid schema row for uniqueness, reference, and privilege checks.
 func insertArtifact(t *testing.T, ctx context.Context, conn *sql.DB, revision, artifactType, uri string) {
 	t.Helper()
 	_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifacts (artifact_revision, kind, artifact_type, created_under_schema_version, schema_class, canonical_uri, payload_media_type, payload_digest, payload_size, payload_bytes) VALUES ($1, 'schema', $2, '1.0.0', 'entity-type', $3, 'application/schema+json', $4, 0, '')`, revision, artifactType, uri, digest('a'))
 	require.NoError(t, err)
 }
 
+// insertResource supplies an empty program resource so mapping foreign-key tests have an existing target.
 func insertResource(t *testing.T, ctx context.Context, conn *sql.DB, revision, name string) {
 	t.Helper()
 	_, err := conn.ExecContext(ctx, `INSERT INTO schema_registry.artifact_resources (artifact_revision, name, role, media_type, digest, size, bytes) VALUES ($1, $2, 'program', 'application/octet-stream', $3, 0, '')`, revision, name, digest('a'))
 	require.NoError(t, err)
 }
 
+// replaceDatabaseUser builds a test login URL while preserving the disposable database's endpoint and options.
+// It panics if the test-supplied URL is malformed.
 func replaceDatabaseUser(databaseURL, user, password string) string {
 	parsed, err := url.Parse(databaseURL)
 	if err != nil {
@@ -245,6 +265,7 @@ func replaceDatabaseUser(databaseURL, user, password string) string {
 	return parsed.String()
 }
 
+// randomPassword generates an ephemeral runtime-test credential instead of embedding a reusable secret.
 func randomPassword(t *testing.T) string {
 	t.Helper()
 	bytes := make([]byte, 32)
@@ -253,6 +274,7 @@ func randomPassword(t *testing.T) string {
 	return base64.RawURLEncoding.EncodeToString(bytes)
 }
 
+// quoteLiteral escapes a test-generated role password for DDL, where PostgreSQL does not accept parameter placeholders.
 func quoteLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }

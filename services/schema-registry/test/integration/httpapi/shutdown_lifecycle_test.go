@@ -37,6 +37,7 @@ type observingReader struct {
 	started chan struct{}
 }
 
+// Read signals boundary entry before delegating to the production reader, preserving its pool-acquisition and transaction behavior.
 func (r observingReader) Read(ctx context.Context, fn func(context.Context, release.Snapshot) error) error {
 	// This test starts exactly one registry request. Therefore closing the started
 	// channel is safe and makes accidental additional read boundaries fail loudly.
@@ -44,17 +45,8 @@ func (r observingReader) Read(ctx context.Context, fn func(context.Context, rele
 	return r.reader.Read(ctx, fn)
 }
 
-// TestShutdownCancelsBlockedPoolAcquisition verifies the PostgreSQL portion of the graceful shutdown.
-// The test migrates an empty database, creates a real pgxpool.Pool with one connection, and acquires
-// that connection in the test. A registry request then reads from the store and blocks while attempting
-// to acquire the unavailable pool connection.
-//
-// After observing the reader boundary, the test cancels the listener context to model SIGTERM after
-// command-level signal handling. CanceledAcquireCount proves that the pending database connection pool
-// acquire observed the canceled request context. The held connection is released so the server can
-// complete its bounded drain and close the pool. The final assertions verify no acquired connection
-// remains and that the read-only request did not insert releases. No release fixture is needed because
-// acquisition occurs before the first registry-state query.
+// TestShutdownCancelsBlockedPoolAcquisition verifies shutdown cancels an in-flight request waiting for an exhausted PostgreSQL pool.
+// Driver cancellation evidence confirms request-context propagation, bounded shutdown, connection release, and unchanged empty registry state.
 func TestShutdownCancelsBlockedPoolAcquisition(t *testing.T) {
 	ctx := context.Background()
 	container, err := tcpostgres.Run(ctx, "postgres:18",

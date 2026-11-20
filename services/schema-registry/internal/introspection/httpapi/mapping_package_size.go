@@ -28,6 +28,8 @@ func MappingPackageSize(value model.SourceMappingPackage, version string) (int64
 	return mappingPackageSize(value, body, limits.MaxGeneratedJSONBytes)
 }
 
+// mappingPackageSize counts metadata, compact embedded schemas, and padded Base64 programs against an inclusive identity-byte limit.
+// metadata MUST come from mappingPackageMetadata for value, with empty content placeholders.
 func mappingPackageSize(value model.SourceMappingPackage, metadata v1.SourceMappingPackage, limit int64) (int64, error) {
 	if limit < 0 {
 		return 0, fmt.Errorf("%w: negative size limit", ErrInvalid)

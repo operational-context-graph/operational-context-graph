@@ -110,14 +110,17 @@ func buildCorpusRelease(t testing.TB, set corpus.Corpus, name string) (manifest.
 	return m, c
 }
 
+// corpusKey identifies an exact corpus artifact selection for dependency resolution.
 func corpusKey(a artifact.Artifact) artifact.Dependency {
 	return artifact.Dependency{Kind: a.Kind, Type: a.Type, Revision: a.Revision}
 }
 
+// corpusDigest computes fixture integrity metadata in the registry's digest format.
 func corpusDigest(data []byte) string {
 	return testDescriptor(data, "application/octet-stream", "unused").Digest
 }
 
+// corpusJSON serializes corpus fixtures and fails the caller when a fixture cannot encode.
 func corpusJSON(t testing.TB, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
@@ -125,6 +128,7 @@ func corpusJSON(t testing.TB, value any) []byte {
 	return data
 }
 
+// corpusDescriptor exposes descriptor fields as mutable JSON for targeted corpus failures.
 func corpusDescriptor(d artifact.Descriptor) map[string]any {
 	return map[string]any{"mediaType": d.MediaType, "digest": d.Digest, "size": d.Size, "bundlePath": d.BundlePath}
 }
@@ -273,6 +277,7 @@ func mutateCorpusJSON(t testing.TB, doc map[string]any, path, operation string, 
 	}
 }
 
+// corpusFailure identifies the first failing parse, format, or serviceability phase for a corpus fixture.
 func corpusFailure(data []byte, c manifest.Context) (string, error) {
 	m, err := manifest.Parse(data)
 	if err != nil {
@@ -287,6 +292,7 @@ func corpusFailure(data []byte, c manifest.Context) (string, error) {
 	return "accepted", nil
 }
 
+// corpusClassification maps structured validation errors to corpus classifications without relying on message text.
 func corpusClassification(err error) string {
 	for _, candidate := range []struct {
 		name     string
@@ -352,6 +358,7 @@ func TestReleaseCorpusFailures(t *testing.T) {
 					return corpusJSON(t, values)
 				}
 				originalContext, originalBytes := snapshot(), slices.Clone(data)
+				// outcome carries each concurrent validation's phase and cause for deterministic rejection assertions.
 				type outcome struct {
 					phase string
 					err   error
@@ -375,6 +382,7 @@ func TestReleaseCorpusFailures(t *testing.T) {
 	require.Equal(t, rules, covered, "every normative rejection rule MUST have an invalid fixture")
 }
 
+// mutateCorpus introduces the case's specified defect while preserving structural validity for later-phase failures.
 func mutateCorpus(t testing.TB, m manifest.Manifest, c manifest.Context, test corpus.FailureCase) []byte {
 	t.Helper()
 	name := test.Artifact

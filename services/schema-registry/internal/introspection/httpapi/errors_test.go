@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestErrorCatalogProducesStableSafeEnvelopes verifies every cataloged code has stable status, safe JSON content, no-cache headers, and appropriate retry advice.
 func TestErrorCatalogProducesStableSafeEnvelopes(t *testing.T) {
 	for _, code := range errorCodes() {
 		definition, ok := errorDefinitionFor(code)
@@ -34,6 +35,7 @@ func TestErrorCatalogProducesStableSafeEnvelopes(t *testing.T) {
 	}
 }
 
+// errorCodes enumerates the public catalog so envelope tests cover every supported protocol error.
 func errorCodes() []ErrorCode {
 	return []ErrorCode{
 		InvalidRequest, InvalidQueryParameter, InvalidFilterCombination,
@@ -45,6 +47,7 @@ func errorCodes() []ErrorCode {
 	}
 }
 
+// TestWriteErrorMapsUnknownCodeWithoutCauseDisclosure verifies unknown internal codes become safe InternalError responses without exposing the original text.
 func TestWriteErrorMapsUnknownCodeWithoutCauseDisclosure(t *testing.T) {
 	response := httptest.NewRecorder()
 	WriteError(response, "database password SELECT stack trace", "", nil, 0)
@@ -53,6 +56,7 @@ func TestWriteErrorMapsUnknownCodeWithoutCauseDisclosure(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "stack trace")
 }
 
+// TestWriteErrorWithMetadataPreservesResolvedVersions verifies error responses retain safely resolved current and selected version headers.
 func TestWriteErrorWithMetadataPreservesResolvedVersions(t *testing.T) {
 	t.Parallel()
 	response := httptest.NewRecorder()

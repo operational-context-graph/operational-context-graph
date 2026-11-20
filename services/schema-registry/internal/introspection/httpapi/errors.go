@@ -33,12 +33,14 @@ const (
 	RegistryUnavailable       ErrorCode = "registry-unavailable"
 )
 
+// errorDefinition associates a protocol code with a safe message, HTTP status, and retry classification.
 type errorDefinition struct {
 	status    int
 	message   string
 	retryable bool
 }
 
+// errorDefinitionFor resolves cataloged codes without incorporating implementation error text.
 func errorDefinitionFor(code ErrorCode) (errorDefinition, bool) {
 	switch code {
 	case InvalidRequest:
@@ -91,9 +93,13 @@ type ErrorDetail struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
 }
+
+// errorEnvelope provides the protocol's stable top-level error object.
 type errorEnvelope struct {
 	Error apiError `json:"error"`
 }
+
+// apiError contains public error metadata, excluding internal causes and database details.
 type apiError struct {
 	Code    ErrorCode     `json:"code"`
 	Message string        `json:"message"`
@@ -120,10 +126,12 @@ func WriteErrorWithMetadata(writer http.ResponseWriter, code ErrorCode, target s
 	writeError(writer, code, target, details, retryAfter, metadata, true)
 }
 
+// writeHeadError emits the same error status and snapshot headers as GET without a JSON body.
 func writeHeadError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata) {
 	writeError(writer, code, target, details, retryAfter, metadata, false)
 }
 
+// writeError writes cataloged error metadata and optional content, mapping unknown codes to InternalError.
 func writeError(writer http.ResponseWriter, code ErrorCode, target string, details []ErrorDetail, retryAfter time.Duration, metadata ErrorMetadata, includeBody bool) {
 	definition, ok := errorDefinitionFor(code)
 	if !ok {
@@ -139,6 +147,7 @@ func writeError(writer http.ResponseWriter, code ErrorCode, target string, detai
 		writer.Header().Set("Selected-Schema-Version", metadata.SelectedSchemaVersion)
 	}
 	if retryAfter > 0 && (definition.status == http.StatusTooManyRequests || definition.status == http.StatusServiceUnavailable) {
+		// Retry advice applies only to capacity and availability failures, with a minimum one-second interval.
 		writer.Header().Set("Retry-After", strconv.Itoa(max(1, int(retryAfter.Round(time.Second)/time.Second))))
 	}
 	writer.WriteHeader(definition.status)

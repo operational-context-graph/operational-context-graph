@@ -107,6 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // RunListener runs using a caller-provided listener for lifecycle tests.
 func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
+	// Request contexts have a separate lifetime so shutdown can cancel them before waiting for transport cleanup.
 	defer s.close()
 	var cancelRequests context.CancelFunc
 	s.startOnce.Do(func() {
@@ -146,14 +147,17 @@ func (s *Server) RunListener(ctx context.Context, listener net.Listener) error {
 	}
 }
 
+// close releases the readiness checker exactly once across startup failure and shutdown paths.
 func (s *Server) close() {
 	s.closeOnce.Do(s.checker.Close)
 }
 
+// healthz reports process liveness without acquiring database capacity.
 func (s *Server) healthz(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
+// readyz reports unavailable while draining or when a bounded database probe fails.
 func (s *Server) readyz(c *gin.Context) {
 	if s.draining.Load() {
 		c.Status(http.StatusServiceUnavailable)
@@ -168,6 +172,7 @@ func (s *Server) readyz(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
+// admit rejects draining or saturated API requests without queuing for database capacity.
 func (s *Server) admit(c *gin.Context) {
 	if s.draining.Load() {
 		WriteError(c.Writer, RegistryUnavailable, "", nil, s.cfg.Admission.RetryInterval)
@@ -176,6 +181,7 @@ func (s *Server) admit(c *gin.Context) {
 	}
 	select {
 	case s.admission <- struct{}{}:
+		// Retain the slot through response writing, and release it even when downstream handling aborts.
 		defer func() { <-s.admission }()
 		c.Next()
 	default:
@@ -184,6 +190,7 @@ func (s *Server) admit(c *gin.Context) {
 	}
 }
 
+// validateRequest rejects unsupported request metadata before any registry-dependent handler runs.
 func (s *Server) validateRequest(c *gin.Context) {
 	if err := ValidateRequestMetadata(c.Request); err != nil {
 		WriteError(c.Writer, InvalidRequest, "", nil, 0)
