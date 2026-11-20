@@ -33,18 +33,24 @@ func (r testReader) Read(ctx context.Context, fn func(context.Context, Snapshot)
 }
 
 type testSnapshot struct {
-	current    model.CurrentState
-	releases   map[string]model.Release
-	calls      []int64
-	limits     []int
-	history    []model.Release
-	ancestor   *bool
-	lineageErr error
-	artifacts  map[string]model.Artifact
+	current     model.CurrentState
+	releases    map[string]model.Release
+	calls       []int64
+	limits      []int
+	history     []model.Release
+	ancestor    *bool
+	lineageErr  error
+	artifacts   map[string]model.Artifact
+	currentErr  error
+	historyErr  error
+	artifactErr error
 }
 
 func (s *testSnapshot) CurrentState() model.CurrentState { return s.current }
 func (s *testSnapshot) CurrentRelease(ctx context.Context) (model.Release, error) {
+	if s.currentErr != nil {
+		return model.Release{}, s.currentErr
+	}
 	return s.Release(ctx, s.current.SchemaVersion)
 }
 func (s *testSnapshot) Release(_ context.Context, version string) (model.Release, error) {
@@ -57,7 +63,7 @@ func (s *testSnapshot) Release(_ context.Context, version string) (model.Release
 func (s *testSnapshot) ReleasesAt(_ context.Context, before *int64, maximum int64, limit int) ([]model.Release, error) {
 	s.calls = append(s.calls, maximum)
 	s.limits = append(s.limits, limit)
-	return s.history, nil
+	return s.history, s.historyErr
 }
 func (s *testSnapshot) IsAncestor(context.Context, string, string) (bool, error) {
 	if s.lineageErr != nil {
@@ -69,6 +75,9 @@ func (s *testSnapshot) IsAncestor(context.Context, string, string) (bool, error)
 	return *s.ancestor, nil
 }
 func (s *testSnapshot) Artifact(_ context.Context, revision string) (model.Artifact, error) {
+	if s.artifactErr != nil {
+		return model.Artifact{}, s.artifactErr
+	}
 	if value, ok := s.artifacts[revision]; ok {
 		return value, nil
 	}
@@ -222,6 +231,77 @@ func TestGetPreservesCurrentVersionForUnknownRelease(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "1.0.0", current.SchemaVersion)
 	assert.Empty(t, selected)
+}
+
+func TestServiceCurrentReleaseFailuresPreserveMetadata(t *testing.T) {
+	cause := errors.New("current release unavailable")
+	current := model.CurrentState{SchemaVersion: "1.0.0", ActivationSequence: 1, SnapshotSequence: 1}
+	service := New(testReader{snapshot: &testSnapshot{current: current, currentErr: cause}})
+	for name, operation := range map[string]func() error{
+		"discovery": func() error { _, err := service.Discovery(t.Context()); return err },
+		"list":      func() error { _, err := service.List(t.Context(), nil, nil, 1); return err },
+		"get":       func() error { _, err := service.Get(t.Context(), "1.0.0"); return err },
+		"compare":   func() error { _, _, err := service.Compare(t.Context(), "1.0.0", "1.1.0"); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := operation()
+			require.ErrorIs(t, err, cause)
+			got, selected, ok := RequestMetadata(err)
+			require.True(t, ok)
+			assert.Equal(t, current, got)
+			assert.Empty(t, selected)
+			assert.Equal(t, cause.Error(), err.Error())
+		})
+	}
+}
+
+func TestListPropagatesPageFailure(t *testing.T) {
+	cause := errors.New("page query failed")
+	snapshot := &testSnapshot{current: model.CurrentState{SchemaVersion: "1.0.0"}, releases: map[string]model.Release{"1.0.0": {SchemaVersion: "1.0.0"}}, historyErr: cause}
+	page, err := New(testReader{snapshot: snapshot}).List(t.Context(), nil, nil, 10)
+	require.ErrorIs(t, err, cause)
+	assert.Empty(t, page.Items)
+	current, _, ok := RequestMetadata(err)
+	require.True(t, ok)
+	assert.Equal(t, snapshot.current, current)
+}
+
+func TestCompareRejectsMissingSourceMalformedManifestsAndArtifactFailures(t *testing.T) {
+	first := comparisonManifest(t, "1.0.0", "rev-device-v1", nil)
+	second := comparisonManifest(t, "1.0.1", "rev-device-v2", first)
+	cause := errors.New("artifact lookup failed")
+	for _, test := range []struct {
+		name   string
+		mutate func(*testSnapshot)
+		want   error
+	}{
+		{name: "missing source", mutate: func(s *testSnapshot) { delete(s.releases, "1.0.0") }, want: postgres.ErrNotFound},
+		{name: "malformed source", mutate: func(s *testSnapshot) {
+			value := s.releases["1.0.0"]
+			value.ManifestBytes = []byte("{")
+			s.releases["1.0.0"] = value
+		}, want: postgres.ErrInconsistentState},
+		{name: "malformed target", mutate: func(s *testSnapshot) {
+			value := s.releases["1.0.1"]
+			value.ManifestBytes = []byte("{")
+			s.releases["1.0.1"] = value
+		}, want: postgres.ErrInconsistentState},
+		{name: "artifact failure", mutate: func(s *testSnapshot) { s.artifactErr = cause }, want: cause},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := &testSnapshot{current: model.CurrentState{SchemaVersion: "1.0.1"}, releases: map[string]model.Release{
+				"1.0.0": {SchemaVersion: "1.0.0", ManifestBytes: first, ActivationSequence: 1},
+				"1.0.1": {SchemaVersion: "1.0.1", ManifestBytes: second, ActivationSequence: 2},
+			}}
+			test.mutate(snapshot)
+			_, current, err := New(testReader{snapshot: snapshot}).Compare(t.Context(), "1.0.0", "1.0.1")
+			require.ErrorIs(t, err, test.want)
+			metadata, selected, ok := RequestMetadata(err)
+			require.True(t, ok)
+			assert.Equal(t, current, metadata)
+			assert.Empty(t, selected)
+		})
+	}
 }
 
 func comparisonManifest(t *testing.T, version, revision string, previous []byte) []byte {

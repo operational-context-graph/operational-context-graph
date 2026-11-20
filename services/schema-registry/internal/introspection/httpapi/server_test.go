@@ -397,9 +397,39 @@ func TestShutdownCancelsRequestContext(t *testing.T) {
 	assert.True(t, checker.isClosed())
 }
 
+func TestRunClosesCheckerOnBindFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, listener.Close()) })
+	checker := &fakeChecker{}
+	server := New(testConfig(), checker)
+	server.http.Addr = listener.Addr().String()
+	err = server.Run(t.Context())
+	require.ErrorContains(t, err, "listen:")
+	assert.True(t, checker.isClosed())
+}
+
+func TestRunStopsOnCancellation(t *testing.T) {
+	checker := &fakeChecker{}
+	server := New(testConfig(), checker)
+	server.http.Addr = "127.0.0.1:0"
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.NoError(t, server.Run(ctx))
+	assert.True(t, checker.isClosed())
+}
+
 func testConfig() introspection.Config {
 	return introspection.Config{
-		Server:    introspection.ServerConfig{Host: "127.0.0.1", Port: 0, ReadHeaderTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: time.Second, ShutdownTimeout: time.Second},
+		Server: introspection.ServerConfig{
+			Host:              "127.0.0.1",
+			Port:              0,
+			ReadHeaderTimeout: time.Second,
+			ReadTimeout:       time.Second,
+			WriteTimeout:      time.Second,
+			IdleTimeout:       time.Second,
+			ShutdownTimeout:   time.Second,
+		},
 		Database:  introspection.DatabaseConfig{QueryTimeout: time.Second},
 		Admission: introspection.AdmissionConfig{MaxInFlight: 1, RetryInterval: time.Second},
 	}

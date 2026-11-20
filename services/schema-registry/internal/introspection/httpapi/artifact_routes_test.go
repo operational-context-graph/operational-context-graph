@@ -23,6 +23,7 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
@@ -343,7 +344,7 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 	t.Run("returns a 1000 item page and a next cursor", func(t *testing.T) {
 		items := make([]model.Artifact, 1001)
 		for index := range items {
-			items[index] = fixtureArtifact("revision-"+strconv.Itoa(index), "schema", "item-"+fmt.Sprintf("%04d", index), stringPointer("entity-type"), nil, []byte("true"))
+			items[index] = fixtureArtifact("revision-"+strconv.Itoa(index), "schema", "item-"+fmt.Sprintf("%04d", index), new("entity-type"), nil, []byte("true"))
 			snapshot.artifacts[items[index].Revision] = items[index]
 			snapshot.resources[items[index].Revision] = []model.Resource{}
 			snapshot.dependencies[items[index].Revision] = []model.Dependency{}
@@ -374,6 +375,57 @@ func TestReleaseArtifactCollectionFiltersPaginationAndValidation(t *testing.T) {
 			assert.Equal(t, http.StatusBadRequest, response.Code)
 			assert.Contains(t, response.Body.String(), `"code":"`+test.code+`"`)
 		})
+	}
+}
+
+func TestArtifactCursorTraversesKindBoundaries(t *testing.T) {
+	server := artifactTestServer(artifactFixture())
+	const base = "/v1/releases/1.0.0/artifacts?limit=1"
+	path := base
+	var identities []string
+	for pageNumber := 0; ; pageNumber++ {
+		require.Less(t, pageNumber, 3, "pagination must terminate")
+		response := serveArtifactRequest(server, http.MethodGet, path)
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var page v1.Page[v1.ArtifactDescriptor]
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+		require.Len(t, page.Items, 1)
+		identities = append(identities, string(page.Items[0].Kind)+"/"+page.Items[0].ArtifactType)
+		if page.NextCursor == nil {
+			break
+		}
+		path = base + "&cursor=" + url.QueryEscape(*page.NextCursor)
+	}
+	assert.Equal(t, []string{"context/device", "schema/device", "source-mapping/device-mapping"}, identities)
+}
+
+func TestArtifactCursorRejectsChangedBindingsAndMalformedKeysets(t *testing.T) {
+	server := artifactTestServer(artifactFixture())
+	response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?limit=1")
+	var page v1.Page[v1.ArtifactDescriptor]
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+	require.NotNil(t, page.NextCursor)
+	for _, path := range []string{
+		"/v1/releases/1.0.0/artifacts?limit=2",
+		"/v1/releases/2.0.0/artifacts?limit=1",
+		"/v1/releases/1.0.0/artifacts?limit=1&kind=schema",
+		"/v1/releases/1.0.0/schemas?limit=1",
+	} {
+		t.Run(path, func(t *testing.T) {
+			response := serveArtifactRequest(server, http.MethodGet, path+"&cursor="+url.QueryEscape(*page.NextCursor))
+			require.Equal(t, http.StatusBadRequest, response.Code)
+			assert.Contains(t, response.Body.String(), `"code":"invalid-cursor"`)
+		})
+	}
+	for _, last := range []string{"schema", "unknown\x00device", "schema\x00UPPER", "schema\x00device\x00extra"} {
+		token, err := pagination.New().Encode(pagination.Payload{
+			Resource: "release-artifacts", Limit: 1, Sort: "kind-type", Last: last, Snapshot: "1.0.0",
+			Filters: map[string]string{"version": "1.0.0", "kind": "", "artifactType": "", "schemaClass": "", "dependsOnRevision": ""},
+		})
+		require.NoError(t, err)
+		response := serveArtifactRequest(server, http.MethodGet, "/v1/releases/1.0.0/artifacts?limit=1&cursor="+url.QueryEscape(token))
+		require.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Contains(t, response.Body.String(), `"code":"invalid-cursor"`)
 	}
 }
 
@@ -470,7 +522,7 @@ func TestImmutableRevisionMetadataSupportsConditionalAndConcurrentReads(t *testi
 
 	// A retired logical identity remains visible when an earlier activated release
 	// made its immutable revision reachable.
-	retired := fixtureArtifact("rev-retired", "schema", "retired", stringPointer("entity-type"), nil, []byte("true"))
+	retired := fixtureArtifact("rev-retired", "schema", "retired", new("entity-type"), nil, []byte("true"))
 	fixture := artifactFixture()
 	fixture.artifacts[retired.Revision] = retired
 	retiredResponse := serveArtifactRequest(artifactTestServer(fixture), http.MethodGet, "/v1/artifacts/rev-retired/metadata")
@@ -570,7 +622,7 @@ func TestArtifactBytesValidateRepresentationsAndFailuresBeforeWriting(t *testing
 	t.Run("exact sixteen MiB boundary remains servable", func(t *testing.T) {
 		bytes := make([]byte, 16*1024*1024)
 		bytes[0] = 'x'
-		boundary := fixtureArtifact("rev-boundary", "schema", "boundary", stringPointer("entity-type"), nil, bytes)
+		boundary := fixtureArtifact("rev-boundary", "schema", "boundary", new("entity-type"), nil, bytes)
 		snapshot.artifacts[boundary.Revision] = boundary
 		got := serveArtifactRequest(server, http.MethodGet, "/v1/artifacts/rev-boundary")
 		assert.Equal(t, http.StatusOK, got.Code)
@@ -702,8 +754,8 @@ func TestReleaseScopedURIResolverUsesExactSafeRedirects(t *testing.T) {
 	hostileURI := "https://attacker.example.test/%0d%0aLocation:%20https://attacker.example.test/"
 	snapshot.uris = map[string]model.URIEntry{
 		"1.0.0\x00" + payloadURI:         {SchemaVersion: "1.0.0", URI: payloadURI, ArtifactRevision: "rev-schema"},
-		"1.0.0\x00" + resourceURI:        {SchemaVersion: "1.0.0", URI: resourceURI, ArtifactRevision: "rev-schema", ResourceName: stringPointer("example")},
-		"1.0.0\x00" + escapedResourceURI: {SchemaVersion: "1.0.0", URI: escapedResourceURI, ArtifactRevision: "rev-schema", ResourceName: stringPointer("program name")},
+		"1.0.0\x00" + resourceURI:        {SchemaVersion: "1.0.0", URI: resourceURI, ArtifactRevision: "rev-schema", ResourceName: new("example")},
+		"1.0.0\x00" + escapedResourceURI: {SchemaVersion: "1.0.0", URI: escapedResourceURI, ArtifactRevision: "rev-schema", ResourceName: new("program name")},
 		"1.0.0\x00" + unicodeURI:         {SchemaVersion: "1.0.0", URI: unicodeURI, ArtifactRevision: "rev-context"},
 		"1.0.0\x00" + hostileURI:         {SchemaVersion: "1.0.0", URI: hostileURI, ArtifactRevision: "rev-schema"},
 	}
@@ -796,7 +848,7 @@ func TestReleaseScopedURIResolverValidatesQueryBoundaries(t *testing.T) {
 
 func TestLogicalArtifactHistoryPaginatesWithinItsInitialSnapshot(t *testing.T) {
 	snapshot := artifactFixture()
-	old := fixtureArtifact("rev-old", "schema", "device", stringPointer("entity-type"), nil, []byte("false"))
+	old := fixtureArtifact("rev-old", "schema", "device", new("entity-type"), nil, []byte("false"))
 	snapshot.artifacts[old.Revision] = old
 	snapshot.history = []model.ReleaseArtifact{
 		{SchemaVersion: "1.0.2", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 3},
@@ -850,7 +902,7 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 		items := make([]model.ReleaseArtifact, 1001)
 		for index := range items {
 			revision := "history-" + fmt.Sprintf("%04d", index)
-			artifact := fixtureArtifact(revision, "schema", "device", stringPointer("entity-type"), nil, []byte("true"))
+			artifact := fixtureArtifact(revision, "schema", "device", new("entity-type"), nil, []byte("true"))
 			snapshot.artifacts[revision] = artifact
 			items[index] = model.ReleaseArtifact{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: revision, ActivationSequence: int64(1001 - index)}
 		}
@@ -901,6 +953,40 @@ func TestLogicalArtifactHistoryValidationAndPageShapes(t *testing.T) {
 	})
 }
 
+func TestHistoryCursorRejectsInvalidSequences(t *testing.T) {
+	for _, coordinate := range []string{"last", "snapshot"} {
+		for _, invalid := range []string{"text", "0", "-1", "9223372036854775808"} {
+			t.Run(coordinate+"/"+invalid, func(t *testing.T) {
+				payload := pagination.Payload{Resource: "artifact-history", Limit: 1, Sort: "activation-desc", Last: "2", Snapshot: "3", Filters: map[string]string{"kind": "schema", "artifactType": "device"}}
+				if coordinate == "last" {
+					payload.Last = invalid
+				} else {
+					payload.Snapshot = invalid
+				}
+				token, err := pagination.New().Encode(payload)
+				require.NoError(t, err)
+				response := serveArtifactRequest(artifactTestServer(artifactFixture()), http.MethodGet, "/v1/artifact-kinds/schema/device/history?limit=1&cursor="+url.QueryEscape(token))
+				require.Equal(t, http.StatusBadRequest, response.Code)
+				assert.Contains(t, response.Body.String(), `"code":"invalid-cursor"`)
+			})
+		}
+	}
+}
+
+func TestHistoryRejectsLateDescriptorFailureWithoutPartialPage(t *testing.T) {
+	snapshot := artifactFixture()
+	snapshot.current.SnapshotSequence = 2
+	snapshot.history = []model.ReleaseArtifact{
+		{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "rev-schema", ActivationSequence: 2},
+		{SchemaVersion: "1.0.0", Kind: "schema", ArtifactType: "device", ArtifactRevision: "missing-revision", ActivationSequence: 1},
+	}
+	response := serveArtifactRequest(artifactTestServer(snapshot), http.MethodGet, "/v1/artifact-kinds/schema/device/history")
+	require.Equal(t, http.StatusNotFound, response.Code)
+	assert.Contains(t, response.Body.String(), `"code":"logical-artifact-not-found"`)
+	assert.NotContains(t, response.Body.String(), `"items"`)
+	assert.NotContains(t, response.Body.String(), "rev-schema")
+}
+
 func artifactFixture() *artifactTestSnapshot {
 	class, target := "entity-type", "1.0.0"
 	schema := fixtureArtifact("rev-schema", "schema", "device", &class, nil, []byte(`{"type":"object"}`))
@@ -922,8 +1008,6 @@ func artifactFixture() *artifactTestSnapshot {
 		stores:       map[string][]model.StorageEntry{"1.0.0\x00device": {{SchemaVersion: "1.0.0", ArtifactType: "device", Store: "data-center-inventory"}}},
 	}
 }
-
-func stringPointer(value string) *string { return &value }
 
 func fixtureArtifact(revision, kind, artifactType string, schemaClass, target *string, bytes []byte) model.Artifact {
 	return model.Artifact{Revision: revision, Kind: kind, Type: artifactType, CreatedUnderSchemaVersion: "1.0.0", SchemaClass: schemaClass, TargetSchemaVersion: target, CanonicalURI: "https://registry.example.test/v1/resources/" + kind + "/" + artifactType + "/" + revision, Payload: fixtureBytes(bytes, "application/json")}

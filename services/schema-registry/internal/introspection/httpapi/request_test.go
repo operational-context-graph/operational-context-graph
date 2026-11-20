@@ -15,6 +15,12 @@ func TestValidateRequestMetadata(t *testing.T) {
 	valid := httptest.NewRequest(http.MethodGet, "/v1/releases", nil)
 	assert.NoError(t, ValidateRequestMetadata(valid))
 
+	aggregateHeaders := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Each field remains valid while the aggregate crosses the request budget.
+	for range maxHeaderBytes/maxHeaderFieldBytes + 2 {
+		aggregateHeaders.Header.Add("X-Test", strings.Repeat("a", maxHeaderFieldBytes-len("X-Test")))
+	}
+
 	cases := []struct {
 		name    string
 		request *http.Request
@@ -26,6 +32,8 @@ func TestValidateRequestMetadata(t *testing.T) {
 		{"unknown length body", requestWithUnknownLengthBody()},
 		{"second content coding", requestWithSecondContentCoding()},
 		{"field one over", requestWithHeader("X-Test", strings.Repeat("a", maxHeaderFieldBytes))},
+		{"unsupported method", httptest.NewRequest(http.MethodPost, "/", nil)},
+		{"aggregate headers over budget", aggregateHeaders},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) { assert.ErrorIs(t, ValidateRequestMetadata(test.request), errInvalidRequest) })

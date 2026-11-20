@@ -2,7 +2,9 @@ package pagination
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -19,7 +21,14 @@ func TestCodecEncodesDeterministicImmutableAndMutableSnapshots(t *testing.T) {
 
 	first, err := codec.Encode(mutable)
 	require.NoError(t, err)
-	second, err := codec.Encode(Payload{Resource: mutable.Resource, Filters: map[string]string{"class": "entity-type", "kind": "schema"}, Limit: mutable.Limit, Sort: mutable.Sort, Last: mutable.Last, Snapshot: mutable.Snapshot})
+	second, err := codec.Encode(Payload{
+		Resource: mutable.Resource,
+		Filters:  map[string]string{"class": "entity-type", "kind": "schema"},
+		Limit:    mutable.Limit,
+		Sort:     mutable.Sort,
+		Last:     mutable.Last,
+		Snapshot: mutable.Snapshot,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, first, second)
 
@@ -40,7 +49,12 @@ func TestCodecBindsParametersButDoesNotAuthenticateValidState(t *testing.T) {
 	token, err := codec.Encode(expected)
 	require.NoError(t, err)
 
-	for _, changed := range []Payload{{Resource: "artifacts", Filters: expected.Filters, Limit: expected.Limit, Sort: expected.Sort}, {Resource: expected.Resource, Filters: expected.Filters, Limit: 1, Sort: expected.Sort}, {Resource: expected.Resource, Filters: expected.Filters, Limit: expected.Limit, Sort: "name"}, {Resource: expected.Resource, Filters: map[string]string{"kind": "context"}, Limit: expected.Limit, Sort: expected.Sort}} {
+	for _, changed := range []Payload{
+		{Resource: "artifacts", Filters: expected.Filters, Limit: expected.Limit, Sort: expected.Sort},
+		{Resource: expected.Resource, Filters: expected.Filters, Limit: 1, Sort: expected.Sort},
+		{Resource: expected.Resource, Filters: expected.Filters, Limit: expected.Limit, Sort: "name"},
+		{Resource: expected.Resource, Filters: map[string]string{"kind": "context"}, Limit: expected.Limit, Sort: expected.Sort},
+	} {
 		_, decodeErr := codec.Decode(token, changed)
 		assert.ErrorIs(t, decodeErr, ErrInvalid)
 	}
@@ -106,6 +120,77 @@ func TestCodecValidatesInputsAndTokenBoundaries(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalid)
 }
 
+func TestCodecRejectsInvalidFieldShapes(t *testing.T) {
+	expected := testPayload("release:1.0.0")
+	// Field order matches Payload so canonical encoding cannot mask invalid field shapes.
+	validDocument := struct {
+		Version  int               `json:"v"`
+		Resource any               `json:"r"`
+		Filters  map[string]string `json:"f"`
+		Limit    int               `json:"l"`
+		Sort     any               `json:"s"`
+		Last     any               `json:"a"`
+		Snapshot any               `json:"n"`
+	}{
+		Version:  1,
+		Resource: expected.Resource,
+		Filters:  expected.Filters,
+		Limit:    expected.Limit,
+		Sort:     expected.Sort,
+		Last:     expected.Last,
+		Snapshot: expected.Snapshot,
+	}
+	controlRaw, marshalErr := json.Marshal(validDocument)
+	require.NoError(t, marshalErr)
+	codec := New()
+	control, decodeErr := codec.Decode(base64.RawURLEncoding.EncodeToString(controlRaw), expected)
+	require.NoError(t, decodeErr, "the unchanged fixture must be a valid canonical cursor")
+	want := expected
+	want.Version = 1
+	assert.Equal(t, want, control)
+
+	for _, key := range []string{"r", "s", "a", "n"} {
+		for _, value := range []any{"", nil, 1, []any{}} {
+			t.Run(key+"/"+fmt.Sprint(value), func(t *testing.T) {
+				document := validDocument
+				switch key {
+				case "r":
+					document.Resource = value
+				case "s":
+					document.Sort = value
+				case "a":
+					document.Last = value
+				case "n":
+					document.Snapshot = value
+				}
+				raw, err := json.Marshal(document)
+				require.NoError(t, err)
+				_, err = codec.Decode(base64.RawURLEncoding.EncodeToString(raw), expected)
+				require.ErrorIs(t, err, ErrInvalid)
+			})
+		}
+	}
+	for _, raw := range []string{
+		`{"v":1,"r":"releases","f":null,"l":100,"s":"sequence","a":"after","n":"release:1.0.0"}`,
+		`{"v":1,"r":"releases","f":{},"l":0,"s":"sequence","a":"after","n":"release:1.0.0"}`,
+	} {
+		_, err := New().Decode(base64.RawURLEncoding.EncodeToString([]byte(raw)), testPayload("release:1.0.0"))
+		require.ErrorIs(t, err, ErrInvalid)
+	}
+	value := testPayload("release:1.0.0")
+	token, err := New().Encode(value)
+	require.NoError(t, err)
+	value.Filters = map[string]string{}
+	_, err = New().Decode(token, value)
+	require.ErrorIs(t, err, ErrInvalid)
+
+	// Raw JSON fits, but Base64url expansion exceeds the public token limit.
+	value = testPayload("release:1.0.0")
+	value.Last = strings.Repeat("x", maxTokenBytes*3/4)
+	_, err = New().Encode(value)
+	require.ErrorIs(t, err, ErrInvalid)
+}
+
 func TestCodecIsSafeForConcurrentCalls(t *testing.T) {
 	codec := New()
 	expected := testPayload("release:1.0.0")
@@ -115,16 +200,14 @@ func TestCodecIsSafeForConcurrentCalls(t *testing.T) {
 	var group sync.WaitGroup
 	errorsSeen := make(chan error, 32)
 	for range 32 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			value, decodeErr := codec.Decode(token, expected)
 			if decodeErr != nil {
 				errorsSeen <- decodeErr
 			} else if value.Snapshot != expected.Snapshot {
 				errorsSeen <- errors.New("decoded snapshot changed")
 			}
-		}()
+		})
 	}
 	group.Wait()
 	close(errorsSeen)
@@ -134,5 +217,12 @@ func TestCodecIsSafeForConcurrentCalls(t *testing.T) {
 }
 
 func testPayload(snapshot string) Payload {
-	return Payload{Resource: "releases", Filters: map[string]string{"kind": "schema"}, Limit: 100, Sort: "sequence", Last: "after", Snapshot: snapshot}
+	return Payload{
+		Resource: "releases",
+		Filters:  map[string]string{"kind": "schema"},
+		Limit:    100,
+		Sort:     "sequence",
+		Last:     "after",
+		Snapshot: snapshot,
+	}
 }

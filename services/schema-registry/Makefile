@@ -24,7 +24,7 @@ run: run-schema-introspection-api ## Run the Schema Introspection API
 run-schema-introspection-api: ## Run the Schema Introspection API from source
 	go run ./cmd/schema-introspection-api
 
-test: ## Run tests with race detection
+test: ## Run tests with race detection and produce a coverage profile
 	mkdir -p $(COVERAGE_DIR)
 	go test $(TEST_PACKAGES) -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out $(TEST_ARGS)
 
@@ -37,7 +37,7 @@ test-integration: ## Run boundary integration tests with race detection
 test-benchmark: ## Run black-box benchmarks with allocation reporting
 	go test ./test/benchmark -bench=. -benchmem $(TEST_ARGS)
 
-test-coverage: ## Produce a coverage profile
+test-coverage: ## Check test coverage
 	$(SCRIPTS_DIR)/check-coverage.sh $(COVERAGE_DIR)/$(NAME).out $(COVERAGE_THRESHOLD)
 
 vet: ## Run go vet

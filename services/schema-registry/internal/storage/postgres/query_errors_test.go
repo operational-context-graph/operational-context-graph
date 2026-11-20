@@ -3,9 +3,14 @@ package postgres
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gowebpki/jcs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,36 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 )
-
-/*
-Snapshot and storage test conventions
-
-These tests follow the repository's coding-guidelines skill and the Google Go Style Guide.
-Assertions and mocks MUST use testify.
-Prerequisites that prevent meaningful later assertions MUST use require.
-Worker goroutines MUST NOT call fatal assertions.
-Workers SHOULD return results for assertions in the parent test.
-Table cases SHOULD name their fields and describe the behavior under test.
-Assertion helpers MUST mark themselves with t.Helper() when they accept a testing handle.
-Comments SHOULD explain fixtures, invariants, and non-obvious synchronization.
-Tests MUST join workers and close owned resources, including failure paths.
-Shared-state contracts include race-free concurrent access.
-The module's coverage requirement remains at least 90 percent.
-
-Storage error-contract scope
-
-These unit tests require neither Docker nor an external PostgreSQL server.
-Pure tests use t.Parallel() only when they own their inputs and change no global configuration.
-The Goose dialect test stays serial because Goose stores its dialect globally.
-
-queryTestTx mocks supported transaction operations through testify.
-queryTestRow supplies scan destinations or a scan error.
-queryTestRows injects first-row scan failures or iteration failures before any rows arrive.
-Its closed flag verifies resource cleanup.
-Missing required read-model records are inconsistent state; missing selectable data is not found.
-Each failure must preserve its underlying cause rather than replacing it with an unrelated error.
-*/
 
 // queryTestTx mocks only the transaction operations used by these read tests.
 // Unimplemented embedded methods fail immediately if a test calls them.
@@ -75,6 +52,54 @@ func (row queryTestRow) Scan(dest ...any) error { return row(dest...) }
 // failingRow returns a row whose scan preserves the supplied error identity.
 func failingRow(err error) pgx.Row {
 	return queryTestRow(func(...any) error { return err })
+}
+
+func valueRow(values ...any) pgx.Row {
+	return queryTestRow(func(dest ...any) error {
+		if len(dest) != len(values) {
+			return errors.New("test row column count mismatch")
+		}
+		for i, value := range values {
+			target := reflect.ValueOf(dest[i]).Elem()
+			if value == nil {
+				target.SetZero()
+			} else {
+				target.Set(reflect.ValueOf(value))
+			}
+		}
+		return nil
+	})
+}
+
+func sqlContains(fragment string) any {
+	return mock.MatchedBy(func(query string) bool { return strings.Contains(query, fragment) })
+}
+
+// Successful projection checks ensure each injected failure occurs after the initial database operation.
+func expectVerifiedProjection(t *testing.T, tx *queryTestTx, family model.ProjectionFamily) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", "valid-initial.json"))
+	require.NoError(t, err)
+	raw, err = jcs.Transform(raw)
+	require.NoError(t, err)
+	document, err := manifest.Parse(raw)
+	require.NoError(t, err)
+	expected, err := manifestProjectionRows(document, raw, family)
+	if family == model.ProjectionSourceMapping {
+		// The initial fixture contains no mappings; the descriptor fallback also returns an empty projection.
+		expected, err = []string{}, nil
+	}
+	require.NoError(t, err)
+	query, err := projectionQuery(family)
+	require.NoError(t, err)
+	rows := &queryTestRows{}
+	for _, value := range expected {
+		rows.values = append(rows.values, []any{value})
+	}
+	tx.On("QueryRow", mock.Anything, sqlContains("SELECT EXISTS (SELECT 1 FROM schema_registry.releases"), []any{"1.0.0"}).Return(valueRow(true)).Once()
+	tx.On("Query", mock.Anything, query, []any{"1.0.0"}).Return(rows, nil).Once()
+	tx.On("QueryRow", mock.Anything, sqlContains("SELECT manifest_bytes"), []any{"1.0.0"}).Return(valueRow(raw)).Once()
+	tx.On("QueryRow", mock.Anything, sqlContains("SELECT commitment"), []any{"1.0.0", family}).Return(valueRow(ProjectionCommitment(expected))).Once()
 }
 
 // TestSnapshotQueryFailuresPreserveCause checks errors from each read entry point's first database operation.
@@ -305,25 +330,33 @@ func TestLocalTimeoutFailuresPreserveCause(t *testing.T) {
 	tx.AssertExpectations(t)
 }
 
-// queryTestRows injects a first-row scan failure or an iteration failure before any rows arrive.
+// queryTestRows supplies successful rows before an optional scan or iteration failure.
 // The closed flag lets tests verify deferred row cleanup.
 type queryTestRows struct {
 	pgx.Rows
-	next    bool
+	values  [][]any
+	index   int
 	scanErr error
 	rowErr  error
 	closed  bool
 }
 
 func (rows *queryTestRows) Next() bool {
-	next := rows.next
-	rows.next = false
-	return next
+	if rows.index >= len(rows.values) {
+		return false
+	}
+	rows.index++
+	return true
 }
 
-func (rows *queryTestRows) Scan(...any) error { return rows.scanErr }
-func (rows *queryTestRows) Err() error        { return rows.rowErr }
-func (rows *queryTestRows) Close()            { rows.closed = true }
+func (rows *queryTestRows) Scan(dest ...any) error {
+	if rows.scanErr != nil {
+		return rows.scanErr
+	}
+	return valueRow(rows.values[rows.index-1]...).Scan(dest...)
+}
+func (rows *queryTestRows) Err() error { return rows.rowErr }
+func (rows *queryTestRows) Close()     { rows.closed = true }
 
 // TestRowIterationFailuresCloseRowsAndRejectPartialResults checks scanner and iterator failures for collection readers.
 // Each failure preserves its cause, returns no items, and closes the row set.
@@ -361,7 +394,7 @@ func TestRowIterationFailuresCloseRowsAndRejectPartialResults(t *testing.T) {
 				// Iteration failures arrive before any rows; scan failures occur on the first row.
 				rows := &queryTestRows{rowErr: cause}
 				if phase == "scan" {
-					rows.next, rows.scanErr, rows.rowErr = true, cause, nil
+					rows.values, rows.scanErr, rows.rowErr = [][]any{{}}, cause, nil
 				}
 				tx := new(queryTestTx)
 				tx.Test(t)
@@ -371,6 +404,139 @@ func TestRowIterationFailuresCloseRowsAndRejectPartialResults(t *testing.T) {
 				tx.AssertExpectations(t)
 			})
 		}
+	}
+}
+
+// TestCollectionFailuresAfterVerifiedProjection checks later queries after visibility and projection checks succeed.
+func TestCollectionFailuresAfterVerifiedProjection(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		family         model.ProjectionFamily
+		revisionScoped bool
+		query          string
+		row            []any
+		read           func(context.Context, *Snapshot) error
+	}{
+		{name: "resources", family: model.ProjectionResource, revisionScoped: true, query: "SELECT resource.artifact_revision", row: []any{"revision", "program.bin", "program", "application/octet-stream", manifestDigest(nil), int64(0)}, read: func(ctx context.Context, s *Snapshot) error {
+			items, err := s.Resources(ctx, "revision")
+			if err != nil && items != nil {
+				return errors.New("partial resource result")
+			}
+			return err
+		}},
+		{name: "dependencies", family: model.ProjectionDependency, revisionScoped: true, query: "SELECT dependency.artifact_revision", row: []any{"revision", "schema", "device", "schema-r1"}, read: func(ctx context.Context, s *Snapshot) error {
+			items, err := s.Dependencies(ctx, "revision")
+			if err != nil && items != nil {
+				return errors.New("partial dependency result")
+			}
+			return err
+		}},
+		{name: "bindings", family: model.ProjectionBinding, query: "SELECT binding.schema_version", row: []any{"1.0.0", "schema-r1", "context-r1"}, read: func(ctx context.Context, s *Snapshot) error {
+			items, err := s.ContextBindings(ctx, "1.0.0", "schema-r1")
+			if err != nil && items != nil {
+				return errors.New("partial binding result")
+			}
+			return err
+		}},
+		{name: "stores", family: model.ProjectionStorage, query: "SELECT entry.schema_version, entry.artifact_type", row: []any{"1.0.0", "device", "data-center-inventory"}, read: func(ctx context.Context, s *Snapshot) error {
+			items, err := s.StorageEntries(ctx, "1.0.0", "device")
+			if err != nil && items != nil {
+				return errors.New("partial store result")
+			}
+			return err
+		}},
+	} {
+		for _, phase := range []string{"query", "scan", "iteration after row"} {
+			t.Run(test.name+"/"+phase, func(t *testing.T) {
+				cause := errors.New("downstream database failure")
+				tx := new(queryTestTx)
+				tx.Test(t)
+				if test.revisionScoped {
+					tx.On("QueryRow", mock.Anything, sqlContains("SELECT EXISTS (SELECT 1 FROM schema_registry.activated_revision_reachability"), []any{"revision"}).Return(valueRow(true)).Once()
+					tx.On("Query", mock.Anything, sqlContains("SELECT DISTINCT selection.schema_version"), []any{"revision"}).Return(&queryTestRows{values: [][]any{{"1.0.0"}}}, nil).Once()
+				}
+				expectVerifiedProjection(t, tx, test.family)
+				rows := &queryTestRows{values: [][]any{test.row}}
+				if phase == "query" {
+					tx.On("Query", mock.Anything, sqlContains(test.query), mock.Anything).Return(nil, cause).Once()
+				} else {
+					if phase == "scan" {
+						rows.scanErr = cause
+					} else {
+						rows.rowErr = cause
+					}
+					tx.On("Query", mock.Anything, sqlContains(test.query), mock.Anything).Return(rows, nil).Once()
+				}
+				err := test.read(t.Context(), &Snapshot{tx: tx})
+				require.ErrorIs(t, err, cause)
+				if phase != "query" {
+					assert.True(t, rows.closed)
+				}
+				tx.AssertExpectations(t)
+			})
+		}
+	}
+}
+
+// TestMappingTransformationFailuresAfterVerifiedProjection checks later database failures and invalid transformation structure.
+func TestMappingTransformationFailuresAfterVerifiedProjection(t *testing.T) {
+	for _, phase := range []string{"detail", "query", "scan", "iteration after row", "ordinal gap", "empty"} {
+		t.Run(phase, func(t *testing.T) {
+			cause := errors.New("mapping query failed")
+			tx := new(queryTestTx)
+			tx.Test(t)
+			expectVerifiedProjection(t, tx, model.ProjectionSourceMapping)
+			detail := valueRow("1.0.0", "mapping-r1", "source", "source-r1", "1.0.0", "opaque", "1.0.0", "test", "", "")
+			if phase == "detail" {
+				detail = failingRow(cause)
+			}
+			tx.On("QueryRow", mock.Anything, sqlContains("SELECT detail.schema_version"), []any{"1.0.0", "mapping-r1"}).Return(detail).Once()
+			rows := &queryTestRows{values: [][]any{{0, "target", "target-r1", "one", "program.bin", manifestDigest(nil)}}}
+			if phase != "detail" {
+				if phase == "query" {
+					tx.On("Query", mock.Anything, sqlContains("SELECT ordinal"), mock.Anything).Return(nil, cause).Once()
+				} else {
+					switch phase {
+					case "scan":
+						rows.scanErr = cause
+					case "iteration after row":
+						rows.rowErr = cause
+					case "ordinal gap":
+						rows.values[0][0] = 1
+					case "empty":
+						rows.values = nil
+					}
+					tx.On("Query", mock.Anything, sqlContains("SELECT ordinal"), mock.Anything).Return(rows, nil).Once()
+				}
+			}
+			value, err := (&Snapshot{tx: tx}).SourceMappingByRevision(t.Context(), "1.0.0", "mapping-r1")
+			want := cause
+			if phase == "ordinal gap" || phase == "empty" {
+				want = ErrInconsistentState
+			}
+			require.ErrorIs(t, err, want)
+			assert.Empty(t, value.Transformations)
+			if phase != "detail" && phase != "query" {
+				assert.True(t, rows.closed)
+			}
+			tx.AssertExpectations(t)
+		})
+	}
+}
+
+func TestArtifactProjectionRejectsMalformedExtensionRows(t *testing.T) {
+	for _, value := range []string{"missing-fields", strings.Repeat(":", 10) + "zz", strings.Repeat(":", 10) + "7b"} {
+		tx := new(queryTestTx)
+		tx.Test(t)
+		rows := &queryTestRows{values: [][]any{{value}}}
+		query, err := projectionQuery(model.ProjectionArtifact)
+		require.NoError(t, err)
+		tx.On("Query", mock.Anything, query, []any{"1.0.0"}).Return(rows, nil).Once()
+		items, err := projectionRows(t.Context(), tx, "1.0.0", model.ProjectionArtifact)
+		require.ErrorIs(t, err, ErrInconsistentState)
+		assert.Nil(t, items)
+		assert.True(t, rows.closed)
+		tx.AssertExpectations(t)
 	}
 }
 

@@ -232,3 +232,13 @@ func TestWriteRepresentationRejectsBodyForbiddenStatus(t *testing.T) {
 	assert.Empty(t, response.Header())
 	assert.Empty(t, response.Body.String())
 }
+
+func TestRepresentationRejectsInvalidMediaAndMethod(t *testing.T) {
+	for _, test := range []struct{ mediaType, method string }{
+		{mediaType: "invalid media type", method: http.MethodGet},
+		{mediaType: "application/json", method: http.MethodPost},
+	} {
+		err := validateRepresentation(Representation{Status: http.StatusOK, MediaType: test.mediaType, Method: test.method})
+		require.ErrorIs(t, err, ErrUnsafeResponseMetadata)
+	}
+}

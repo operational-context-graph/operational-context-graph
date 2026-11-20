@@ -539,7 +539,7 @@ func TestSourceMappingCollectionPaginatesAndAcceptsSharedSources(t *testing.T) {
 		for index := range 1001 {
 			typeName := fmt.Sprintf("mapping-%04d", index)
 			revision := fmt.Sprintf("mapping-revision-%04d", index)
-			item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))
+			item := fixtureArtifact(revision, "source-mapping", typeName, nil, new("1.0.0"), []byte(`{}`))
 			items = append(items, item)
 			fixture.artifacts[revision] = item
 			detail := fixture.mappings["rev-mapping"]
@@ -588,7 +588,7 @@ func TestSourceMappingCursorUsesLastMatchingFilteredItem(t *testing.T) {
 	for index := range 1002 {
 		typeName := fmt.Sprintf("mapping-filter-%04d", index)
 		revision := fmt.Sprintf("mapping-filter-revision-%04d", index)
-		item := fixtureArtifact(revision, "source-mapping", typeName, nil, stringPointer("1.0.0"), []byte(`{}`))
+		item := fixtureArtifact(revision, "source-mapping", typeName, nil, new("1.0.0"), []byte(`{}`))
 		items = append(items, item)
 		fixture.artifacts[revision] = item
 		language := "skip"
@@ -959,9 +959,9 @@ func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detai
 
 func multiMappingFixture() *artifactTestSnapshot {
 	fixture := mappingFixture()
-	source := fixtureArtifact("rev-source", "schema", "incoming", stringPointer("source-record"), nil, []byte("true"))
+	source := fixtureArtifact("rev-source", "schema", "incoming", new("source-record"), nil, []byte("true"))
 	source.Payload.MediaType = "application/schema+json"
-	edge := fixtureArtifact("rev-edge", "schema", "located-in", stringPointer("edge-type"), nil, []byte("false"))
+	edge := fixtureArtifact("rev-edge", "schema", "located-in", new("edge-type"), nil, []byte("false"))
 	edge.Payload.MediaType = "application/schema+json"
 	for _, schema := range []model.Artifact{source, edge} {
 		fixture.artifacts[schema.Revision], fixture.selections["schema/"+schema.Type] = schema, schema
@@ -1338,7 +1338,7 @@ func TestMappingSchemaLookupCachePreservesFallbackAndValidation(t *testing.T) {
 func TestMappingCachedSourceStillValidatesTargetClassification(t *testing.T) {
 	fixture := mappingFixture()
 	schema := fixture.selections["schema/device"]
-	schema.SchemaClass = stringPointer("source-record")
+	schema.SchemaClass = new("source-record")
 	fixture.selections["schema/device"] = schema
 	snapshot := &schemaLookupSnapshot{Snapshot: fixture, lookups: make(map[string]int)}
 	response := serveArtifactRequest(mappingRegressionServer(snapshot), http.MethodGet, mappingBase)
