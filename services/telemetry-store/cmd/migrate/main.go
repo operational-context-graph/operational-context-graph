@@ -62,14 +62,19 @@ func run(down bool) error {
 		return waitErr
 	}
 
+	dbName := os.Getenv("DORIS_DATABASE")
+	if dbName == "" {
+		return fmt.Errorf("DORIS_DATABASE environment variable is required")
+	}
+
 	// Create the database before Goose initialises its version tracking table,
-	// which itself lives in ocg. The DSN intentionally has no database component
-	// so this connection can run DDL at the server level.
-	if _, dbErr := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS ocg"); dbErr != nil {
+	// which itself lives in the target database. The DSN intentionally has no
+	// database component so this connection can run DDL at the server level.
+	if _, dbErr := db.ExecContext(context.Background(), "CREATE DATABASE IF NOT EXISTS "+dbName); dbErr != nil {
 		return fmt.Errorf("create database: %w", dbErr)
 	}
 
-	store, err := database.NewStoreFromQuerier("ocg.goose_db_version_telemetry_store", &dorismigrate.Querier{})
+	store, err := database.NewStoreFromQuerier(dbName+".goose_db_version_telemetry_store", &dorismigrate.Querier{})
 	if err != nil {
 		return fmt.Errorf("create store: %w", err)
 	}

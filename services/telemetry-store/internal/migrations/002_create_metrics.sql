@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose ENVSUB ON
-CREATE TABLE IF NOT EXISTS ocg.metrics (
+CREATE TABLE IF NOT EXISTS ${DORIS_DATABASE}.metrics (
   `timestamp`            DATETIME(6)   NOT NULL,
   `iri`                  VARCHAR(512)  NOT NULL,
   `observed_timestamp`   DATETIME(6)   NULL,
@@ -30,4 +30,4 @@ PROPERTIES (
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS ocg.metrics;
+DROP TABLE IF EXISTS ${DORIS_DATABASE}.metrics;

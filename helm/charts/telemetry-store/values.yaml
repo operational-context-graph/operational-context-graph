@@ -46,6 +46,9 @@ env:
   # Override to "1" for a single-BE dev cluster.
   DORIS_REPLICATION_NUM: "3"
   DORIS_BUCKETS: "10"
+  # Name of the Doris database to create and migrate. Must be created manually
+  # before running helm install. Will be provisioned automatically in a future release.
+  DORIS_DATABASE: "ocg"
 
 podSecurityContext:
   runAsNonRoot: true

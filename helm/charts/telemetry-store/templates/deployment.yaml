@@ -38,6 +38,8 @@ spec:
               value: {{ .Values.env.DORIS_REPLICATION_NUM | quote }}
             - name: DORIS_BUCKETS
               value: {{ .Values.env.DORIS_BUCKETS | quote }}
+            - name: DORIS_DATABASE
+              value: {{ .Values.env.DORIS_DATABASE | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.dorisReadSecretName }}
