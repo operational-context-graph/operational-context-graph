@@ -1,17 +1,29 @@
-# Fires after CI passes on main. Pushes a git tag and aliases the dev image to the
-# release version tag for component releases. No container image build.
-# No GitHub Release created for components.
+# Fires on a component release tag push (services/**/vX.Y.Z). The tag is pushed by
+# merge-gate.yml after a component release PR squash-merges to main. This workflow
+# aliases the dev container image to the release version tag. No image build, no
+# GitHub Release for components.
 #
-# Both release-component.yml and release-system.yml fire on every CI completion on main.
-# This workflow exits cleanly when the merge was not a component release branch.
+# The tag's commit (github.sha) is the squash commit on main that ci.yml publish-dev
+# built the dev image from, so the dev image tag is reconstructed from github.sha
+# directly — no workflow_run.head_sha or commits/<sha>/pulls lookup.
 ---
 name: Release Component
 
 on:
-  workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: ["Continuous Integration"]
-    types: [completed]
-    branches: ["main"]
+  push:
+    tags:
+      - "services/**/v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Component tag to rehearse (e.g. services/data-ingestion/v1.2.3)"
+        required: true
+        type: string
+      dry_run:
+        description: "Resolve and log actions without pushing image tags"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -20,65 +32,59 @@ jobs:
   detect:
     name: Detect Release
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       release_type: ${{ steps.parse.outputs.release_type }}
+      component: ${{ steps.parse.outputs.component }}
       slug: ${{ steps.parse.outputs.slug }}
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
       has_dockerfile: ${{ steps.parse.outputs.has_dockerfile }}
+      head_sha: ${{ steps.sha.outputs.head_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Parse merge source branch
+      - name: Parse release tag
         id: parse
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: scripts/parse-release-tag.sh "${TAG_REF}"
+      - name: Resolve release commit
+        id: sha
+        # On a real tag push, github.sha is the tagged commit. On workflow_dispatch,
+        # github.sha is HEAD of the ref the workflow runs from, NOT the dispatched
+        # tag's commit, so resolve the commit from the tag ref explicitly.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ steps.parse.outputs.tag }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
-          SOURCE_BRANCH=$(gh api \
-            "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
-            --jq '.[0].head.ref // ""')
-          echo "SOURCE_BRANCH=${SOURCE_BRANCH}"
-          echo "source_branch=${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
-          scripts/parse-release-branch.sh "${SOURCE_BRANCH}"
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${TAG}" ]; then
+            head_sha=$(git rev-list -n1 "refs/tags/${TAG}")
+          else
+            head_sha="${PUSH_SHA}"
+          fi
+          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
+          echo "Release commit: ${head_sha}"
       - name: Log detected release
         env:
           RELEASE_TYPE: ${{ steps.parse.outputs.release_type }}
           SLUG: ${{ steps.parse.outputs.slug }}
           VERSION: ${{ steps.parse.outputs.version }}
           TAG: ${{ steps.parse.outputs.tag }}
-          SOURCE_BRANCH: ${{ steps.parse.outputs.source_branch }}
         run: |
-          if [ -z "${RELEASE_TYPE}" ]; then
-            echo "Not a release merge. All jobs will be skipped (branch: ${SOURCE_BRANCH})"
+          if [ "${RELEASE_TYPE}" != "component" ]; then
+            echo "Not a component release tag (type='${RELEASE_TYPE}'). Jobs will be skipped."
           else
             echo "release_type=${RELEASE_TYPE} slug=${SLUG} version=${VERSION} tag=${TAG}"
           fi
 
-  tag-component:
-    name: Tag Component
-    needs: detect
-    if: needs.detect.outputs.release_type == 'component'
-    uses: $/.github/workflows/shared/push-release-tag.yml
-    with:
-      tag: ${{ needs.detect.outputs.tag }}
-      message: "chore(release): ${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
-      client_id: ${{ vars.APP_CLIENT_ID }}
-    secrets:
-      private_key: ${{ secrets.APP_PRIVATE_KEY }}
-
   retag-component-image:
     name: Retag Component Image to Release Version
     runs-on: ubuntu-latest
-    needs: [detect, tag-component]
+    needs: detect
     if: |
       needs.detect.outputs.release_type == 'component' &&
       needs.detect.outputs.has_dockerfile == 'true'
@@ -108,9 +114,10 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           SLUG: ${{ needs.detect.outputs.slug }}
           VERSION: ${{ needs.detect.outputs.version }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ needs.detect.outputs.head_sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           COMMIT_DATE=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" \
             --jq '.commit.committer.date' \
@@ -118,6 +125,10 @@ jobs:
             | tr -d '-')
           DEV_TAG="dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/${SLUG}:${DEV_TAG}"
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "DRY RUN: would retag ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"
+            exit 0
+          fi
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           ~/.local/bin/crane tag "${src}" "${VERSION}-${HEAD_SHA:0:7}"
           echo "Retagged ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"
