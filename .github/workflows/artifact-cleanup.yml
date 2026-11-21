@@ -60,7 +60,7 @@ jobs:
           ORG: ${{ github.repository_owner }}
           # Helm charts pushed via "helm push oci://" land under a nested package path.
           # GHCR encodes the slash as %2F in the API path.
-          PACKAGE: "operational-context-graph%2Foperational-context-graph"
+          PACKAGE: "operational-context-graph-helm%2Foperational-context-graph"
         run: |
           cutoff=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
 
@@ -69,12 +69,12 @@ jobs:
             --paginate \
             --jq ".[] | select(.metadata.container.tags | length > 0) | select(.metadata.container.tags[] | startswith(\"dev.\")) | select(.updated_at < \"${cutoff}\") | [.id, (.metadata.container.tags | join(\",\")), .updated_at] | @tsv" \
           | while IFS=$'\t' read -r id tags updated_at; do
-              echo "Deleting helm chart operational-context-graph:${tags} (version ${id}, last updated ${updated_at})"
+              echo "Deleting helm chart operational-context-graph-helm:${tags} (version ${id}, last updated ${updated_at})"
               gh api \
                 --method DELETE \
                 "orgs/${ORG}/packages/container/${PACKAGE}/versions/${id}"
             done
 
   # TODO: add cleanup-ocm-bundle job once OCM bundle publishing is implemented.
-  # The package path will be operational-context-graph/operational-context-graph-ocm
-  # and the cleanup logic is identical to cleanup-helm.
+  # The package path will be operational-context-graph (bare, not nested).
+  # Cleanup logic is identical to cleanup-helm.
