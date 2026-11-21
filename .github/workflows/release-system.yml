@@ -3,9 +3,6 @@
 # Helm chart to the release version, pulls it, and creates a GitHub Release with
 # the chart attached. No container image build, no Helm chart repackaging.
 #
-# The tag's commit (github.sha) is the squash commit on main that ci.yml publish-dev
-# packaged the dev Helm chart from, so the dev chart tag is reconstructed from
-# github.sha directly — no workflow_run.head_sha or commits/<sha>/pulls lookup.
 ---
 name: Release System
 

@@ -7,15 +7,7 @@
 #   component-path   Repo-relative path to the component (e.g. services/data-ingestion)
 #   version-override Version string to use; if empty, resolves latest released semver tag
 #
-# Writes both .image.tag (human-readable, cosmetic) and .image.digest
-# (sha256:..., authoritative — _helpers.tpl renders repository@digest when set).
-# The digest is resolved from the registry for the release-version image tag, so
-# the deployed chart pins an immutable content address, not a movable tag.
-#
 # Requires: yq, crane (for digest resolution), and GHCR auth for crane.
-# Set CRANE_BIN to override the crane binary path (default: crane on PATH).
-# The registry/repository is read from .image.repository in the chart values,
-# so the digest is always resolved from the image the chart actually references.
 #
 # Exits non-zero if no version resolves, the chart directory is missing,
 # .image.tag is absent, or the digest cannot be resolved.

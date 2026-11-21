@@ -128,9 +128,7 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%d)
           SECTION="## [${VERSION}] - ${DATE}"
-          scripts/prepend-changelog.sh \
-            "${VERSION}" \
-            "${SECTION}"
+          scripts/prepend-changelog.sh "${SECTION}"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
       # TODO: Add step that updates OCM component descriptor with the new component versions

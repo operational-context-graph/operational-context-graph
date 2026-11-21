@@ -2,15 +2,13 @@
 # Prepend a new versioned section to CHANGELOG.md, inserting after the
 # git-cliff header marker if present.
 #
-# Usage: prepend-changelog.sh <version> <content>
+# Usage: prepend-changelog.sh <content>
 #
-# <version> is accepted for a stable call signature across changelog scripts but
-# is not used here; the version heading is expected to be part of <content>.
 # The content argument should be the full markdown section to prepend,
 # including the version heading.
 #
 # Example:
-#   scripts/prepend-changelog.sh "1.0.0" "## [1.0.0] - 2026-11-04
+#   scripts/prepend-changelog.sh "## [1.0.0] - 2026-11-04
 #
 #   | Component | Tag |
 #   | --- | --- |
@@ -18,7 +16,7 @@
 
 set -euo pipefail
 
-SECTION="${2:?section content required}"
+SECTION="${1:?section content required}"
 CHANGELOG="CHANGELOG.md"
 MARKER="<!-- git-cliff: end of header -->"
 
