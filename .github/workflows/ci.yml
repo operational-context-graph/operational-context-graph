@@ -134,8 +134,6 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --all --chart-dirs helm/charts
 
-  # Lints every shell script under scripts/ with shellcheck (preinstalled on
-  # ubuntu-latest). Runs via `make lint-sh` so local and CI use one definition.
   shell-lint:
     name: Shell Lint
     runs-on: ubuntu-latest
@@ -176,7 +174,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write  # required: pushes container images and attestations to GHCR
+      packages: write # required: pushes container images and attestations to GHCR
       attestations: write
       id-token: write
     outputs:
@@ -218,7 +216,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write  # required: helm push publishes the chart to GHCR via OCI
+      packages: write # required: helm push publishes the chart to GHCR via OCI
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

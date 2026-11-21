@@ -7,7 +7,7 @@
 # parses it with parse-release-branch.sh, and pushes the version tag as the App.
 # The tag push is what triggers release-component.yml / release-system.yml.
 #
-# Squash-merge note: the squash commit has no release/** branch as a parent and
+# Note: the squash commit has no release/** branch as a parent and
 # the subject does not name the branch, so branch recovery MUST go through the
 # PR number, not commit parentage.
 ---
@@ -100,4 +100,3 @@ jobs:
       client_id: ${{ vars.APP_CLIENT_ID }}
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
-

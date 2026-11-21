@@ -3,9 +3,6 @@
 # aliases the dev container image to the release version tag. No image build, no
 # GitHub Release for components.
 #
-# The tag's commit (github.sha) is the squash commit on main that ci.yml publish-dev
-# built the dev image from, so the dev image tag is reconstructed from github.sha
-# directly — no workflow_run.head_sha or commits/<sha>/pulls lookup.
 ---
 name: Release Component
 
