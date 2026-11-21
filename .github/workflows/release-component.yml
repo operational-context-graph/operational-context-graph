@@ -13,17 +13,6 @@ on:
   push:
     tags:
       - "services/**/v*.*.*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Component tag to rehearse (e.g. services/data-ingestion/v1.2.3)"
-        required: true
-        type: string
-      dry_run:
-        description: "Resolve and log actions without pushing image tags"
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -39,7 +28,6 @@ jobs:
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
       has_dockerfile: ${{ steps.parse.outputs.has_dockerfile }}
-      head_sha: ${{ steps.sha.outputs.head_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,25 +37,8 @@ jobs:
       - name: Parse release tag
         id: parse
         env:
-          TAG_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG_REF: ${{ github.ref_name }}
         run: scripts/parse-release-tag.sh "${TAG_REF}"
-      - name: Resolve release commit
-        id: sha
-        # On a real tag push, github.sha is the tagged commit. On workflow_dispatch,
-        # github.sha is HEAD of the ref the workflow runs from, NOT the dispatched
-        # tag's commit, so resolve the commit from the tag ref explicitly.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          TAG: ${{ steps.parse.outputs.tag }}
-          PUSH_SHA: ${{ github.sha }}
-        run: |
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${TAG}" ]; then
-            head_sha=$(git rev-list -n1 "refs/tags/${TAG}")
-          else
-            head_sha="${PUSH_SHA}"
-          fi
-          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
-          echo "Release commit: ${head_sha}"
       - name: Log detected release
         env:
           RELEASE_TYPE: ${{ steps.parse.outputs.release_type }}
@@ -114,10 +85,9 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           SLUG: ${{ needs.detect.outputs.slug }}
           VERSION: ${{ needs.detect.outputs.version }}
-          HEAD_SHA: ${{ needs.detect.outputs.head_sha }}
+          HEAD_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           COMMIT_DATE=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" \
             --jq '.commit.committer.date' \
@@ -125,10 +95,6 @@ jobs:
             | tr -d '-')
           DEV_TAG="dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/${SLUG}:${DEV_TAG}"
-          if [ "${DRY_RUN}" = "true" ]; then
-            echo "DRY RUN: would retag ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"
-            exit 0
-          fi
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           ~/.local/bin/crane tag "${src}" "${VERSION}-${HEAD_SHA:0:7}"
           echo "Retagged ${src} → ${VERSION}, ${VERSION}-${HEAD_SHA:0:7}"

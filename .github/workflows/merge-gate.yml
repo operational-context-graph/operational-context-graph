@@ -16,17 +16,6 @@ name: Merge Gate
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Release PR number to re-mint the tag for (manual rehearsal)"
-        required: true
-        type: string
-      dry_run:
-        description: "Resolve and log the tag without pushing it"
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -54,19 +43,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_PR: ${{ inputs.pr_number }}
           HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
-            pr="${INPUT_PR}"
-          else
-            # Squash subjects end with "(#N)". Read the first line only so a "(#N)"
-            # appearing in the body cannot be mistaken for the PR number.
-            subject="${HEAD_COMMIT_MESSAGE%%$'\n'*}"
-            pr=$(printf '%s' "${subject}" | grep -oE '\(#[0-9]+\)$' | tr -dc '0-9' || true)
-          fi
+          # Squash subjects end with "(#N)". Read the first line only so a "(#N)"
+          # appearing in the body cannot be mistaken for the PR number.
+          subject="${HEAD_COMMIT_MESSAGE%%$'\n'*}"
+          pr=$(printf '%s' "${subject}" | grep -oE '\(#[0-9]+\)$' | tr -dc '0-9' || true)
           if [ -z "${pr}" ]; then
             echo "No PR number in commit subject; not a squash-merged PR. Skipping."
             echo "pr_number=" >> "$GITHUB_OUTPUT"
@@ -105,7 +88,7 @@ jobs:
   push-release-tag:
     name: Push Release Tag
     needs: detect
-    if: needs.detect.outputs.release_type != '' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    if: needs.detect.outputs.release_type != ''
     uses: $/.github/workflows/shared/push-release-tag.yml
     with:
       tag: ${{ needs.detect.outputs.tag }}
@@ -118,17 +101,3 @@ jobs:
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
-  dry-run-log:
-    name: Dry Run (no tag pushed)
-    needs: detect
-    if: needs.detect.outputs.release_type != '' && github.event_name == 'workflow_dispatch' && inputs.dry_run
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Log would-push
-        env:
-          TAG: ${{ needs.detect.outputs.tag }}
-          RELEASE_TYPE: ${{ needs.detect.outputs.release_type }}
-        run: |
-          echo "DRY RUN: would push ${RELEASE_TYPE} tag '${TAG}'. No tag pushed."

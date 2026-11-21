@@ -13,17 +13,6 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "System tag to rehearse (e.g. v1.2.3)"
-        required: true
-        type: string
-      dry_run:
-        description: "Resolve and log actions without pushing artifacts or creating a Release"
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -37,8 +26,6 @@ jobs:
       release_type: ${{ steps.parse.outputs.release_type }}
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
-      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-      head_sha: ${{ steps.sha.outputs.head_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,25 +35,8 @@ jobs:
       - name: Parse release tag
         id: parse
         env:
-          TAG_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG_REF: ${{ github.ref_name }}
         run: scripts/parse-release-tag.sh "${TAG_REF}"
-      - name: Resolve release commit
-        id: sha
-        # On a real tag push, github.sha is the tagged commit. On workflow_dispatch,
-        # github.sha is HEAD of the ref the workflow runs from, NOT the dispatched
-        # tag's commit, so resolve the commit from the tag ref explicitly.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          TAG: ${{ steps.parse.outputs.tag }}
-          PUSH_SHA: ${{ github.sha }}
-        run: |
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${TAG}" ]; then
-            head_sha=$(git rev-list -n1 "refs/tags/${TAG}")
-          else
-            head_sha="${PUSH_SHA}"
-          fi
-          echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
-          echo "Release commit: ${head_sha}"
       - name: Log detected release
         env:
           RELEASE_TYPE: ${{ steps.parse.outputs.release_type }}
@@ -109,10 +79,9 @@ jobs:
         env:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           VERSION: ${{ needs.detect.outputs.version }}
-          HEAD_SHA: ${{ needs.detect.outputs.head_sha }}
+          HEAD_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          DRY_RUN: ${{ needs.detect.outputs.dry_run }}
         run: |
           COMMIT_DATE=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" \
             --jq '.commit.committer.date' \
@@ -120,10 +89,6 @@ jobs:
             | tr -d '-')
           DEV_TAG="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
           src="${REGISTRY}/operational-context-graph:${DEV_TAG}"
-          if [ "${DRY_RUN}" = "true" ]; then
-            echo "DRY RUN: would retag Helm chart ${src} → ${VERSION}"
-            exit 0
-          fi
           ~/.local/bin/crane tag "${src}" "${VERSION}"
           echo "Retagged Helm chart ${src} → ${VERSION}"
           # TODO: retag OCM bundle when publish-ocm-bundle is implemented
@@ -132,7 +97,7 @@ jobs:
     name: Pull Helm Chart from OCI
     runs-on: ubuntu-latest
     needs: [detect, retag-release-artifacts]
-    if: needs.detect.outputs.release_type == 'system' && needs.detect.outputs.dry_run != 'true'
+    if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
       packages: read
@@ -165,7 +130,7 @@ jobs:
     name: Generate System Release Notes
     runs-on: ubuntu-latest
     needs: detect
-    if: needs.detect.outputs.release_type == 'system' && needs.detect.outputs.dry_run != 'true'
+    if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
     outputs:
@@ -190,7 +155,7 @@ jobs:
   github-release-system:
     name: Create System GitHub Release
     needs: [detect, pull-helm-chart, generate-system-release-notes]
-    if: needs.detect.outputs.release_type == 'system' && needs.detect.outputs.dry_run != 'true'
+    if: needs.detect.outputs.release_type == 'system'
     uses: $/.github/workflows/shared/create-github-release.yml
     with:
       tag: "v${{ needs.detect.outputs.version }}"
@@ -202,20 +167,3 @@ jobs:
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
-  dry-run-log:
-    name: Dry Run Summary (no artifacts published)
-    needs: [detect, retag-release-artifacts]
-    if: needs.detect.outputs.release_type == 'system' && needs.detect.outputs.dry_run == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Log skipped steps
-        env:
-          VERSION: ${{ needs.detect.outputs.version }}
-        run: |
-          echo "DRY RUN for system v${VERSION}:"
-          echo "  - Helm chart retag: logged only (see retag-release-artifacts)"
-          echo "  - would pull chart operational-context-graph:${VERSION} from OCI"
-          echo "  - would create GitHub Release 'system v${VERSION}' with chart attached"
-          echo "No artifacts published, no Release created."
