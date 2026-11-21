@@ -134,6 +134,21 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --all --chart-dirs helm/charts
 
+  # Lints every shell script under scripts/ with shellcheck (preinstalled on
+  # ubuntu-latest). Runs via `make lint-sh` so local and CI use one definition.
+  shell-lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run shellcheck
+        run: make lint-sh
+
   workspace-sync:
     name: Workspace Sync
     runs-on: ubuntu-latest

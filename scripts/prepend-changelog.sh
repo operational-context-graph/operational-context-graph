@@ -4,6 +4,8 @@
 #
 # Usage: prepend-changelog.sh <version> <content>
 #
+# <version> is accepted for a stable call signature across changelog scripts but
+# is not used here; the version heading is expected to be part of <content>.
 # The content argument should be the full markdown section to prepend,
 # including the version heading.
 #
@@ -16,7 +18,6 @@
 
 set -euo pipefail
 
-VERSION="${1:?version required}"
 SECTION="${2:?section content required}"
 CHANGELOG="CHANGELOG.md"
 MARKER="<!-- git-cliff: end of header -->"
