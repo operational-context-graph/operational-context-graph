@@ -4,7 +4,7 @@
 # Example: docker build -f services/telemetry-store/Dockerfile .
 # Via Bake:  docker buildx bake telemetry-store
 
-ARG GO_IMAGE="golang:1.27@sha256:ec47ea3725fea0cc88f6de94919aef19f40f12fc1ec0e2d1b3426dbf15ecca04"
+ARG GO_IMAGE="golang:1.27@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf"
 ARG DISTROLESS_IMAGE="gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2"
 
 FROM ${GO_IMAGE} AS build
