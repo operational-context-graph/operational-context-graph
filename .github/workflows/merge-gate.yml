@@ -46,6 +46,14 @@ jobs:
           HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
+          # Why parse the subject instead of the commits/<sha>/pulls API:
+          # that endpoint lists PRs associated with a commit and is unordered,
+          # so the old code took .[0] and hoped. On a squash merge the squash
+          # commit is not the PR head commit, so association is unreliable, and
+          # a backport or re-merge can return several PRs with no stable order.
+          # The squash subject carries the authoritative PR number as "(#N)",
+          # which we then resolve to a head ref with a targeted pulls/N lookup.
+          #
           # Squash subjects end with "(#N)". Read the first line only so a "(#N)"
           # appearing in the body cannot be mistaken for the PR number.
           subject="${HEAD_COMMIT_MESSAGE%%$'\n'*}"
