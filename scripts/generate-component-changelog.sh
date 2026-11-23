@@ -30,8 +30,10 @@ git cliff \
 sed -i 's|## .*/\(v[0-9][^ )]*\)|## \1|g' "$CHANGELOG"
 
 # Print the new (unreleased) section to stdout for use as the PR body.
+# Strip the component path prefix from version headers so the PR body shows v1.0.0, not services/data-ingestion/v1.0.0.
 git cliff \
   --include-path "${COMPONENT_PATH}/**" \
   --tag "$TAG" \
   --unreleased \
-  --strip all
+  --strip all \
+  | sed 's|## .*/\(v[0-9][^ )]*\)|## \1|g'
