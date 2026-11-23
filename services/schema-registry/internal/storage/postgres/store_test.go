@@ -1,10 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -102,16 +106,63 @@ func TestManifestChangesUsesAuthoritativeManifestBytes(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInconsistentState)
 }
 
-// TestValidBytesEnforcesExactSizeDigestAndProfile verifies empty and exact-limit content pass, but size, digest, and over-limit content fail.
-func TestValidBytesEnforcesExactSizeDigestAndProfile(t *testing.T) {
-	value := []byte("x")
-	assert.True(t, validBytes(value, 1, manifestDigest(value)))
-	assert.True(t, validBytes(nil, 0, manifestDigest(nil)))
-	assert.False(t, validBytes(value, 2, manifestDigest(value)))
-	assert.False(t, validBytes(value, 1, manifestDigest([]byte("other"))))
+// TestCurrentStateRejectsInvalidPointerCoordinates covers absent, inactive, zero-sequence, and valid current pointers.
+// Valid state retains the independent history ceiling; invalid state returns no partial coordinates.
+func TestCurrentStateRejectsInvalidPointerCoordinates(t *testing.T) {
+	t.Parallel()
+	version, zero, positive := "1.0.0", int64(0), int64(1)
+	for _, test := range []struct {
+		name     string
+		version  *string
+		sequence *int64
+		want     error
+	}{
+		{name: "no active release", want: ErrNoActiveRelease},
+		{name: "inactive pointer", version: &version, want: ErrInconsistentState},
+		{name: "zero sequence", version: &version, sequence: &zero, want: ErrInconsistentState},
+		{name: "valid pointer", version: &version, sequence: &positive},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tx := new(queryTestTx)
+			tx.Test(t)
+			tx.On("QueryRow", mock.Anything, mock.Anything, mock.Anything).Return(queryTestRow(func(dest ...any) error {
+				require.Len(t, dest, 3)
+				*dest[0].(**string) = test.version
+				*dest[1].(**int64) = test.sequence
+				*dest[2].(*int64) = 3
+				return nil
+			})).Once()
+			state, err := readCurrentState(context.Background(), tx)
+			require.ErrorIs(t, err, test.want)
+			if test.want == nil {
+				require.Equal(t, model.CurrentState{SchemaVersion: version, ActivationSequence: 1, SnapshotSequence: 3}, state)
+			} else {
+				require.Empty(t, state)
+			}
+			tx.AssertExpectations(t)
+		})
+	}
+}
 
-	exact := make([]byte, 16*1024*1024)
-	assert.True(t, validBytes(exact, int64(len(exact)), manifestDigest(exact)))
-	over := make([]byte, len(exact)+1)
-	assert.False(t, validBytes(over, int64(len(over)), manifestDigest(over)))
+// TestNewStoreRejectsMissingPoolAndInvalidTimeouts verifies constructor failures before connection acquisition.
+func TestNewStoreRejectsMissingPoolAndInvalidTimeouts(t *testing.T) {
+	t.Parallel()
+	_, err := NewStore(nil, Timeouts{})
+	require.ErrorContains(t, err, "pool is required")
+	_, err = NewStore(new(pgxpool.Pool), Timeouts{})
+	require.ErrorContains(t, err, "timeouts must be positive")
+}
+
+// TestLocalTimeoutFailuresPreserveCause injects a statement-timeout configuration failure.
+// The returned error preserves the deadline cause and identifies the failed setting.
+func TestLocalTimeoutFailuresPreserveCause(t *testing.T) {
+	t.Parallel()
+	tx := new(queryTestTx)
+	tx.Test(t)
+	cause := context.DeadlineExceeded
+	tx.On("Exec", mock.Anything, "SELECT pg_catalog.set_config($1, $2, true)", []any{"statement_timeout", "1000"}).Return(pgconn.CommandTag{}, cause).Once()
+	err := setLocalTimeouts(context.Background(), tx, Timeouts{Statement: time.Second})
+	require.ErrorIs(t, err, cause)
+	require.ErrorContains(t, err, "statement_timeout")
+	tx.AssertExpectations(t)
 }

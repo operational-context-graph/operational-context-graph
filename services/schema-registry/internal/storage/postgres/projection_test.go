@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gowebpki/jcs"
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -286,4 +288,46 @@ func TestMappingDescriptorReadFailures(t *testing.T) {
 			tx.AssertExpectations(t)
 		})
 	}
+}
+
+// TestValidBytesEnforcesExactSizeDigestAndProfile verifies empty and exact-limit content pass, but size, digest, and over-limit content fail.
+func TestValidBytesEnforcesExactSizeDigestAndProfile(t *testing.T) {
+	value := []byte("x")
+	assert.True(t, validBytes(value, 1, manifestDigest(value)))
+	assert.True(t, validBytes(nil, 0, manifestDigest(nil)))
+	assert.False(t, validBytes(value, 2, manifestDigest(value)))
+	assert.False(t, validBytes(value, 1, manifestDigest([]byte("other"))))
+
+	exact := make([]byte, 16*1024*1024)
+	assert.True(t, validBytes(exact, int64(len(exact)), manifestDigest(exact)))
+	over := make([]byte, len(exact)+1)
+	assert.False(t, validBytes(over, int64(len(over)), manifestDigest(over)))
+}
+
+// TestArtifactProjectionRejectsMalformedExtensionRows verifies invalid projection encoding or extension JSON returns no partial rows and closes the cursor.
+func TestArtifactProjectionRejectsMalformedExtensionRows(t *testing.T) {
+	for _, value := range []string{"missing-fields", strings.Repeat(":", 10) + "zz", strings.Repeat(":", 10) + "7b"} {
+		tx := new(queryTestTx)
+		tx.Test(t)
+		rows := &queryTestRows{values: [][]any{{value}}}
+		query, err := projectionQuery(model.ProjectionArtifact)
+		require.NoError(t, err)
+		tx.On("Query", mock.Anything, query, []any{"1.0.0"}).Return(rows, nil).Once()
+		items, err := projectionRows(t.Context(), tx, "1.0.0", model.ProjectionArtifact)
+		require.ErrorIs(t, err, ErrInconsistentState)
+		assert.Nil(t, items)
+		assert.True(t, rows.closed)
+		tx.AssertExpectations(t)
+	}
+}
+
+// TestProjectionRowsRejectsUnknownFamilyBeforeQuery rejects unsupported projection families without executing database queries.
+func TestProjectionRowsRejectsUnknownFamilyBeforeQuery(t *testing.T) {
+	t.Parallel()
+	tx := new(queryTestTx)
+	tx.Test(t)
+	rows, err := projectionRows(context.Background(), tx, "1.0.0", model.ProjectionFamily("unknown"))
+	require.ErrorContains(t, err, "unknown projection family")
+	require.Nil(t, rows)
+	require.Empty(t, tx.Calls)
 }
