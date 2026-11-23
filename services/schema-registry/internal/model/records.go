@@ -11,7 +11,6 @@ type Release struct {
 	SourceRepository       string
 	SourceCommit           string
 	Changes                []byte
-	ProjectionCommitment   []byte
 	// ActivationSequence orders externally supplied activated releases.
 	ActivationSequence int64
 }

@@ -44,6 +44,56 @@ func (suite *readStoreSuite) candidateStore() *storage.Store {
 	return store
 }
 
+// requireReleaseProjectionFailure verifies valid release reads before introducing one release-family integrity defect.
+func (suite *readStoreSuite) requireReleaseProjectionFailure(statement string, args ...any) {
+	store := suite.candidateStore()
+	reads := []struct {
+		name string
+		read func(context.Context, *storage.Snapshot) error
+	}{
+		{name: "release", read: func(ctx context.Context, snapshot *storage.Snapshot) error {
+			release, err := snapshot.Release(ctx, "8.0.0")
+			if err == nil {
+				suite.Equal("8.0.0", release.SchemaVersion)
+				suite.Equal(int64(1), release.ActivationSequence)
+			}
+			return err
+		}},
+		{name: "release page", read: func(ctx context.Context, snapshot *storage.Snapshot) error {
+			releases, err := snapshot.ReleasesAt(ctx, nil, snapshot.CurrentState().SnapshotSequence, 1)
+			if err == nil {
+				suite.Require().Len(releases, 1)
+				suite.Equal("8.0.0", releases[0].SchemaVersion)
+				suite.Equal(int64(1), releases[0].ActivationSequence)
+			}
+			return err
+		}},
+	}
+	for _, read := range reads {
+		suite.Require().NoError(store.Read(suite.Context, read.read), read.name)
+	}
+	_, err := suite.Database.ExecContext(suite.Context, statement, args...)
+	suite.Require().NoError(err)
+	for _, read := range reads {
+		suite.ErrorIs(store.Read(suite.Context, read.read), storage.ErrInconsistentState, read.name)
+	}
+}
+
+// TestReleaseMetadataDrift verifies release columns cannot diverge from the authoritative manifest.
+func (suite *readStoreSuite) TestReleaseMetadataDrift() {
+	suite.requireReleaseProjectionFailure(`UPDATE schema_registry.releases SET source_commit = $1 WHERE schema_version = $2`, strings.Repeat("b", 40), "8.0.0")
+}
+
+// TestMissingReleaseCommitment verifies release reads require per-family integrity evidence.
+func (suite *readStoreSuite) TestMissingReleaseCommitment() {
+	suite.requireReleaseProjectionFailure(`DELETE FROM schema_registry.release_projection_commitments WHERE schema_version = $1 AND family = $2`, "8.0.0", model.ProjectionRelease)
+}
+
+// TestCorruptReleaseCommitment verifies release reads reject altered per-family integrity evidence.
+func (suite *readStoreSuite) TestCorruptReleaseCommitment() {
+	suite.requireReleaseProjectionFailure(`UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, make([]byte, 32), "8.0.0", model.ProjectionRelease)
+}
+
 // TestCandidateMappingsAndParameterizedFilters verifies exact resolved filters, shared source candidates, unique mapping results, and ordered transformation/cardinality metadata.
 func (suite *readStoreSuite) TestCandidateMappingsAndParameterizedFilters() {
 	store := suite.candidateStore()

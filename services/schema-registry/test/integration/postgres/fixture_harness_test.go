@@ -294,15 +294,10 @@ func loadValidatedFixture(t testing.TB, ctx context.Context, database *sql.DB, f
 		return manifest.Manifest{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	commitmentRows, err := storage.ManifestProjectionRows(parsed, parsed.Raw, model.ProjectionRelease)
-	if err != nil {
-		return manifest.Manifest{}, err
-	}
-	commitment := storage.ProjectionCommitment(commitmentRows)
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, previous_schema_version, previous_manifest_digest, source_repository, source_commit, projection_commitment)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		parsed.SchemaVersion, fixtureDigest(parsed.Raw), parsed.Raw, previousVersion(parsed), previousDigest(parsed), parsed.Source.Repository, parsed.Source.Commit, commitment)
+INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, previous_schema_version, previous_manifest_digest, source_repository, source_commit)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		parsed.SchemaVersion, fixtureDigest(parsed.Raw), parsed.Raw, previousVersion(parsed), previousDigest(parsed), parsed.Source.Repository, parsed.Source.Commit)
 	if err != nil {
 		return manifest.Manifest{}, err
 	}

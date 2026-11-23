@@ -40,10 +40,10 @@ func (suite *migrationsSuite) TestMigrationsAndBoundaries() {
 		_, insertErr := conn.ExecContext(ctx, `
 INSERT INTO schema_registry.releases (
     schema_version, manifest_digest, manifest_bytes, source_repository,
-    source_commit, projection_commitment
-) VALUES ($1, $2, $3, $4, $5, $6)`,
+    source_commit
+) VALUES ($1, $2, $3, $4, $5)`,
 			"1.0.0", digest('a'), []byte("{}"), "https://example.test/repository",
-			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commitment())
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, insertErr)
 	})
 
@@ -105,13 +105,13 @@ INSERT INTO schema_registry.releases (
 		require.Error(t, insertErr)
 		_, insertErr = conn.ExecContext(ctx, `UPDATE schema_registry.releases SET activated_sequence = 1 WHERE schema_version = '1.0.0'`)
 		require.NoError(t, insertErr)
-		_, insertErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, activated_sequence, projection_commitment) VALUES ('1.0.1', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, $2)`, "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commitment())
+		_, insertErr = conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, activated_sequence) VALUES ('1.0.1', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1)`, "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
 		require.Error(t, insertErr)
 	})
 
 	// The storage pointer accepts a stored release; application reads separately enforce activated visibility.
 	t.Run("pre-populated current state accepts a stored release", func(t *testing.T) {
-		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit, projection_commitment) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $2)`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", commitment())
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO schema_registry.releases (schema_version, manifest_digest, manifest_bytes, source_repository, source_commit) VALUES ('9.0.0', $1, '{}', 'https://example.test/repository', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`, "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 		require.NoError(t, insertErr)
 		_, insertErr = conn.ExecContext(ctx, `UPDATE schema_registry.registry_state SET current_schema_version = '9.0.0' WHERE singleton = true`)
 		require.NoError(t, insertErr)
@@ -236,9 +236,6 @@ WHERE namespace.nspname = 'schema_registry'
 func digest(_ byte) string {
 	return "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
-
-// commitment supplies the required commitment length without asserting authoritative projection integrity.
-func commitment() []byte { return make([]byte, 32) }
 
 // insertArtifact supplies a structurally valid schema row for uniqueness, reference, and privilege checks.
 func insertArtifact(t *testing.T, ctx context.Context, conn *sql.DB, revision, artifactType, uri string) {

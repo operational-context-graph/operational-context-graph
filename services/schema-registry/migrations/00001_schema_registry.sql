@@ -11,7 +11,6 @@ CREATE TABLE schema_registry.releases (
     source_commit text COLLATE "C" NOT NULL,
     changes jsonb,
     activated_sequence bigint UNIQUE,
-    projection_commitment bytea NOT NULL,
     CHECK (schema_version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'),
     CHECK (manifest_digest ~ '^sha-256:[0-9a-f]{64}$'),
     CHECK (octet_length(manifest_bytes) > 0 AND octet_length(manifest_bytes) <= 16777216),
@@ -20,7 +19,6 @@ CREATE TABLE schema_registry.releases (
     CHECK (source_repository ~ '^[A-Za-z][A-Za-z0-9+.-]*:'),
     CHECK (source_commit ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'),
     CHECK (activated_sequence IS NULL OR activated_sequence > 0),
-    CHECK (octet_length(projection_commitment) = 32),
     FOREIGN KEY (previous_schema_version) REFERENCES schema_registry.releases(schema_version)
         DEFERRABLE INITIALLY DEFERRED
 );

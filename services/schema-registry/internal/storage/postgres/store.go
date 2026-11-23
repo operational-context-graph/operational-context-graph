@@ -201,7 +201,7 @@ func (s *Snapshot) Release(ctx context.Context, schemaVersion string) (model.Rel
 	const query = `
 SELECT schema_version, manifest_digest, manifest_bytes, previous_schema_version,
 	     previous_manifest_digest, source_repository, source_commit, changes,
-	     projection_commitment, activated_sequence
+	     activated_sequence
 FROM schema_registry.releases
 WHERE schema_version = $1 AND activated_sequence IS NOT NULL`
 	release, err := scanRelease(s.tx.QueryRow(ctx, query, schemaVersion))
@@ -232,7 +232,7 @@ func (s *Snapshot) ReleasesAt(ctx context.Context, beforeSequence *int64, maxSeq
 	const query = `
 SELECT schema_version, manifest_digest, manifest_bytes, previous_schema_version,
        previous_manifest_digest, source_repository, source_commit, changes,
-       activated_sequence, projection_commitment
+       activated_sequence
 FROM schema_registry.releases
 WHERE activated_sequence IS NOT NULL
    AND ($1::bigint IS NULL OR activated_sequence < $1)
@@ -1227,7 +1227,7 @@ func scanRelease(row pgx.Row) (model.Release, error) {
 	err := row.Scan(
 		&release.SchemaVersion, &release.ManifestDigest, &release.ManifestBytes, &release.PreviousSchemaVersion,
 		&release.PreviousManifestDigest, &release.SourceRepository, &release.SourceCommit, &release.Changes,
-		&release.ProjectionCommitment, &release.ActivationSequence,
+		&release.ActivationSequence,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Release{}, ErrNotFound
@@ -1244,14 +1244,14 @@ type releaseRow struct {
 	sequence int64
 }
 
-// scanReleaseRow decodes the collection query's release and projection commitment columns.
+// scanReleaseRow decodes the collection query's release and activation sequence columns.
 func scanReleaseRow(row pgx.Row) (releaseRow, error) {
 	var result releaseRow
 	err := row.Scan(
 		&result.release.SchemaVersion, &result.release.ManifestDigest, &result.release.ManifestBytes,
 		&result.release.PreviousSchemaVersion, &result.release.PreviousManifestDigest,
 		&result.release.SourceRepository, &result.release.SourceCommit, &result.release.Changes,
-		&result.sequence, &result.release.ProjectionCommitment,
+		&result.sequence,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return releaseRow{}, ErrNotFound
