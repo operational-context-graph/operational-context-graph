@@ -1,5 +1,5 @@
 {
-  "$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": "mapping-b",
+  "$schema": "https://example.test/mapping-0.1.0", "formatVersion": "0.1.0", "id": "mapping-b",
   "sourceSchema": {"id": "source", "version": "1.0.0"},
   "engine": {"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"},
   "programs": {

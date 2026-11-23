@@ -1,6 +1,6 @@
 {
-  "$schema": "https://schemas.example.org/ocg/schema-release-manifest-1.0.json",
-  "formatVersion": "1.0.0",
+  "$schema": "https://schemas.example.org/ocg/schema-release-manifest-0.1.0.json",
+  "formatVersion": "0.1.0",
   "schemaVersion": "2.4.0",
   "previousRelease": {
     "schemaVersion": "2.3.1",

@@ -10,10 +10,10 @@ import (
 type Version string
 
 const (
-	// MediaType identifies the version 1 Schema Release Manifest representation.
+	// MediaType identifies the Schema Release Manifest representation.
 	MediaType = "application/vnd.apeiro.ocg.schema-release-manifest.v1+json"
 	// FormatVersion is the supported manifest format version, independent of the selected schema release.
-	FormatVersion Version = "1.0.0"
+	FormatVersion Version = "0.1.0"
 )
 
 var (
@@ -145,7 +145,7 @@ type URIEntry struct {
 
 // StorageEntry assigns one selected canonical schema identity to logical stores.
 type StorageEntry struct {
-	// Kind is schema for every version 1 storage assignment.
+	// Kind is schema for every format 0.1.0 storage assignment.
 	Kind artifactmodel.Kind
 	// ArtifactType identifies the selected canonical schema's logical type.
 	ArtifactType string

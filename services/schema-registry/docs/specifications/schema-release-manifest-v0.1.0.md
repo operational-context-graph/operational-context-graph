@@ -1,4 +1,4 @@
-# Schema Release Manifest Specification v1.0.0
+# Schema Release Manifest Specification v0.1.0
 
 This document contains the specification for the _Schema Release Manifest_ describing a schema release compatible
 with the _Schema Registry_ of the _Operational Context Graph_.
@@ -57,9 +57,9 @@ schema artifact that belongs to one data schema version.
 The _Schema Release Manifest_ is the main consistency and synchronization resource for a schema release. It describes a
 complete release without embedding every document.
 
-The manifest is a JSON document. Version 1 uses the media type `application/vnd.apeiro.ocg.schema-release-manifest.v1+json`.
+The manifest is a JSON document. It uses the media type `application/vnd.apeiro.ocg.schema-release-manifest.v1+json`.
 
-The following sections define version `1.0.0` of the manifest format. A publisher MUST reject a candidate manifest that
+The following sections define version `0.1.0` of the manifest format. A publisher MUST reject a candidate manifest that
 does not satisfy this specification. The _Schema Registry Release Importer_ validates the release manifest before it
 stores any release data.
 
@@ -75,7 +75,7 @@ The format uses these principles:
   content.
 - Catalogs use arrays of objects instead of JSON object member names. This supports explicit validation and stable
   ordering.
-- Version 1 is one unsharded document. A future format can add a root manifest and immutable shards if measurements show
+- Version `0.1.0` is one unsharded document. A future format can add a root manifest and immutable shards if measurements show
   that sharding is necessary.
 
 The release manifest MUST NOT contain its own digest because that would create a self-reference.
@@ -87,7 +87,7 @@ The top-level object contains all data needed to identify, retrieve, and compare
 | Field | JSON type | Required | Description |
 | --- | --- | --- | --- |
 | `$schema` | string | Yes | Absolute URI of the JSON Schema for this manifest format |
-| `formatVersion` | string | Yes | Manifest format version; `1.0.0` for this specification |
+| `formatVersion` | string | Yes | Manifest format version; `0.1.0` for this specification |
 | `schemaVersion` | string | Yes | Semantic version of the complete OCG data schema release |
 | `previousRelease` | object or `null` | Yes | Immediate predecessor, or `null` for the first release |
 | `source` | object | Yes | Git snapshot from which the release was published |
@@ -142,7 +142,7 @@ for full provenance in the Schema Authoring Environment.
 
 ### Artifact entries
 
-The non-empty `artifacts` array selects one revision for every logical artifact in the release. Version 1 defines the
+The non-empty `artifacts` array selects one revision for every logical artifact in the release. Version `0.1.0` defines the
 registered kinds `schema`, `context`, and `source-mapping`.
 
 Each artifact entry contains:
@@ -301,7 +301,7 @@ Each storage entry contains:
 
 | Field | JSON type | Required | Description |
 | --- | --- | --- | --- |
-| `kind` | string | Yes | Artifact kind; version 1 requires `schema` |
+| `kind` | string | Yes | Artifact kind; version `0.1.0` requires `schema` |
 | `artifactType` | string | Yes | Logical schema type |
 | `stores` | array | Yes | One or more registered OCG store identifiers |
 
@@ -312,7 +312,7 @@ placement is a release-level association. A publisher or importer MUST reject a 
 to a source-record schema. Such an assignment identifies a malformed release manifest. Changing only a valid store
 association still creates a new schema release.
 
-Release manifest format revision `1.0.0` supports these store identifiers:
+Release manifest format revision `0.1.0` supports these store identifiers:
 
 | Store | Identifier |
 | --- | --- |
@@ -321,7 +321,7 @@ Release manifest format revision `1.0.0` supports these store identifiers:
 | Insights Repository | `insights-repository` |
 | Recorded Actions Repository | `recorded-actions-repository` |
 
-A revision `1.0.0` release manifest MUST use only these identifiers. The manifest MUST NOT contain physical database
+A revision `0.1.0` release manifest MUST use only these identifiers. The manifest MUST NOT contain physical database
 names, connection data, or deployment-specific credentials.
 
 ### Deterministic change summary
@@ -482,8 +482,8 @@ publisher serializes the same data with JCS before it computes the manifest dige
 
 ```json
 {
-  "$schema": "https://schemas.example.org/ocg/schema-release-manifest-1.0.json",
-  "formatVersion": "1.0.0",
+  "$schema": "https://schemas.example.org/ocg/schema-release-manifest-0.1.0.json",
+  "formatVersion": "0.1.0",
   "schemaVersion": "2.4.0",
   "previousRelease": {
     "schemaVersion": "2.3.1",

@@ -150,7 +150,7 @@ func (m Manifest) Validate(context Context) error {
 
 // validateStructural checks manifest metadata without resolving artifact bytes or history.
 // For declarations and artifact selections, it checks that:
-//   - The format is 1.0.0, schema versions use published syntax, and document URIs are absolute.
+//   - The format is 0.1.0, schema versions use published syntax, and document URIs are absolute.
 //   - The source commit is a full lowercase Git object identifier.
 //   - Artifacts are non-empty and pass [validateArtifact], and payload and resource bundle paths are release-unique.
 //
@@ -417,7 +417,7 @@ func (m Manifest) validateChanges(context Context) error {
 // invalid attaches the manifest validation sentinel to a field-specific diagnostic.
 func invalid(message string) error { return fmt.Errorf("%w: %s", errInvalid, message) }
 
-// checkCount rejects collections larger than the version 1 manifest entry limit.
+// checkCount rejects collections larger than the format 0.1.0 manifest entry limit.
 func checkCount(count int) error {
 	if count > schemaartifacts.MaxArrayEntries {
 		return invalid("collection exceeds entry limit")

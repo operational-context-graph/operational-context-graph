@@ -13,11 +13,11 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/corpus"
 )
 
-const descriptorSchemaURL = "https://example.test/source-mapping-descriptor-v1.0.0.json"
+const descriptorSchemaURL = "https://example.test/source-mapping-descriptor-v0.1.0.json"
 
 func loadDescriptorJSONSchema(t *testing.T) *jsonschema.Compiler {
 	t.Helper()
-	schemaBytes, err := os.ReadFile("../../../docs/specifications/source-mapping-descriptor-v1.0.0.json")
+	schemaBytes, err := os.ReadFile("../../../docs/specifications/source-mapping-descriptor-v0.1.0.json")
 	require.NoError(t, err)
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func descriptorObjects(document map[string]any) map[string]map[string]any {
 	}
 }
 
-// TestDescriptorJSONSchemaValidFixtures checks existing descriptor fixtures and the specification example against the version 1.0.0 JSON Schema.
+// TestDescriptorJSONSchemaValidFixtures checks existing descriptor fixtures and the specification example against the version 0.1.0 JSON Schema.
 // Every parsed document must satisfy the descriptor's structural rules with URI format assertions enabled.
 // It does not validate exact bytes, resource bindings, or release history.
 func TestDescriptorJSONSchemaValidFixtures(t *testing.T) {
@@ -73,7 +73,7 @@ func TestDescriptorJSONSchemaValidFixtures(t *testing.T) {
 		})
 	}
 	t.Run("specification example", func(t *testing.T) {
-		specification, err := os.ReadFile("../../../docs/specifications/source-mapping-descriptor-v1.0.0.md")
+		specification, err := os.ReadFile("../../../docs/specifications/source-mapping-descriptor-v0.1.0.md")
 		require.NoError(t, err)
 		_, example, ok := strings.Cut(string(specification), "```json\n")
 		require.True(t, ok)

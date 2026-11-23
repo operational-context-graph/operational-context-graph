@@ -634,7 +634,7 @@ func TestValidateIsRaceSafe(t *testing.T) {
 // TestParseRejectsCollectionLimit rejects a canonical manifest whose artifact array exceeds the entry limit.
 func TestParseRejectsCollectionLimit(t *testing.T) {
 	items := strings.TrimRight(strings.Repeat(`null,`, schemaartifacts.MaxArrayEntries+1), ",")
-	data := []byte(`{"$schema":"https://example.test/manifest-1.0.0","artifacts":[` + items + `],"formatVersion":"1.0.0","previousRelease":null,"schemaContextBindings":[],"schemaVersion":"1.0.0","source":{"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"https://git.example.test/repo"},"storageCatalog":[],"uriCatalog":[]}`)
+	data := []byte(`{"$schema":"https://example.test/manifest-0.1.0","artifacts":[` + items + `],"formatVersion":"0.1.0","previousRelease":null,"schemaContextBindings":[],"schemaVersion":"1.0.0","source":{"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"https://git.example.test/repo"},"storageCatalog":[],"uriCatalog":[]}`)
 	canonical, err := jcs.Transform(data)
 	require.NoError(t, err)
 	_, err = Parse(canonical)
@@ -647,7 +647,7 @@ func TestParseRequiresExactJCSBytes(t *testing.T) {
 	canonical, err := jcs.Transform(data)
 	require.NoError(t, err)
 	require.Equal(t, data, canonical)
-	_, err = Parse([]byte(` {"$schema":"https://example.test/manifest-1.0.0"}`))
+	_, err = Parse([]byte(` {"$schema":"https://example.test/manifest-0.1.0"}`))
 	assert.Error(t, err)
 }
 

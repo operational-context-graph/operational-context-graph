@@ -43,7 +43,7 @@ func ParseFromFile(path string) (Manifest, error) {
 //
 // For format declarations and provenance, it checks that:
 //   - Format-defined objects contain only known fields, with required fields and non-empty strings present.
-//   - The format version is 1.0.0.
+//   - The format version is 0.1.0.
 //   - Published schema versions use MAJOR.MINOR.PATCH without leading zeroes or suffixes.
 //   - Repository and document identifiers are absolute, within the URI byte limit, and without non-empty queries or fragments.
 //   - Git commits contain 40 or 64 lowercase hexadecimal digits.
