@@ -230,8 +230,8 @@ require-targets:
 # Usage:
 #   CI (dev):     VERSION=0.0.0-dev.DATE-SHA SIGN_KEY=/run/secrets/ocg.key make ocm-build
 #   CI (release): scripts/ocm-reversion.sh <dev-version> <release-version> <registry>
-#   Local (dev):  SIGN_KEY=.ocm/ocg.key make ocm-dev
-#   Local (dev):  DEV_VERSION=0.1.0 SIGN_KEY=.ocm/ocg.key make ocm-dev
+#   Local (dev):  make ocm-dev                            # unsigned; no key needed
+#   Local (dev):  SIGN_KEY=.ocm/ocg.key make ocm-dev     # signed with local key
 
 .NOTPARALLEL:
 
@@ -304,4 +304,4 @@ ocm-dev-images:
 # ---------------------------------------------------------------------------
 
 ocm-dev: ocm-dev-images
-	SIGN_KEY="$(SIGN_KEY)" scripts/ocm-bundle.sh "$(DEV_VERSION)"
+	SKIP_SIGN="$(if $(filter-out /tmp/ocg-signing-key.pem,$(SIGN_KEY)),0,1)" SIGN_KEY="$(SIGN_KEY)" scripts/ocm-bundle.sh "$(DEV_VERSION)"
