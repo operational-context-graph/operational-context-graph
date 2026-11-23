@@ -65,12 +65,16 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENTS: ${{ steps.detect.outputs.components }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          body="## Possible new component detected
+          marker="<!-- detect-new-component -->"
+          body="${marker}
+          ## Possible new component detected
 
           The following component manifest(s) appear to be newly added in this PR:
 
           ${COMPONENTS}
+
           If this is a new releasable component, make sure the following are addressed before merging:
 
           - [ ] Add a \`CHANGELOG.md\` with the \`<!-- git-cliff: end of header -->\` marker to the component directory
@@ -83,4 +87,9 @@ jobs:
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."
 
-          gh pr comment "$PR_NUMBER" --body "$body"
+          existing_id=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -1)
+
+          if [ -z "$existing_id" ]; then
+            gh pr comment "$PR_NUMBER" --body "$body"
+          fi
