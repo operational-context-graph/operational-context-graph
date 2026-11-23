@@ -1,17 +1,15 @@
-# Fires after CI passes on main. Pushes a git tag and aliases the dev image to the
-# release version tag for component releases. No container image build.
-# No GitHub Release created for components.
+# Fires on a component release tag push (services/**/vX.Y.Z). The tag is pushed by
+# merge-gate.yml after a component release PR squash-merges to main. This workflow
+# aliases the dev container image to the release version tag. No image build, no
+# GitHub Release for components.
 #
-# Both release-component.yml and release-system.yml fire on every CI completion on main.
-# This workflow exits cleanly when the merge was not a component release branch.
 ---
 name: Release Component
 
 on:
-  workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: ["Continuous Integration"]
-    types: [completed]
-    branches: ["main"]
+  push:
+    tags:
+      - "services/**/v*.*.*"
 
 permissions:
   contents: read
@@ -20,12 +18,9 @@ jobs:
   detect:
     name: Detect Release
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       release_type: ${{ steps.parse.outputs.release_type }}
+      component: ${{ steps.parse.outputs.component }}
       slug: ${{ steps.parse.outputs.slug }}
       version: ${{ steps.parse.outputs.version }}
       tag: ${{ steps.parse.outputs.tag }}
@@ -36,49 +31,28 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Parse merge source branch
+      - name: Parse release tag
         id: parse
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          SOURCE_BRANCH=$(gh api \
-            "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
-            --jq '.[0].head.ref // ""')
-          echo "SOURCE_BRANCH=${SOURCE_BRANCH}"
-          echo "source_branch=${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
-          scripts/parse-release-branch.sh "${SOURCE_BRANCH}"
+          TAG_REF: ${{ github.ref_name }}
+        run: scripts/parse-release-tag.sh "${TAG_REF}"
       - name: Log detected release
         env:
           RELEASE_TYPE: ${{ steps.parse.outputs.release_type }}
           SLUG: ${{ steps.parse.outputs.slug }}
           VERSION: ${{ steps.parse.outputs.version }}
           TAG: ${{ steps.parse.outputs.tag }}
-          SOURCE_BRANCH: ${{ steps.parse.outputs.source_branch }}
         run: |
-          if [ -z "${RELEASE_TYPE}" ]; then
-            echo "Not a release merge. All jobs will be skipped (branch: ${SOURCE_BRANCH})"
+          if [ "${RELEASE_TYPE}" != "component" ]; then
+            echo "Not a component release tag (type='${RELEASE_TYPE}'). Jobs will be skipped."
           else
             echo "release_type=${RELEASE_TYPE} slug=${SLUG} version=${VERSION} tag=${TAG}"
           fi
 
-  tag-component:
-    name: Tag Component
-    needs: detect
-    if: needs.detect.outputs.release_type == 'component'
-    uses: $/.github/workflows/shared/push-release-tag.yml
-    with:
-      tag: ${{ needs.detect.outputs.tag }}
-      message: "chore(release): ${{ needs.detect.outputs.slug }} v${{ needs.detect.outputs.version }}"
-      client_id: ${{ vars.APP_CLIENT_ID }}
-    secrets:
-      private_key: ${{ secrets.APP_PRIVATE_KEY }}
-
   retag-component-image:
     name: Retag Component Image to Release Version
     runs-on: ubuntu-latest
-    needs: [detect, tag-component]
+    needs: detect
     if: |
       needs.detect.outputs.release_type == 'component' &&
       needs.detect.outputs.has_dockerfile == 'true'
@@ -90,13 +64,7 @@ jobs:
         env:
           CRANE_VERSION: "v0.22.1"
           CRANE_SHA256: "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0"
-        run: |
-          archive="go-containerregistry_Linux_x86_64.tar.gz"
-          url="https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${archive}"
-          curl -fsSL -o "${archive}" "${url}"
-          echo "${CRANE_SHA256}  ${archive}" | sha256sum -c -
-          mkdir -p ~/.local/bin
-          tar -xzf "${archive}" -C ~/.local/bin crane
+        run: scripts/install-crane.sh "${CRANE_VERSION}" "${CRANE_SHA256}"
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -108,7 +76,7 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           SLUG: ${{ needs.detect.outputs.slug }}
           VERSION: ${{ needs.detect.outputs.version }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
