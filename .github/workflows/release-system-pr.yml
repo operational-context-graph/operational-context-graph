@@ -67,10 +67,11 @@ jobs:
     permissions:
       contents: read  # GITHUB_TOKEN is only used for gh api user lookup; App token carries write
       pull-requests: read
+      packages: read  # required: crane digest reads component image manifests from GHCR to pin digests
     steps:
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -94,6 +95,18 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: git checkout -b "release/${VERSION}"
 
+      - name: Install crane
+        env:
+          CRANE_VERSION: "v0.22.1"
+          CRANE_SHA256: "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0"
+        run: scripts/install-crane.sh "${CRANE_VERSION}" "${CRANE_SHA256}"
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pin subchart image tags
         env:
           V_DATA_INGESTION: ${{ inputs.version_data_ingestion }}
@@ -101,12 +114,13 @@ jobs:
           V_INVENTORY_STORE: ${{ inputs.version_inventory_store }}
           V_TELEMETRY_STORE: ${{ inputs.version_telemetry_store }}
           VERSION: ${{ inputs.version }}
+          CRANE_BIN: /home/runner/.local/bin/crane
         run: |
           scripts/pin-subchart-versions.sh "data-ingestion"      "services/data-ingestion"                  "${V_DATA_INGESTION}"
           scripts/pin-subchart-versions.sh "inventory-connector" "services/connectors/inventory-connector"  "${V_INVENTORY_CONNECTOR}"
           scripts/pin-subchart-versions.sh "inventory-store"     "services/inventory-store"                 "${V_INVENTORY_STORE}"
           scripts/pin-subchart-versions.sh "telemetry-store"     "services/telemetry-store"                 "${V_TELEMETRY_STORE}"
-          git diff --cached --quiet || git commit -m "chore(release): pin component image tags for v${VERSION}"
+          git diff --cached --quiet || git commit -m "chore(release): pin component image tags and digests for v${VERSION}"
 
       - name: Update OCM component descriptor labels
         env:
@@ -136,9 +150,7 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%d)
           SECTION="## [${VERSION}] - ${DATE}"
-          scripts/prepend-changelog.sh \
-            "${VERSION}" \
-            "${SECTION}"
+          scripts/prepend-changelog.sh "${SECTION}"
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog for v${VERSION}"
       - name: Open release PR

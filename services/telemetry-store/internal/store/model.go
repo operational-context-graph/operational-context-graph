@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Log is one row from ocg.logs.
+// Log is one row from the logs table.
 type Log struct {
 	Timestamp          time.Time  `json:"timestamp"`
 	IRI                string     `json:"iri"`
@@ -18,7 +18,7 @@ type Log struct {
 	Attributes         *string    `json:"attributes,omitempty"`
 }
 
-// Metric is one row from ocg.metrics.
+// Metric is one row from the metrics table.
 type Metric struct {
 	Timestamp          time.Time  `json:"timestamp"`
 	IRI                string     `json:"iri"`
@@ -52,7 +52,7 @@ type MetricQuery struct {
 	AfterIRI   *string
 }
 
-// Span is one row from ocg.traces.
+// Span is one row from the traces table.
 type Span struct {
 	Timestamp          time.Time
 	IRI                string

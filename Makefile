@@ -16,6 +16,7 @@ TARGET_DIR = services/$(TARGET)
         vet vet-all test test-all test-coverage test-coverage-all lint lint-all tidy tidy-all tidy-check-all mocks \
         go-modules-json workspace-sync-check \
         proto-lint proto-format proto-generate \
+        lint-sh \
         docker-build docker-build-all \
         require-target require-targets
 
@@ -172,6 +173,18 @@ proto-format:
 # Regenerate Go stubs under gen/go from proto sources.
 proto-generate:
 	buf generate
+
+# =============================================================================
+# Shell scripts
+# =============================================================================
+
+# Lint every shell script under scripts/ with shellcheck.
+lint-sh:
+	@command -v shellcheck >/dev/null || { \
+		echo "ERROR: shellcheck not found. Install it (apt-get install shellcheck) or see https://github.com/koalaman/shellcheck#installing"; \
+		exit 1; \
+	}
+	shellcheck scripts/*.sh
 
 # =============================================================================
 # Guards
