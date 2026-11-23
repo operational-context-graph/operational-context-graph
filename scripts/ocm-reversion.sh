@@ -70,7 +70,7 @@ DEV_CTF_DIR="bin/dev-ctf"
 DEV_CTF="ctf::./bin/dev-ctf//"
 
 echo "fetch: transferring ${SOURCE_REF} (${DEV_VERSION}) → ${DEV_CTF_DIR}/ ..."
-rm -rf "${DEV_CTF_DIR}/"
+rm -rf "${DEV_CTF_DIR:?}/"
 ocm transfer component-version \
   "${SOURCE_REF}//${OCM_COMPONENT}:${DEV_VERSION}" \
   "ctf::./bin/dev-ctf/"

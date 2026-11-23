@@ -19,7 +19,6 @@ set -euo pipefail
 REGISTRY_REF="${1:?Usage: $0 <registry-ref> [<namespace>]}"
 NAMESPACE="${2:-ocg}"
 
-OCM_COMPONENT="github.com/operational-context-graph/operational-context-graph"
 IMAGE_VALUES="bin/image-values.yaml"
 IMAGE_VALUES_SUBST="/tmp/ocg-image-values-$$.yaml"
 
@@ -36,15 +35,18 @@ if [ -z "${IMAGE_REPOSITORY:-}" ]; then
   exit 1
 fi
 
+# shellcheck disable=SC2016
 if ! grep -q '\${IMAGE_REPOSITORY}' "${IMAGE_VALUES}"; then
   echo "ERROR: ${IMAGE_VALUES} does not contain the \${IMAGE_REPOSITORY} placeholder — substitution was not run or the file is corrupt" >&2
   exit 1
 fi
 
+# shellcheck disable=SC2016
 envsubst '${IMAGE_REPOSITORY}' < "${IMAGE_VALUES}" > "${IMAGE_VALUES_SUBST}"
 trap 'rm -f "${IMAGE_VALUES_SUBST}"' EXIT
 
 # Verify placeholder was actually substituted
+# shellcheck disable=SC2016
 if grep -q '\${IMAGE_REPOSITORY}' "${IMAGE_VALUES_SUBST}"; then
   echo "ERROR: \${IMAGE_REPOSITORY} placeholder was not substituted in ${IMAGE_VALUES_SUBST}" >&2
   exit 1

@@ -93,6 +93,7 @@ yq . bin/bundle-manifest.yaml >/dev/null
 echo "build: bundle-manifest.yaml OK"
 
 {
+  # shellcheck disable=SC2016
   printf 'imageDefaults:\n  repository: ${IMAGE_REPOSITORY}\nimages:\n'
   for svc in $OCM_SERVICES; do
     digest=$(tar -xOf "bin/images/${svc}.oci.tar" index.json 2>/dev/null \
@@ -102,6 +103,7 @@ echo "build: bundle-manifest.yaml OK"
 } > bin/image-values.yaml
 
 # Literal placeholder must survive — grep for the unexpanded string
+# shellcheck disable=SC2016
 grep -F '${IMAGE_REPOSITORY}' bin/image-values.yaml >/dev/null \
   || { echo "error: IMAGE_REPOSITORY placeholder missing from image-values.yaml" >&2; exit 1; }
 
