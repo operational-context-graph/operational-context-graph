@@ -7,6 +7,7 @@ vendor/
 coverage/
 go.work
 go.work.sum
+services/telemetry-store/migrate
 
 # Log file
 *.log

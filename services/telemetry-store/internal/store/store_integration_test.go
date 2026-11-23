@@ -17,12 +17,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testDB *sql.DB
+var (
+	testDB     *sql.DB
+	testDBName string
+)
 
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DB_URL")
 	if dsn == "" {
 		os.Exit(0)
+	}
+	testDBName = os.Getenv("DORIS_DATABASE")
+	if testDBName == "" {
+		testDBName = "ocg"
 	}
 	dorissql.RegisterTimeArgs()
 	db, err := sql.Open("mysql", dsn)
@@ -42,7 +49,7 @@ func newStore(t *testing.T) *store.DB {
 	t.Helper()
 	sqlDB, err := sql.Open("mysql", os.Getenv("TEST_DB_URL"))
 	require.NoError(t, err)
-	db, err := store.NewFromDB(context.Background(), sqlDB)
+	db, err := store.NewFromDB(context.Background(), sqlDB, testDBName)
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 	return db
@@ -50,21 +57,24 @@ func newStore(t *testing.T) *store.DB {
 
 func insertLog(t *testing.T, ts time.Time, iri, hostName, severity, body string) {
 	t.Helper()
-	const q = `INSERT INTO ocg.logs (timestamp, iri, host_name, severity, body) VALUES (?, ?, ?, ?, ?)`
+	//nolint:gosec // testDBName is read from env at test startup, not user input
+	q := fmt.Sprintf(`INSERT INTO %s.logs (timestamp, iri, host_name, severity, body) VALUES (?, ?, ?, ?, ?)`, testDBName)
 	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, severity, body)
 	require.NoError(t, err)
 }
 
 func insertMetric(t *testing.T, ts time.Time, iri, hostName, metricName string, value float64) {
 	t.Helper()
-	const q = `INSERT INTO ocg.metrics (timestamp, iri, host_name, metric_name, value) VALUES (?, ?, ?, ?, ?)`
+	//nolint:gosec // testDBName is read from env at test startup, not user input
+	q := fmt.Sprintf(`INSERT INTO %s.metrics (timestamp, iri, host_name, metric_name, value) VALUES (?, ?, ?, ?, ?)`, testDBName)
 	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, hostName, metricName, value)
 	require.NoError(t, err)
 }
 
 func insertSpan(t *testing.T, ts time.Time, iri, traceID, spanID, spanName string) {
 	t.Helper()
-	const q = `INSERT INTO ocg.traces (timestamp, iri, trace_id, span_id, span_name) VALUES (?, ?, ?, ?, ?)`
+	//nolint:gosec // testDBName is read from env at test startup, not user input
+	q := fmt.Sprintf(`INSERT INTO %s.traces (timestamp, iri, trace_id, span_id, span_name) VALUES (?, ?, ?, ?, ?)`, testDBName)
 	_, err := testDB.Exec(q, ts.UTC().Format("2006-01-02 15:04:05.000000"), iri, traceID, spanID, spanName)
 	require.NoError(t, err)
 }
