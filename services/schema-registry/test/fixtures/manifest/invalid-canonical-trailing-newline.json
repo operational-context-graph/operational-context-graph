@@ -1,7 +1,7 @@
 {
-  "$schema": "https://example.test/manifest-1.0.0",
+  "$schema": "https://example.test/manifest-0.1.0",
   "artifacts": [],
-  "formatVersion": "1.0.0",
+  "formatVersion": "0.1.0",
   "previousRelease": null,
   "schemaContextBindings": [],
   "schemaVersion": "1.0.0",

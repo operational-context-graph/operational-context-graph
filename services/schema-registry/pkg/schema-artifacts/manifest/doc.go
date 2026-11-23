@@ -1,4 +1,4 @@
-// Package manifest parses and validates immutable Schema Release Manifests in format 1.0.0. A manifest selects
+// Package manifest parses and validates immutable Schema Release Manifests in format 0.1.0. A manifest selects
 // artifact revisions, binds their byte descriptors, and declares release-scoped catalogs and provenance.
 //
 // This implementation enforces the acceptance profile for schema release of the Schema Registry implementation in

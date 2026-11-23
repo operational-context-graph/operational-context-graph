@@ -14,15 +14,15 @@ import (
 type Version string
 
 // FormatVersion is the supported descriptor format version.
-const FormatVersion Version = "1.0.0"
+const FormatVersion Version = "0.1.0"
 
-// DescriptorMediaType identifies the version 1 opaque-program mapping descriptor representation.
+// DescriptorMediaType identifies the opaque-program mapping descriptor representation.
 const DescriptorMediaType = "application/vnd.apeiro.ocg.source-mapping.v1+json"
 
 // errInvalid classifies descriptor, program-binding, and release-context validation failures.
 var errInvalid = errors.New("invalid source mapping descriptor")
 
-// Descriptor is the parsed source mapping descriptor format 1.0.0.
+// Descriptor is the parsed source mapping descriptor format 0.1.0.
 type Descriptor struct {
 	// Schema identifies the descriptor's format schema through an absolute URI.
 	Schema string

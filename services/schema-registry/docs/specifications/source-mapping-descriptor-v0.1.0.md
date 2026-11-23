@@ -1,4 +1,4 @@
-# Source Mapping Descriptor Specification v1.0.0
+# Source Mapping Descriptor Specification v0.1.0
 
 This document specifies source mapping descriptors for the _Schema Registry_ of the _Operational Context Graph (OCG)_.
 
@@ -19,7 +19,7 @@ The source mapping format can accommodate different execution engines and langua
 A source mapping revision contains:
 
 - The source mapping descriptor, which contains metadata and schema references as the primary artifact payload.
-- An optional condition program, stored as an additional [resource](schema-release-manifest-v1.0.0.md#byte-descriptors)
+- An optional condition program, stored as an additional [resource](schema-release-manifest-v0.1.0.md#byte-descriptors)
   with role `program` in the same artifact revision.
 - One or more transformation programs, stored as additional program resources in the same artifact revision.
 
@@ -29,7 +29,7 @@ A revision MAY contain ancillary resources with other roles. Those resources do 
 The _source mapping descriptor_ is a JSON document defining the metadata of the source mapping. The media type for a
 source mapping descriptor is `application/vnd.apeiro.ocg.source-mapping.v1+json`.
 
-The following sections define version `1.0.0` of the descriptor format. A publisher MUST reject a candidate descriptor
+The following sections define version `0.1.0` of the descriptor format. A publisher MUST reject a candidate descriptor
 that does not satisfy this specification. The _Schema Registry Release Importer_ validates the descriptor and its
 release dependencies before storing release data.
 
@@ -41,7 +41,7 @@ program references.
 | Field | JSON type | Required | Description |
 | --- | --- | --- | --- |
 | `$schema` | string | Yes | Absolute immutable URI for the descriptor format schema. |
-| `formatVersion` | string | Yes | `1.0.0`. |
+| `formatVersion` | string | Yes | `0.1.0`. |
 | `id` | string | Yes | Source mapping logical artifact type; equals the release manifest entry's `artifactType`. |
 | `sourceSchema` | object | Yes | Source schema logical identity and selector. |
 | `engine` | object | Yes | Language, version, and execution profile shared by every program. |
@@ -121,7 +121,7 @@ or unrelated source versions and source revisions absent from the containing rel
 #### Target schemas
 
 Every transformation program's target schema MUST be a canonical schema selected by both
-[`targetSchemaVersion`](schema-release-manifest-v1.0.0.md#artifact-entries) and the containing release. Both releases
+[`targetSchemaVersion`](schema-release-manifest-v0.1.0.md#artifact-entries) and the containing release. Both releases
 MUST select the same target revision. `targetSchemaVersion` is the field of the source mapping's artifact in the schema
 release manifest, not a descriptor field. It MUST identify the containing release or one of its ancestors and apply to
 every transformation program.
@@ -174,7 +174,7 @@ The descriptor and all referenced programs form one immutable source mapping rev
 separate logical artifacts. Changing a condition, transformation, transformation order, target reference, or program
 bytes creates a new source mapping revision.
 
-The [Schema Release Manifest specification](schema-release-manifest-v1.0.0.md#artifact-entries) defines all
+The [Schema Release Manifest specification](schema-release-manifest-v0.1.0.md#artifact-entries) defines all
 revision-bound metadata. These values MUST remain identical wherever a release reuses the revision.
 They include descriptor bytes, engine metadata, every resource, dependencies, and `targetSchemaVersion`.
 
@@ -193,7 +193,7 @@ references within one payload do not create dependency entries.
 Validators MUST verify those declarations against the release closure without inspecting or executing program bytes.
 A publisher MUST reject hidden network dependencies that are neither selected artifacts nor additional resources.
 
-The release manifest specification's [artifact dependency rules](schema-release-manifest-v1.0.0.md#artifact-dependencies)
+The release manifest specification's [artifact dependency rules](schema-release-manifest-v0.1.0.md#artifact-dependencies)
 apply to source mappings.
 
 ### Candidate source mappings
@@ -256,8 +256,8 @@ without the corresponding resource bytes.
 
 ```json
 {
-  "$schema": "https://schemas.example.org/ocg/source-mapping-artifact-1.0.json",
-  "formatVersion": "1.0.0",
+  "$schema": "https://schemas.example.org/ocg/source-mapping-artifact-0.1.0.json",
+  "formatVersion": "0.1.0",
   "id": "example-cmdb-device",
   "sourceSchema": {"id": "example-cmdb-device", "revision": "01K4Q80PQ2J6R0A7KX9N3FHTVE"},
   "engine": {

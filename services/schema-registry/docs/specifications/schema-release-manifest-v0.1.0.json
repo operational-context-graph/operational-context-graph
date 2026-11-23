@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Schema Release Manifest v1.0.0",
-  "description": "Structural validation for an Operational Context Graph (OCG) schema release manifest, format version 1.0.0.",
+  "title": "Schema Release Manifest v0.1.0",
+  "description": "Structural validation for an Operational Context Graph (OCG) schema release manifest, format version 0.1.0.",
   "$comment": "Validators MUST enable format assertions for 'uri' and 'iri'. No canonical publication URI is assigned by this schema.",
   "type": "object",
   "additionalProperties": false,
@@ -18,7 +18,7 @@
   ],
   "properties": {
     "$schema": { "$ref": "#/$defs/absoluteUri" },
-    "formatVersion": { "const": "1.0.0" },
+    "formatVersion": { "const": "0.1.0" },
     "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
     "previousRelease": {
       "oneOf": [

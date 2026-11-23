@@ -11,11 +11,11 @@ import (
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/corpus"
 )
 
-const manifestSchemaURL = "https://example.test/schema-release-manifest-v1.0.0.json"
+const manifestSchemaURL = "https://example.test/schema-release-manifest-v0.1.0.json"
 
 func loadManifestJSONSchema(t *testing.T) *jsonschema.Compiler {
 	t.Helper()
-	schemaBytes, err := os.ReadFile("../../../docs/specifications/schema-release-manifest-v1.0.0.json")
+	schemaBytes, err := os.ReadFile("../../../docs/specifications/schema-release-manifest-v0.1.0.json")
 	require.NoError(t, err)
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func compileManifestJSONSchema(t *testing.T, compiler *jsonschema.Compiler, defi
 	return schema
 }
 
-// TestManifestJSONSchemaValidFixtures checks existing manifest fixtures against the version 1.0.0 JSON Schema.
+// TestManifestJSONSchemaValidFixtures checks existing manifest fixtures against the version 0.1.0 JSON Schema.
 // It validates parsed structure, not canonical bytes, artifact content, or release history.
 func TestManifestJSONSchemaValidFixtures(t *testing.T) {
 	compiler := loadManifestJSONSchema(t)

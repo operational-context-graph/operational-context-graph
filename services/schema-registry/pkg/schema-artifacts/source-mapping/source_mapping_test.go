@@ -41,7 +41,7 @@ func TestParseCardinalityAndFormatVersionEnums(t *testing.T) {
 		{"cardinality", "", false},
 		{"cardinality", nil, false},
 		{"cardinality", 1, false},
-		{"formatVersion", "1.0.0", true},
+		{"formatVersion", "0.1.0", true},
 		{"formatVersion", "2.0.0", false},
 		{"formatVersion", "", false},
 		{"formatVersion", nil, false},
@@ -154,9 +154,9 @@ func TestParseRejectsStrictJSONAndStructuralFailures(t *testing.T) {
 		name string
 		data string
 	}{
-		{"unknown output kind", `{"$schema":"https://example.test/mapping-1.0.0","formatVersion":"1.0.0","id":"source-mapping","sourceSchema":{"id":"source","revision":"source-r1"},"targetSchema":{"id":"target","version":"2.0.0"},"cardinality":"one","outputKind":"entity-type","engine":{"language":"x","languageVersion":"1.0.0","executionProfile":"p"},"programRef":"program.bin","programDigest":"` + valid.Resources[0].Digest + `"}`},
-		{"duplicate member", `{"$schema":"https://example.test/mapping-1.0.0","$schema":"https://example.test/mapping-1.0.0"}`},
-		{"both selectors", `{"$schema":"https://example.test/mapping-1.0.0","formatVersion":"1.0.0","id":"source-mapping","sourceSchema":{"id":"source","revision":"source-r1","version":"2.0.0"},"targetSchema":{"id":"target","version":"2.0.0"},"cardinality":"one","engine":{"language":"x","languageVersion":"1.0.0","executionProfile":"p"},"programRef":"program.bin","programDigest":"` + valid.Resources[0].Digest + `"}`},
+		{"unknown output kind", `{"$schema":"https://example.test/mapping-0.1.0","formatVersion":"0.1.0","id":"source-mapping","sourceSchema":{"id":"source","revision":"source-r1"},"targetSchema":{"id":"target","version":"2.0.0"},"cardinality":"one","outputKind":"entity-type","engine":{"language":"x","languageVersion":"1.0.0","executionProfile":"p"},"programRef":"program.bin","programDigest":"` + valid.Resources[0].Digest + `"}`},
+		{"duplicate member", `{"$schema":"https://example.test/mapping-0.1.0","$schema":"https://example.test/mapping-0.1.0"}`},
+		{"both selectors", `{"$schema":"https://example.test/mapping-0.1.0","formatVersion":"0.1.0","id":"source-mapping","sourceSchema":{"id":"source","revision":"source-r1","version":"2.0.0"},"targetSchema":{"id":"target","version":"2.0.0"},"cardinality":"one","engine":{"language":"x","languageVersion":"1.0.0","executionProfile":"p"},"programRef":"program.bin","programDigest":"` + valid.Resources[0].Digest + `"}`},
 		{"invalid media type is resource validation", string(valid.PayloadBytes)},
 	}
 	for _, test := range tests {
@@ -429,7 +429,7 @@ func validContext() ValidationContext {
 
 // descriptorBytes builds one transformation descriptor using caller-selected JSON selector fragments and opaque publisher metadata.
 func descriptorBytes(id string, program artifact.Resource, sourceSelector, targetSelector string) []byte {
-	return []byte(fmt.Sprintf(`{"$schema":"https://example.test/source-mapping-1.0.0","formatVersion":"1.0.0","id":%q,"sourceSchema":{"id":"source",%s},"engine":{"language":"publisher language with spaces","languageVersion":"1.2.3","executionProfile":"non-registry profile"},"programs":{"transformations":[{"targetSchema":{"id":"target",%s},"cardinality":"one","programRef":%q,"programDigest":%q}]}}`, id, sourceSelector, targetSelector, program.Name, program.Digest))
+	return []byte(fmt.Sprintf(`{"$schema":"https://example.test/source-mapping-0.1.0","formatVersion":"0.1.0","id":%q,"sourceSchema":{"id":"source",%s},"engine":{"language":"publisher language with spaces","languageVersion":"1.2.3","executionProfile":"non-registry profile"},"programs":{"transformations":[{"targetSchema":{"id":"target",%s},"cardinality":"one","programRef":%q,"programDigest":%q}]}}`, id, sourceSelector, targetSelector, program.Name, program.Digest))
 }
 
 // rewriteDescriptor applies a fixture mutation and recomputes descriptor byte metadata so structural tests retain valid integrity metadata.

@@ -1,7 +1,7 @@
 {
   "format": "schema-registry-release-corpus-1",
   "origin": "https://registry.example.test",
-  "schema": "https://example.test/manifest-1.0.0",
+  "schema": "https://example.test/manifest-0.1.0",
   "source": {
     "repository": "https://git.example.test/model",
     "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

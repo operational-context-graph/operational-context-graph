@@ -16,8 +16,8 @@ import (
 func mappingPayload(t testing.TB, name string) []byte {
 	t.Helper()
 	data, err := json.Marshal(map[string]any{
-		"$schema":       "https://example.test/mapping-1.0.0",
-		"formatVersion": "1.0.0",
+		"$schema":       "https://example.test/mapping-0.1.0",
+		"formatVersion": "0.1.0",
 		"id":            name,
 		"sourceSchema":  map[string]any{"id": "source", "revision": "source-r1"},
 		"engine":        map[string]any{"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "opaque"},
@@ -48,8 +48,8 @@ func mappingClosure(t testing.TB) (Manifest, Context) {
 	t.Helper()
 
 	m := Manifest{
-		Schema:        "https://example.test/manifest-1.0.0",
-		FormatVersion: "1.0.0",
+		Schema:        "https://example.test/manifest-0.1.0",
+		FormatVersion: "0.1.0",
 		SchemaVersion: "1.0.0",
 		Source:        Source{Repository: "https://git.example.test/model", Commit: strings.Repeat("a", 40)},
 	}

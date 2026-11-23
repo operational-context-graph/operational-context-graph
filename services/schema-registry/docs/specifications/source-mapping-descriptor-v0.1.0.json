@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Source Mapping Descriptor v1.0.0",
-  "description": "Structural validation for an Operational Context Graph (OCG) source mapping descriptor, format version 1.0.0.",
+  "title": "Source Mapping Descriptor v0.1.0",
+  "description": "Structural validation for an Operational Context Graph (OCG) source mapping descriptor, format version 0.1.0.",
   "$comment": "Validators MUST enable format assertions for 'uri'. No canonical publication URI is assigned by this schema. Parsers MUST separately reject duplicate member names, invalid UTF-8, and other I-JSON violations. Publishers and importers MUST separately validate schema URI immutability and format compatibility, release dependencies and ancestry, canonical target classes, resource bindings, exact bytes, and revision immutability.",
   "type": "object",
   "additionalProperties": false,
   "required": ["$schema", "formatVersion", "id", "sourceSchema", "engine", "programs"],
   "properties": {
     "$schema": { "$ref": "#/$defs/absoluteUri" },
-    "formatVersion": { "const": "1.0.0" },
+    "formatVersion": { "const": "0.1.0" },
     "id": { "$ref": "#/$defs/logicalType" },
     "sourceSchema": { "$ref": "#/$defs/schemaReference" },
     "engine": { "$ref": "#/$defs/engine" },

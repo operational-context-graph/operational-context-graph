@@ -12,7 +12,7 @@ func TestLoadCorpus(t *testing.T) {
 	corpus := LoadCorpus(t)
 	require.Equal(t, "schema-registry-release-corpus-1", corpus.Format)
 	require.Equal(t, "https://registry.example.test", corpus.Origin)
-	require.Equal(t, "https://example.test/manifest-1.0.0", corpus.Schema)
+	require.Equal(t, "https://example.test/manifest-0.1.0", corpus.Schema)
 	require.Equal(t, "https://git.example.test/model", corpus.Source.Repository)
 	require.Len(t, corpus.Source.Commit, 40)
 	require.Len(t, corpus.Releases, 3)
