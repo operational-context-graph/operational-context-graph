@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -568,7 +569,7 @@ func TestProjectionRowsRejectsUnknownFamilyBeforeQuery(t *testing.T) {
 // TestMigrationDialectRejectsUnknownValues checks Goose dialect validation and restores the PostgreSQL dialect afterward.
 // This test stays serial because Goose stores its dialect globally.
 func TestMigrationDialectRejectsUnknownValues(t *testing.T) {
-	t.Cleanup(func() { require.NoError(t, SetMigrationDialect("postgres")) })
-	require.Error(t, SetMigrationDialect("not-a-dialect"))
-	require.NoError(t, SetMigrationDialect("postgres"))
+	t.Cleanup(func() { require.NoError(t, goose.SetDialect("postgres")) })
+	require.Error(t, goose.SetDialect("not-a-dialect"))
+	require.NoError(t, goose.SetDialect("postgres"))
 }
