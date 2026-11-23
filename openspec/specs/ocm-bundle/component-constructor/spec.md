@@ -10,14 +10,7 @@ Defines the structure and observable behavior of `.ocm/component-constructor.yam
 
 `.ocm/component-constructor.yaml` SHALL declare a component named `github.com/operational-context-graph/operational-context-graph`. It SHALL contain exactly four `ociImage` resources (`data-ingestion`, `telemetry-store`, `inventory-store`, `inventory-connector`) and three non-image resources: `chart` (type `helmChart`), `bundle-manifest` (type `blob`), and `image-values` (type `blob`). Every version field SHALL use `${VERSION}`.
 
-All image resources use `File/v1` input type with `mediaType: application/vnd.ocm.software.oci.layout.v1+tar`, reading pre-built OCI layout tarballs from `./bin/images/<service>.oci.tar`. `ocm add component-version` SHALL run with `--working-directory . --constructor .ocm/component-constructor.yaml --repository ctf::./bin/ctf/` from the repository root so that all paths resolve correctly. The resulting local CTF reference is `ctf::./bin/ctf//<component-name>:${VERSION}`.
-
 **Note**: `schema-registry` was removed (no implementation). `postgresql-chart`/`doris-operator-chart` are not bundled (see dependency-bundles spec).
-
-#### Scenario: Constructor accepted with all four image resources
-
-- **WHEN** `ocm add component-version .ocm/component-constructor.yaml --working-directory .` runs with `VERSION=1.0.0` and all four `bin/images/<service>.oci.tar` files present
-- **THEN** `ocm add component-version` exits 0 and the generated CTF contains seven resources (four images, `chart`, `bundle-manifest`, `image-values`)
 
 #### Scenario: Constructor rejected when VERSION is unset
 
@@ -33,6 +26,15 @@ All image resources use `File/v1` input type with `mediaType: application/vnd.oc
 
 - **WHEN** `make preflight` runs
 - **THEN** it checks for `bin/images/{data-ingestion,telemetry-store,inventory-store,inventory-connector}.oci.tar` and exits 1 naming any missing service; it does not check for `bin/images/schema-registry.oci.tar`
+
+### Requirement: ocm add component-version runs from repository root with correct flags
+
+`ocm add component-version` SHALL run with `--working-directory . --constructor .ocm/component-constructor.yaml --repository ctf::./bin/ctf/` from the repository root so that all paths resolve correctly. All image resources SHALL use `File/v1` input type with `mediaType: application/vnd.ocm.software.oci.layout.v1+tar`, reading pre-built OCI layout tarballs from `./bin/images/<service>.oci.tar`. The resulting local CTF reference is `ctf::./bin/ctf//<component-name>:${VERSION}`.
+
+#### Scenario: Constructor accepted with all four image resources
+
+- **WHEN** `ocm add component-version .ocm/component-constructor.yaml --working-directory .` runs with `VERSION=1.0.0` and all four `bin/images/<service>.oci.tar` files present
+- **THEN** `ocm add component-version` exits 0 and the generated CTF contains seven resources (four images, `chart`, `bundle-manifest`, `image-values`)
 
 ### Requirement: Image resource input type is File/v1 with OCI layout media type
 

@@ -27,14 +27,16 @@ The dev CI workflow SHALL build and sign the OCM bundle using `VERSION="${VERSIO
 
 ### Requirement: Release workflow re-versions dev CTF via ocm-reversion.sh
 
-The release workflow SHALL NOT rebuild the OCM bundle from source. Instead it SHALL:
+The release workflow SHALL NOT rebuild the OCM bundle from source. Instead it SHALL: resolve the dev bundle version from the merge commit SHA (`0.0.0-dev.YYYYMMDD-SHA`); run `make ocm-release-preflight` to verify HEAD is tagged `v${VERSION}` and the working tree is clean; then run `scripts/ocm-reversion.sh "${DEV_VERSION}" "${VERSION}" "${REGISTRY}"`.
 
-1. Resolve the dev bundle version from the merge commit SHA: `0.0.0-dev.YYYYMMDD-SHA`
-2. Run `make ocm-release-preflight` to verify HEAD is tagged `v${VERSION}` and the working tree is clean
-3. Run `scripts/ocm-reversion.sh "${DEV_VERSION}" "${VERSION}" "${REGISTRY}"` which fetches the dev CTF, verifies its signature, extracts resources, builds a new CTF at `${VERSION}` preserving resource versions, signs, and verifies
-4. Push the release CTF to `oci::${REGISTRY}/operational-context-graph`
+#### Scenario: Release workflow does not rebuild from source
 
-Only the component version changes. Resource versions (image tags) are preserved from the dev bundle.
+- **WHEN** the release workflow triggers on a `v1.2.3` tag push
+- **THEN** no `make ocm-build` or Docker build runs; the workflow calls `scripts/ocm-reversion.sh` with the dev version resolved from the merge commit SHA
+
+### Requirement: ocm-reversion.sh preserves resource versions from dev bundle
+
+`scripts/ocm-reversion.sh` SHALL fetch the dev CTF, verify its signature, extract resources, build a new CTF at `${VERSION}`, sign, and verify. Only the component version changes. Resource versions (image tags) SHALL be preserved from the dev bundle without modification.
 
 #### Scenario: Release re-versions dev CTF successfully
 

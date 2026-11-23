@@ -29,7 +29,7 @@ Each service chart (`data-ingestion`, `inventory-store`, `telemetry-store`, `inv
 
 ### Requirement: Per-service charts live at helm/charts/<name>/
 
-Service charts live at `helm/charts/<name>/`. The umbrella chart at `helm/` declares them as local dependencies. `helm/charts/` is populated by `helm dependency update helm/`.
+Service charts SHALL live at `helm/charts/<name>/`. The umbrella chart at `helm/` SHALL declare them as local dependencies. `helm/charts/` is populated by `helm dependency update helm/`.
 
 #### Scenario: helm dependency update resolves local dependencies
 

@@ -41,16 +41,7 @@ The `ocm-build` Makefile target SHALL require `VERSION` to be non-empty but SHAL
 
 ### Requirement: Preflight validates VERSION, keys, working tree, and OCI tarballs
 
-The `preflight` stage within `scripts/ocm-bundle.sh` SHALL perform all validation that can fail fast before any build work runs:
-
-1. `ocm` CLI is on `PATH`
-2. OCM CLI version is `>= 0.22.1` (v2 codeline; v1 versions 0.16–0.53 are rejected)
-3. `VERSION` is set and non-empty; format validation is `^[0-9]+\.[0-9]+\.[0-9]+` (prefix match, dev pre-release versions like `0.0.0-dev.DATE-SHA` are accepted)
-4. `.ocm/ocg.pub.pem` exists and is non-zero
-5. Private key at `SIGN_KEY` path exists and is non-zero
-6. Each `bin/images/<service>.oci.tar` exists, is non-zero, and has exactly one entry in `index.json`
-
-Git working-tree cleanliness and git-tag validation are NOT part of this preflight — those are in `ocm-release-preflight`.
+The `preflight` stage within `scripts/ocm-bundle.sh` SHALL fail fast before any build work. It SHALL verify: `ocm` CLI present and version `>= 0.22.1` (v2 codeline; v1 rejected); `VERSION` non-empty matching `^[0-9]+\.[0-9]+\.[0-9]+`; `.ocm/ocg.pub.pem` exists and non-zero; private key at `SIGN_KEY` exists and non-zero. Git working-tree and tag checks are NOT included — those are in `ocm-release-preflight`.
 
 #### Scenario: Dirty working tree does NOT fail ocm-build preflight
 
@@ -66,6 +57,20 @@ Git working-tree cleanliness and git-tag validation are NOT part of this preflig
 
 - **WHEN** `VERSION` is empty
 - **THEN** `ocm-build` exits 1 before calling the script: "ERROR: VERSION is required"
+
+### Requirement: Preflight validates each service OCI tarball
+
+The `preflight` stage SHALL verify each `bin/images/<service>.oci.tar` exists, is non-zero, and has exactly one entry in `index.json`. Four services: `data-ingestion`, `telemetry-store`, `inventory-store`, `inventory-connector`. Any missing or malformed tarball SHALL cause preflight to exit 1 naming the failing service.
+
+#### Scenario: Missing image tarball fails preflight
+
+- **WHEN** `bin/images/inventory-connector.oci.tar` does not exist and `make preflight` runs
+- **THEN** preflight exits 1 naming `inventory-connector` and "missing or empty"; no subsequent stage runs
+
+#### Scenario: Tarball with multiple index entries fails preflight
+
+- **WHEN** `bin/images/data-ingestion.oci.tar` contains an `index.json` with two entries
+- **THEN** preflight exits 1 naming `data-ingestion` and "expected exactly 1 index entry"
 
 ### Requirement: Package stage performs unconditional CTF directory reset
 
@@ -165,23 +170,26 @@ The `verify` target SHALL invoke `ocm verify component-version --signature ocg-s
 - **WHEN** a blob in `bin/ctf/` is modified after signing
 - **THEN** `ocm verify` exits non-zero; the verify stage propagates the exit code
 
-### Requirement: OCM config file is a single committed file at `.ocm/config`; transfer config included
+### Requirement: OCM config is a single committed file at `.ocm/config`
 
-`.ocm/config` SHALL be a single YAML file committed to the repository. It contains:
-- Signing config (`signing.config.ocm.software/v1alpha1` with nested `signer:` block, RSASSA-PSS)
-- Credentials config (`credentials.config.ocm.software` consumer with `type: RSA/v1alpha1`, private key PATH at `SIGN_KEY`, public key at `.ocm/ocg.pub.pem`)
-- Transfer config (`transfer.config.ocm.software/v1alpha1` with `recursive: -1`)
+`.ocm/config` SHALL be a single YAML file committed to the repository. It SHALL contain signing config (`signing.config.ocm.software/v1alpha1` with nested `signer:` block, RSASSA-PSS), credentials config (`credentials.config.ocm.software` consumer with `type: RSA/v1alpha1`), and transfer config (`transfer.config.ocm.software/v1alpha1` with `recursive: -1`). OCM v2 auto-discovers `.ocm/config` from `$PWD`.
 
-OCM v2 auto-discovers `.ocm/config` from `$PWD`. The file contains no secrets — only the PATH to the private key. It is safe to commit.
+#### Scenario: .ocm/config is tracked by git
+
+- **WHEN** `git ls-files .ocm/config` runs
+- **THEN** the file is listed; it is committed to the repository
+
+### Requirement: OCM config contains no key material
+
+`.ocm/config` SHALL reference credentials by PATH only. The private key field SHALL contain the path to the key file (e.g. `private_key_pem_file: /tmp/...`), not the PEM key material itself. The file SHALL be safe to commit to the repository.
 
 #### Scenario: .ocm/config committed and contains no key material
 
 - **WHEN** `git show HEAD:.ocm/config` is run
 - **THEN** the file contains `private_key_pem_file: /tmp/...` (a path), not PEM key material; `grep -E 'BEGIN.*KEY' .ocm/config` returns no match
-
 ### Requirement: Route B archive structure
 
-The final artifact `bin/ocg-<version>.ctf.tgz` is produced by archiving the CTF directory. The archive root contains the CTF directory name (e.g. `bin/ocg-1.0.0.ctf.tgz` extracts to a named subdirectory with `artifact-index.json` inside). OCM can consume the archive with `ocm get component-version --file bin/ocg-<version>.ctf.tgz`.
+The verify stage SHALL produce `bin/ocg-<version>.ctf.tgz` by archiving the CTF directory. The archive root SHALL contain the CTF directory name (e.g. `bin/ocg-1.0.0.ctf.tgz` extracts to a named subdirectory with `artifact-index.json` inside). OCM SHALL be able to consume the archive with `ocm get component-version --file bin/ocg-<version>.ctf.tgz`.
 
 #### Scenario: Archive is readable by OCM
 

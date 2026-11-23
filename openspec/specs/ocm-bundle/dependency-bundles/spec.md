@@ -8,23 +8,16 @@ Defines the governance and sourcing requirements for third-party operator charts
 
 ### Requirement: GOVERNANCE-02 ADRs required before production
 
-Two Architecture Decision Records SHALL be created and merged before the OCG bundle reaches production:
-
-1. **postgresql ADR** (`docs/adr/postgresql-operator-selection.md`): records the operator evaluation and approved choice for the postgresql dependency
-2. **doris-operator ADR**: records the `apache/doris-operator` source evaluation and the governance rationale
-
-These ADRs document FOSS-EVAL-GOVERNANCE-02 compliance. They do not gate the CI pipeline directly — the constraint is process, not a CI check.
-
-**Sources evaluated**:
-- `postgresql`: Bitnami postgresql (Helm chart dependency, single-vendor VMware/Broadcom concern documented in ADR), CloudNativePG (CNCF Sandbox, Apache-2.0), Zalando, CrunchyData PGO, Percona, StackGres (AGPLv3 — license blocker)
-- `doris-operator`: `apache/doris-operator` (ASF-governed, Apache-2.0, only viable option)
-
-**Rationale for not bundling operator charts**: CRDs must be installed before the application chart, but bundled Helm charts are installed by a single `helm install`. Operators are cluster-level concerns with their own release cadence. The recommended approach is to deploy operators separately via cluster bootstrap tooling.
+Two Architecture Decision Records SHALL be created and merged before the OCG bundle reaches production: `docs/adr/postgresql-operator-selection.md` (postgresql operator evaluation and approved choice) and a doris-operator ADR (apache/doris-operator governance rationale). These ADRs document FOSS-EVAL-GOVERNANCE-02 compliance and are a process gate, not a CI check.
 
 #### Scenario: ADRs present before production deploy
 
 - **WHEN** the OCG system release is being approved for production
 - **THEN** the release checklist includes verification that both ADRs are merged in the architecture documentation repository
+
+### Requirement: Operator charts are not bundled in the OCM CTF
+
+The OCM CTF SHALL NOT include `postgresql-chart` or `doris-operator-chart` resources. Operators are cluster-level concerns with their own release cadence and MUST be deployed separately via cluster bootstrap tooling. CRDs must be installed before the application chart; a single `helm install` cannot guarantee that order.
 
 #### Scenario: Operator chart bundling not attempted
 
