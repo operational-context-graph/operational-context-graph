@@ -1,9 +1,19 @@
-# Deletes dev artifact versions older than 7 days from GHCR.
-# Covers container images, the OCI-hosted Helm chart, and the OCM bundle.
-# All are stored as container packages in GHCR and share the same cleanup logic.
+# Deletes stale dev artifacts from GHCR and prunes dereferenced manifests.
+#
+# First, delete dev-tagged versions older than 7 days (container images, the
+# OCI-hosted Helm chart, and the OCM bundle; all are GHCR container packages).
+# Then prune untagged orphan manifests that no tagged index still references.
+#
+# Why the prune: a multi-arch image is an index pointing to child manifests
+# (per-platform images plus provenance and SBOM attestations) that carry no tag.
+# Deleting the tagged index does not cascade to them, so they pile up as untagged
+# orphans. The prune removes only children no live tag references, so it also
+# clears orphans left by release images, not just dev ones.
+#
 # Runs weekly and can be triggered manually.
 #
-# When adding a new component with a container image, add it to the matrix.images list.
+# When adding a new component image, add it to BOTH the cleanup-images matrix and
+# the prune-orphans matrix.
 ---
 name: Cleanup Dev Artifacts
 
@@ -74,6 +84,46 @@ jobs:
                 --method DELETE \
                 "orgs/${ORG}/packages/container/${PACKAGE}/versions/${id}"
             done
+
+  prune-orphans:
+    name: Prune untagged orphan manifests
+    runs-on: ubuntu-latest
+    needs: [cleanup-images, cleanup-helm]
+    permissions:
+      contents: read  # required: checkout provides the prune script
+      packages: write # required: deletes dereferenced untagged manifests from GHCR
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - data-ingestion
+          - inventory-store
+          - telemetry-store
+          - inventory-connector
+          - operational-context-graph%2Foperational-context-graph
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install crane
+        env:
+          CRANE_VERSION: "v0.22.1"
+          CRANE_SHA256: "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0"
+        run: scripts/install-crane.sh "${CRANE_VERSION}" "${CRANE_SHA256}"
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prune dereferenced untagged manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: ${{ github.repository_owner }}
+          PACKAGE: ${{ matrix.package }}
+          CRANE_BIN: /home/runner/.local/bin/crane
+        run: scripts/prune-ghcr-orphans.sh "$ORG" "$PACKAGE" 7
 
   # TODO: add cleanup-ocm-bundle job once OCM bundle publishing is implemented.
   # The package path will be operational-context-graph/operational-context-graph-ocm
