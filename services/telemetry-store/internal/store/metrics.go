@@ -33,7 +33,7 @@ func (d *DB) QueryMetrics(ctx context.Context, q MetricQuery) ([]Metric, error) 
 	stmt := fmt.Sprintf(
 		`SELECT /*+ SET_VAR(query_timeout=25000) */ timestamp, iri, observed_timestamp, host_name, metric_name, value,
 		 CAST(resource_attributes AS STRING), CAST(attributes AS STRING)
-		 FROM ocg.metrics %s ORDER BY timestamp, iri LIMIT %d`, where, q.Limit)
+		 FROM %s.metrics %s ORDER BY timestamp, iri LIMIT %d`, d.dbName, where, q.Limit)
 
 	rows, err := d.db.QueryContext(ctx, stmt, args...)
 	if err != nil {

@@ -29,7 +29,7 @@ jobs:
       - name: Initialize Go workspace
         run: make init
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -55,7 +55,7 @@ jobs:
       - name: Initialize Go workspace
         run: make init
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -79,7 +79,7 @@ jobs:
       - name: Initialize Go workspace
         run: make init
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -134,6 +134,19 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --all --chart-dirs helm/charts
 
+  shell-lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run shellcheck
+        run: make lint-sh
+
   workspace-sync:
     name: Workspace Sync
     runs-on: ubuntu-latest
@@ -147,7 +160,7 @@ jobs:
       - name: Initialize Go workspace
         run: make init
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -161,7 +174,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write  # required: pushes container images and attestations to GHCR
+      packages: write # required: pushes container images and attestations to GHCR
       attestations: write
       id-token: write
     outputs:
@@ -203,7 +216,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
-      packages: write  # required: helm push publishes the chart to GHCR via OCI
+      packages: write # required: helm push publishes the chart to GHCR via OCI
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

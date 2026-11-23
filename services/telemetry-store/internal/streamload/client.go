@@ -26,15 +26,17 @@ type LoadResult struct {
 // Client sends NDJSON batches to Doris via the Stream Load HTTP API.
 type Client struct {
 	baseURL    string
+	dbName     string
 	authHeader string
 	http       *http.Client
 }
 
 // NewClient creates a Client targeting the given Doris FE base URL.
 // baseURL must be the FE HTTP address, e.g. "http://doris-fe:8030".
-func NewClient(baseURL, user, password string) *Client {
+func NewClient(baseURL, dbName, user, password string) *Client {
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
+		dbName:     dbName,
 		authHeader: "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
 		http: &http.Client{
 			Timeout: 10 * time.Minute,
@@ -50,7 +52,7 @@ func NewClient(baseURL, user, password string) *Client {
 // table must be one of "logs", "metrics", or "traces".
 // label is the idempotency key; it must be unique per batch and stable across retries.
 func (c *Client) Load(ctx context.Context, table, label string, body io.Reader) (*LoadResult, error) {
-	url := fmt.Sprintf("%s/api/ocg/%s/_stream_load", c.baseURL, table)
+	url := fmt.Sprintf("%s/api/%s/%s/_stream_load", c.baseURL, c.dbName, table)
 	return c.doLoad(ctx, url, label, body)
 }
 

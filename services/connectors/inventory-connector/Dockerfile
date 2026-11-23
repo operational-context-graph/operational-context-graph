@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # Build context must be the repository root so go.work resolves gen/go.
 # Example: docker buildx build --platform linux/amd64 -t ghcr.io/operational-context-graph/inventory-connector:latest -f services/connectors/inventory-connector/Dockerfile .
 # Via Bake:  docker buildx bake inventory-connector
 
-ARG GO_IMAGE="golang:1.27@sha256:ec47ea3725fea0cc88f6de94919aef19f40f12fc1ec0e2d1b3426dbf15ecca04"
+ARG GO_IMAGE="golang:1.27@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf"
 ARG DISTROLESS_IMAGE="gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2"
 
 FROM ${GO_IMAGE} AS build

@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -78,7 +78,7 @@ jobs:
           - [ ] Add a scope for the component to \`.github/workflows/semantic-pull-requests.yml\` if one does not already exist
           - [ ] Add a target for the component to \`docker-bake.hcl\`, set the \`org.opencontainers.image.description\` label, and add it to the \`default\` group
           - [ ] If the component has a container image: navigate to the package in the org's Packages page and grant the repository \`Admin\` access under Package settings → Manage Actions access
-          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed (note: the subchart directory name must match the component slug, basename of the component path)
+          - [ ] Add a Helm subchart under \`helm/charts/<slug>/\` and register it in \`helm/Chart.yaml\` if the component is intended to be deployed (note: the subchart directory name must match the component slug, basename of the component path). The subchart's \`values.yaml\` MUST include an \`image.digest: \"\"\` field and its \`_helpers.tpl\` MUST render \`repository@digest\` when the digest is set (copy an existing service subchart such as \`data-ingestion\`); otherwise the release pipeline writes a digest the template ignores and the deployment silently falls back to the mutable tag
           - [ ] Add the component to \`.github/workflows/release-system-pr.yml\`: add a \`version_<slug>\` workflow input, pass it to \`scripts/pin-subchart-versions.sh\`, and add the corresponding \`matrix.package\` entry in \`.github/workflows/artifact-cleanup.yml\`
 
           If this is not a releasable component (e.g. a nested library or generated artifact), ignore this comment."

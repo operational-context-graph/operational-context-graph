@@ -103,3 +103,10 @@ ignore-packages:
 
   # github.com/coreos/go-semver licensed under Apache-2.0
   - github.com/coreos/go-semver
+
+  # modernc.org/{libc,memory,sqlite} licensed under BSD-3-Clause; pulled in as a
+  # test-only transitive dependency of github.com/pressly/goose/v3. Syft emits
+  # LicenseRef-* hashes from bundled license files it cannot map to a standard SPDX ID.
+  - modernc.org/libc
+  - modernc.org/memory
+  - modernc.org/sqlite

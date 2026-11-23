@@ -39,7 +39,7 @@ func newFakeDoris(statusCode int, body string) (*httptest.Server, *streamload.Cl
 		w.WriteHeader(statusCode)
 		_, _ = w.Write([]byte(body))
 	}))
-	client := streamload.NewClient(srv.URL, "user", "pass")
+	client := streamload.NewClient(srv.URL, "ocg", "user", "pass")
 	return srv, client
 }
 
@@ -113,7 +113,7 @@ func TestLoad_SetsCorrectHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := streamload.NewClient(srv.URL, "myuser", "mypass")
+	client := streamload.NewClient(srv.URL, "ocg", "myuser", "mypass")
 	_, err := client.Load(context.Background(), "logs", "my-label", strings.NewReader(validNDJSON))
 	require.NoError(t, err)
 
@@ -141,7 +141,7 @@ func TestLoad_307Redirect_ResendsBody(t *testing.T) {
 	}))
 	defer fe.Close()
 
-	client := streamload.NewClient(fe.URL, "u", "p")
+	client := streamload.NewClient(fe.URL, "ocg", "u", "p")
 	_, err := client.Load(context.Background(), "logs", "lbl", strings.NewReader(validNDJSON))
 	require.NoError(t, err)
 	assert.Equal(t, validNDJSON, string(beBody), "BE must receive the full NDJSON body after redirect")
