@@ -13,7 +13,7 @@ The dev CI workflow SHALL build and sign the OCM bundle using `VERSION="${VERSIO
 #### Scenario: Dev CI builds and publishes bundle on push to main
 
 - **WHEN** a push to `main` triggers the CI pipeline and all prior jobs succeed
-- **THEN** `publish-ocm-bundle` runs; `make ocm-build` builds and signs the CTF at version `0.0.0-dev.YYYYMMDD-SHA`; `ocm transfer` pushes to `oci::${REGISTRY}/operational-context-graph`
+- **THEN** `publish-ocm-bundle` runs; `make ocm-build` builds and signs the CTF at version `0.0.0-dev.YYYYMMDD-SHA`; `ocm transfer` pushes to `oci::${REGISTRY}/ocm`
 
 #### Scenario: All six stages succeed end to end
 
@@ -148,19 +148,19 @@ The CI workflow SHALL install `ocm` CLI from the `open-component-model/open-comp
 - **WHEN** the dev descriptor has non-empty `component.labels`
 - **THEN** the script carries them forward to the release CTF via `yq -i '.components[0].labels = (strenv(LABELS_JSON) | fromjson)'`
 
-### Requirement: OCM bundle published to operational-context-graph OCI path
+### Requirement: OCM bundle published to ocm OCI base path
 
-Both dev CI and release jobs SHALL publish the OCM CTF to `oci::${REGISTRY}/operational-context-graph` (bare path). The Helm chart publishes separately to `oci://${REGISTRY}/operational-context-graph-helm`.
+Both dev CI and release jobs SHALL publish the OCM CTF to `oci::${REGISTRY}/ocm`. The OCM CLI automatically appends `/component-descriptors/<component-name>:<version>` under that base. The Helm chart publishes separately to `oci://${REGISTRY}/charts`, landing at `ghcr.io/<org>/charts/operational-context-graph:<version>`.
 
 #### Scenario: OCM bundle push path
 
-- **WHEN** `ocm transfer component-version ctf::./bin/ctf// "oci::${REGISTRY}/operational-context-graph"` runs
-- **THEN** the CTF is accessible at `ghcr.io/<org>/operational-context-graph:<version>` in GHCR
+- **WHEN** `ocm transfer component-version ctf::./bin/ctf// "oci::${REGISTRY}/ocm"` runs
+- **THEN** the CTF is accessible at `ghcr.io/<org>/ocm/component-descriptors/github.com/operational-context-graph/operational-context-graph:<version>` in GHCR
 
 #### Scenario: Helm chart push path is distinct
 
-- **WHEN** `helm push operational-context-graph-${VERSION}.tgz oci://${REGISTRY}/operational-context-graph-helm` runs
-- **THEN** the chart is accessible at `ghcr.io/<org>/operational-context-graph-helm/operational-context-graph:<version>`; it does not collide with the OCM bundle path
+- **WHEN** `helm push operational-context-graph-${VERSION}.tgz oci://${REGISTRY}/charts` runs
+- **THEN** the chart is accessible at `ghcr.io/<org>/charts/operational-context-graph:<version>`; it does not collide with the OCM bundle path
 
 ## Non-Goals
 

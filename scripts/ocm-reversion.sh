@@ -65,7 +65,7 @@ echo "preflight: OK (DEV_VERSION=${DEV_VERSION} RELEASE_VERSION=${RELEASE_VERSIO
 # Stage 1: fetch — transfer dev CTF from OCI registry to local CTF
 # ---------------------------------------------------------------------------
 
-SOURCE_REF="oci::${SOURCE_REGISTRY}/operational-context-graph"
+SOURCE_REF="oci::${SOURCE_REGISTRY}/ocm"
 DEV_CTF_DIR="bin/dev-ctf"
 DEV_CTF="ctf::./bin/dev-ctf//"
 
@@ -113,13 +113,14 @@ get_resource_version() {
 
 declare -A RES_VERSIONS
 for svc in $OCM_SERVICES; do
-  RES_VERSIONS[$svc]=$(get_resource_version "$svc")
+  _ver=$(get_resource_version "$svc") || exit 1
+  RES_VERSIONS[$svc]="${_ver}"
   echo "  ${svc}: ${RES_VERSIONS[$svc]}"
 done
 
-V_CHART=$(get_resource_version "chart")
-V_BUNDLE_MANIFEST=$(get_resource_version "bundle-manifest")
-V_IMAGE_VALUES=$(get_resource_version "image-values")
+V_CHART=$(get_resource_version "chart") || exit 1
+V_BUNDLE_MANIFEST=$(get_resource_version "bundle-manifest") || exit 1
+V_IMAGE_VALUES=$(get_resource_version "image-values") || exit 1
 echo "  chart: ${V_CHART}"
 echo "  bundle-manifest: ${V_BUNDLE_MANIFEST}"
 echo "  image-values: ${V_IMAGE_VALUES}"
