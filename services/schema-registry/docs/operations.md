@@ -26,7 +26,6 @@ The [example YAML](../configs/schema-introspection-api.example.yaml) contains no
 Users choose Secure Sockets Layer (SSL) configuration through the corresponding database connection URL parameters.
 The service passes those parameters to pgx without adding transport-security policy checks or overrides.
 This behavior applies to startup, readiness, request reads, concurrent connections, and replacement connections.
-The `database.production` setting does not change this behavior.
 
 Transport Layer Security (TLS) policy validation and enforcement for every database connection are explicit service-level non-goals.
 The service MUST NOT require encryption, peer verification, or a specific SSL mode.

@@ -42,11 +42,10 @@ func TestLoadConvertsConfigurationValues(t *testing.T) {
 			contents := validConfig
 			if source == "yaml" {
 				contents = strings.Replace(contents, "port: 8081", "port: '9090'\n  read_timeout: 250ms", 1)
-				contents = strings.Replace(contents, "database:\n", "database:\n  production: 'true'\n  pool_max_connections: '12'\n  query_timeout: 2s\n", 1)
+				contents = strings.Replace(contents, "database:\n", "database:\n  pool_max_connections: '12'\n  query_timeout: 2s\n", 1)
 			} else {
 				t.Setenv("OCG_SCHEMA_INTROSPECTION_SERVER__PORT", "9090")
 				t.Setenv("OCG_SCHEMA_INTROSPECTION_SERVER__READ_TIMEOUT", "250ms")
-				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__PRODUCTION", "true")
 				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__POOL_MAX_CONNECTIONS", "12")
 				t.Setenv("OCG_SCHEMA_INTROSPECTION_DATABASE__QUERY_TIMEOUT", "2s")
 			}
@@ -54,7 +53,6 @@ func TestLoadConvertsConfigurationValues(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, 9090, cfg.Server.Port)
 			assert.Equal(t, 250*time.Millisecond, cfg.Server.ReadTimeout)
-			assert.True(t, cfg.Database.Production)
 			assert.Equal(t, int32(12), cfg.Database.PoolMaxConnections)
 			assert.Equal(t, 2*time.Second, cfg.Database.QueryTimeout)
 			assert.Equal(t, 60*time.Second, cfg.Server.IdleTimeout)
@@ -124,22 +122,16 @@ func TestLoadUsesConfiguredFile(t *testing.T) {
 
 // TestLoadPreservesSSLModes verifies configuration accepts omitted settings and every driver-supported mode in every environment.
 func TestLoadPreservesSSLModes(t *testing.T) {
-	for _, production := range []string{"true", "false"} {
-		t.Run(production, func(t *testing.T) {
-			t.Setenv(envPrefix+"DATABASE__PRODUCTION", production)
-			for _, mode := range []string{"", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"} {
-				t.Run("sslmode="+mode, func(t *testing.T) {
-					databaseURL := "postgresql://registry@db.example.test:5432/registry"
-					if mode != "" {
-						databaseURL += "?sslmode=" + mode
-					}
-					contents := configWithDatabaseURL(databaseURL)
-					cfg, err := LoadFromFile(writeConfig(t, contents))
-					require.NoError(t, err)
-					assert.Equal(t, databaseURL, cfg.Database.URL)
-					assert.Equal(t, production == "true", cfg.Database.Production)
-				})
+	for _, mode := range []string{"", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"} {
+		t.Run("sslmode="+mode, func(t *testing.T) {
+			databaseURL := "postgresql://registry@db.example.test:5432/registry"
+			if mode != "" {
+				databaseURL += "?sslmode=" + mode
 			}
+			contents := configWithDatabaseURL(databaseURL)
+			cfg, err := LoadFromFile(writeConfig(t, contents))
+			require.NoError(t, err)
+			assert.Equal(t, databaseURL, cfg.Database.URL)
 		})
 	}
 }

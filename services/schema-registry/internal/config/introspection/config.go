@@ -42,7 +42,6 @@ type ServerConfig struct {
 // DatabaseConfig configures user-selected PostgreSQL transport and bounded read transactions.
 type DatabaseConfig struct {
 	URL                string `koanf:"url" validate:"required"`
-	Production         bool   `koanf:"production"`
 	PoolMinConnections int32  `koanf:"pool_min_connections" validate:"gte=0"`
 	PoolMaxConnections int32  `koanf:"pool_max_connections" validate:"gte=2"`
 	// ReservedConnections preserves pool capacity for readiness probes when API admission reaches its limit.
