@@ -33,15 +33,6 @@ func TestTimeoutsCapToRequestDeadline(t *testing.T) {
 	assert.Equal(t, 500*time.Millisecond, capped.IdleInTransaction)
 }
 
-// TestProjectionCommitmentDeterministic verifies equivalent row sets produce identical commitments and altered rows produce different commitments.
-func TestProjectionCommitmentDeterministic(t *testing.T) {
-	t.Parallel()
-	first := ProjectionCommitmentHex([]string{"resource\titem", "artifact\titem"})
-	second := ProjectionCommitmentHex([]string{"artifact\titem", "resource\titem"})
-	assert.Equal(t, first, second)
-	assert.NotEqual(t, first, ProjectionCommitmentHex([]string{"artifact\tchanged", "resource\titem"}))
-}
-
 // TestValidSort verifies only supported sort identifiers pass, excluding empty values and SQL fragments.
 func TestValidSort(t *testing.T) {
 	t.Parallel()

@@ -14,7 +14,7 @@ Each request MUST issue one current-pointer query inside one read-only repeatabl
 The statement trace MUST end with a committed transaction.
 The pool MUST retain no acquired connections after all callers finish.
 
-registryRows compares all registry tables, including exact bytes, commitments, visibility, lineage, and PostgreSQL row versions.
+registryRows compares all registry tables, including exact bytes, visibility, lineage, and PostgreSQL row versions.
 The test never changes release state while requests run.
 Activation success, conflicts, rollback, and publication atomicity remain outside this reader-only contract.
 */
@@ -243,7 +243,7 @@ func (suite *readStoreSuite) TestConcurrentRequestsUseReadOnlySnapshots() {
 }
 
 // registryRows compares every registry table, including visibility, lineage,
-// commitments, exact bytes, and PostgreSQL row versions, before and after reads.
+// exact bytes and PostgreSQL row versions, before and after reads.
 func (suite *readStoreSuite) registryRows() map[string]string {
 	t := suite.T()
 	t.Helper()

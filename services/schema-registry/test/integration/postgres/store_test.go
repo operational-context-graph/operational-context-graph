@@ -84,16 +84,6 @@ func (suite *readStoreSuite) TestReleaseMetadataDrift() {
 	suite.requireReleaseProjectionFailure(`UPDATE schema_registry.releases SET source_commit = $1 WHERE schema_version = $2`, strings.Repeat("b", 40), "8.0.0")
 }
 
-// TestMissingReleaseCommitment verifies release reads require per-family integrity evidence.
-func (suite *readStoreSuite) TestMissingReleaseCommitment() {
-	suite.requireReleaseProjectionFailure(`DELETE FROM schema_registry.release_projection_commitments WHERE schema_version = $1 AND family = $2`, "8.0.0", model.ProjectionRelease)
-}
-
-// TestCorruptReleaseCommitment verifies release reads reject altered per-family integrity evidence.
-func (suite *readStoreSuite) TestCorruptReleaseCommitment() {
-	suite.requireReleaseProjectionFailure(`UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, make([]byte, 32), "8.0.0", model.ProjectionRelease)
-}
-
 // TestCandidateMappingsAndParameterizedFilters verifies exact resolved filters, shared source candidates, unique mapping results, and ordered transformation/cardinality metadata.
 func (suite *readStoreSuite) TestCandidateMappingsAndParameterizedFilters() {
 	store := suite.candidateStore()
@@ -204,7 +194,7 @@ func (suite *readStoreSuite) TestCandidateAncillaryResources() {
 	}))
 }
 
-// TestRevisionProjectionReadsVerifyAllSelections verifies revision-scoped reads detect commitment corruption in every activated release selecting the revision.
+// TestRevisionProjectionReadsVerifyAllSelections verifies revision-scoped reads detect row drift in every activated release selecting the revision.
 func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 	fixtures := fixtureCatalog(suite.T())
 	for _, fixture := range fixtures[:3] {
@@ -218,6 +208,13 @@ func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 	suite.T().Cleanup(pool.Close)
 	store, err := storage.NewStore(pool, storage.Timeouts{Acquire: time.Second, Query: time.Second, Statement: time.Second, Lock: time.Second, IdleInTransaction: time.Second})
 	suite.Require().NoError(err)
+	// An unselected artifact does not affect valid reads. Selecting it introduces
+	// extra resource and dependency rows in exactly one release's projection.
+	insertArtifact(suite.T(), suite.Context, suite.Database, "unexpected-r1", "unexpected", fixtureOrigin+"/v1/resources/schema/unexpected/unexpected-r1")
+	_, err = suite.Database.ExecContext(suite.Context, `INSERT INTO schema_registry.artifact_resources (artifact_revision, name, role, media_type, digest, size, bytes) VALUES ('unexpected-r1', 'extra', 'auxiliary', 'application/octet-stream', $1, 0, '')`, fixtureDigest(nil))
+	suite.Require().NoError(err)
+	_, err = suite.Database.ExecContext(suite.Context, `INSERT INTO schema_registry.artifact_dependencies (artifact_revision, dependency_kind, dependency_artifact_type, dependency_revision) VALUES ('unexpected-r1', 'schema', 'device', 'rev-device-v1')`)
+	suite.Require().NoError(err)
 	for _, family := range []model.ProjectionFamily{model.ProjectionResource, model.ProjectionDependency} {
 		read := func(ctx context.Context, snapshot *storage.Snapshot) error {
 			if family == model.ProjectionResource {
@@ -228,14 +225,13 @@ func (suite *readStoreSuite) TestRevisionProjectionReadsVerifyAllSelections() {
 			return err
 		}
 		suite.Require().NoError(store.Read(suite.Context, read))
-		for version := range versions {
-			var commitment []byte
-			suite.Require().NoError(suite.Database.QueryRowContext(suite.Context, `SELECT commitment FROM schema_registry.release_projection_commitments WHERE schema_version = $1 AND family = $2`, version, family).Scan(&commitment))
-			_, err := suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, make([]byte, 32), version, family)
+		for _, version := range []string{"1.0.0", "1.1.0", "2.0.0"} {
+			_, err := suite.Database.ExecContext(suite.Context, `INSERT INTO schema_registry.release_artifacts (schema_version, kind, artifact_type, artifact_revision) VALUES ($1, 'schema', 'unexpected', 'unexpected-r1')`, version)
 			suite.Require().NoError(err)
 			suite.ErrorIs(store.Read(suite.Context, read), storage.ErrInconsistentState, "family %s in release %s must remain verified", family, version)
-			_, err = suite.Database.ExecContext(suite.Context, `UPDATE schema_registry.release_projection_commitments SET commitment = $1 WHERE schema_version = $2 AND family = $3`, commitment, version, family)
+			_, err = suite.Database.ExecContext(suite.Context, `DELETE FROM schema_registry.release_artifacts WHERE schema_version = $1 AND artifact_revision = 'unexpected-r1'`, version)
 			suite.Require().NoError(err)
+			suite.Require().NoError(store.Read(suite.Context, read))
 		}
 	}
 }
@@ -272,9 +268,59 @@ func (suite *readStoreSuite) TestReorderedMappingTransformationProjection() {
 	suite.requireMappingProjectionFailure(`UPDATE schema_registry.source_mapping_transformations SET ordinal = ordinal + 10 WHERE mapping_revision = 'candidate-mapping-0-r1'`)
 }
 
-// TestMappingCommitmentMismatch verifies incorrect stored commitment bytes invalidate otherwise readable mapping projections.
-func (suite *readStoreSuite) TestMappingCommitmentMismatch() {
-	suite.requireMappingProjectionFailure(`UPDATE schema_registry.release_projection_commitments SET commitment = decode(repeat('00',32),'hex') WHERE schema_version = '8.0.0' AND family = 'source-mapping'`)
+// TestMappingDescriptorDigestMismatch verifies altered authoritative descriptor bytes invalidate otherwise readable mapping projections.
+func (suite *readStoreSuite) TestMappingDescriptorDigestMismatch() {
+	suite.requireMappingProjectionFailure(`UPDATE schema_registry.artifacts SET payload_bytes = set_byte(payload_bytes, 0, 32) WHERE artifact_revision = 'candidate-mapping-0-r1'`)
+}
+
+// TestMappingDescriptorSizeMismatch verifies a descriptor's manifest-bound size remains authoritative.
+func (suite *readStoreSuite) TestMappingDescriptorSizeMismatch() {
+	suite.requireMappingProjectionFailure(`UPDATE schema_registry.artifacts SET payload_bytes = payload_bytes || decode('20','hex'), payload_size = payload_size + 1 WHERE artifact_revision = 'candidate-mapping-0-r1'`)
+}
+
+// TestDirectVerificationUsesIndependentSnapshots verifies overlapping reads observe their own authoritative rows during external corruption.
+func (suite *readStoreSuite) TestDirectVerificationUsesIndependentSnapshots() {
+	store := suite.candidateStore()
+	ctx, cancel := context.WithTimeout(suite.Context, 5*time.Second)
+	defer cancel()
+	ready := make(chan struct{})
+	resume := make(chan struct{})
+	result := make(chan error, 1)
+	var first model.Release
+	go func() {
+		result <- store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
+			close(ready)
+			select {
+			case <-resume:
+			case <-readCtx.Done():
+				return readCtx.Err()
+			}
+			var err error
+			first, err = snapshot.CurrentRelease(readCtx)
+			return err
+		})
+	}()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		suite.T().Fatal("first read did not establish its snapshot")
+	}
+	_, err := suite.Database.ExecContext(ctx, `UPDATE schema_registry.releases SET source_commit = $1 WHERE schema_version = $2`, strings.Repeat("b", 40), "8.0.0")
+	suite.Require().NoError(err)
+	err = store.Read(ctx, func(readCtx context.Context, snapshot *storage.Snapshot) error {
+		_, releaseErr := snapshot.CurrentRelease(readCtx)
+		return releaseErr
+	})
+	suite.Require().ErrorIs(err, storage.ErrInconsistentState)
+	close(resume)
+	select {
+	case firstErr := <-result:
+		suite.Require().NoError(firstErr)
+	case <-ctx.Done():
+		suite.T().Fatal("first read did not finish")
+	}
+	suite.Equal("8.0.0", first.SchemaVersion)
+	suite.Equal(strings.Repeat("a", 40), first.SourceCommit)
 }
 
 // TestConcurrentCandidateSnapshots verifies simultaneous bounded read transactions can independently resolve complete candidate selections without failures.

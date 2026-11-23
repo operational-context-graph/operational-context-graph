@@ -21,8 +21,8 @@ Shared format validators accept the complete schema-and-context fixture before i
 Exact bindings and Uniform Resource Identifier (URI) mappings resolve within one read snapshot.
 Unbound revisions return empty bindings; missing URI entries and unknown releases return not-found errors.
 
-fixture_harness_test.go accepts optional schema-context bindings and inserts them before storing projection commitments.
-This ordering makes subsequent reads verify the complete relationship projection.
+fixture_harness_test.go accepts optional schema-context bindings and commits them with the complete fixture.
+Subsequent reads compare the complete relationship projection with the authoritative manifest.
 The fixture supplies read-model state without implementing or exercising a release transition.
 */
 

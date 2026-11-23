@@ -809,27 +809,8 @@ WHERE detail.schema_version = $1 AND detail.mapping_revision = $2 AND release.ac
 	return detail, nil
 }
 
-// VerifyCommitment compares an authoritative computed commitment with storage.
-func (s *Snapshot) VerifyCommitment(ctx context.Context, schemaVersion string, family model.ProjectionFamily, expected []byte) error {
-	const query = `
-SELECT commitment
-FROM schema_registry.release_projection_commitments
-WHERE schema_version = $1 AND family = $2`
-	var actual []byte
-	if err := s.tx.QueryRow(ctx, query, schemaVersion, family).Scan(&actual); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInconsistentState
-		}
-		return fmt.Errorf("read projection commitment: %w", err)
-	}
-	if !equalBytes(actual, expected) {
-		return ErrInconsistentState
-	}
-	return nil
-}
-
-// VerifyProjection recomputes one authoritative projection commitment from the
-// indexed rows needed by a response. Missing, extra, and altered rows differ.
+// VerifyProjection directly compares an affected projection family with authoritative manifest and digest-verified descriptor data.
+// Missing, extra, and altered rows invalidate the complete response.
 func (s *Snapshot) VerifyProjection(ctx context.Context, schemaVersion string, family model.ProjectionFamily) error {
 	if err := requireActiveRelease(ctx, s.tx, schemaVersion); err != nil {
 		return err
@@ -859,7 +840,7 @@ func (s *Snapshot) VerifyProjection(ctx context.Context, schemaVersion string, f
 	if !slices.Equal(actual, expected) {
 		return fmt.Errorf("%w: %s projection differs", ErrInconsistentState, family)
 	}
-	return s.VerifyCommitment(ctx, schemaVersion, family, ProjectionCommitment(expected))
+	return nil
 }
 
 // sourceMappingProjectionRows derives sorted mapping rows from digest-verified descriptor payloads selected by a manifest.
@@ -871,7 +852,10 @@ func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.
 		}
 		var payload []byte
 		if err := tx.QueryRow(ctx, `SELECT payload_bytes FROM schema_registry.artifacts WHERE artifact_revision = $1`, item.Revision).Scan(&payload); err != nil {
-			return nil, fmt.Errorf("read source-mapping descriptor: %w", ErrInconsistentState)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("read source-mapping descriptor: %w", ErrInconsistentState)
+			}
+			return nil, fmt.Errorf("read source-mapping descriptor: %w", err)
 		}
 		if manifestDigest(payload) != item.Payload.Digest || int64(len(payload)) != item.Payload.Size {
 			return nil, ErrInconsistentState
@@ -891,7 +875,7 @@ func sourceMappingProjectionRows(ctx context.Context, tx pgx.Tx, value manifest.
 }
 
 // mappingDescriptorProjection resolves descriptor references against selected dependencies and program resources.
-// It rejects unused programs and encodes transformation ordinals so commitments preserve execution order.
+// It rejects unused programs and encodes transformation ordinals so comparisons preserve execution order.
 func mappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
 	if descriptor.ID != item.Type {
 		return nil, ErrInconsistentState
@@ -955,12 +939,6 @@ func mappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact
 	return rows, nil
 }
 
-// MappingDescriptorProjection derives source-mapping projection rows from a
-// parsed manifest artifact. Integration tests use it to create valid fixtures.
-func MappingDescriptorProjection(value manifest.Manifest, item artifact.Artifact, descriptor sourcemapping.Descriptor) ([]string, error) {
-	return mappingDescriptorProjection(value, item, descriptor)
-}
-
 // releaseManifestBytes loads authoritative bytes only for an activated release, returning ErrNotFound otherwise.
 func releaseManifestBytes(ctx context.Context, tx pgx.Tx, schemaVersion string) ([]byte, error) {
 	var bytes []byte
@@ -974,7 +952,7 @@ func releaseManifestBytes(ctx context.Context, tx pgx.Tx, schemaVersion string) 
 	return bytes, nil
 }
 
-// manifestProjectionRows derives sorted commitment rows for fields embedded in an authoritative manifest.
+// manifestProjectionRows derives sorted comparison rows for fields embedded in an authoritative manifest.
 // Nonempty source-mapping families require descriptor bytes and return ErrInconsistentState here.
 func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.ProjectionFamily) ([]string, error) {
 	rows := make([]string, 0)
@@ -1031,12 +1009,6 @@ func manifestProjectionRows(value manifest.Manifest, bytes []byte, family model.
 	}
 	sort.Strings(rows)
 	return rows, nil
-}
-
-// ManifestProjectionRows derives the projection rows for one manifest family.
-// Integration tests use it to create valid fixture commitments.
-func ManifestProjectionRows(value manifest.Manifest, bytes []byte, family model.ProjectionFamily) ([]string, error) {
-	return manifestProjectionRows(value, bytes, family)
 }
 
 // manifestDigest returns the registry's lowercase, prefixed SHA-256 digest of exact bytes.
@@ -1176,7 +1148,7 @@ func projectionRows(ctx context.Context, tx pgx.Tx, schemaVersion string, family
 	return values, nil
 }
 
-// projectionQuery selects a static, fully qualified query for each supported commitment family.
+// projectionQuery selects a static, fully qualified query for each supported projection family.
 func projectionQuery(family model.ProjectionFamily) (string, error) {
 	switch family {
 	case model.ProjectionRelease:
@@ -1199,26 +1171,6 @@ UNION ALL SELECT ARRAY['transformation', mapping_revision, ordinal::text, target
 	default:
 		return "", fmt.Errorf("unknown projection family %q", family)
 	}
-}
-
-// ProjectionCommitment hashes length-prefixed projection rows. The importer
-// passes sorted rows derived from one canonical manifest; requests compare it.
-func ProjectionCommitment(rows []string) []byte {
-	// Sorting a copy preserves caller order; length prefixes prevent ambiguity between adjacent row values.
-	copyRows := append([]string(nil), rows...)
-	sort.Strings(copyRows)
-	hash := sha256.New()
-	for _, row := range copyRows {
-		hash.Write([]byte(strconv.Itoa(len(row))))
-		hash.Write([]byte{':'})
-		hash.Write([]byte(row))
-	}
-	return hash.Sum(nil)
-}
-
-// ProjectionCommitmentHex returns the commitment in a test-friendly encoding.
-func ProjectionCommitmentHex(rows []string) string {
-	return hex.EncodeToString(ProjectionCommitment(rows))
 }
 
 // scanRelease decodes a single-release query and maps an absent row to ErrNotFound.
@@ -1321,19 +1273,6 @@ func validateReleaseChain(releases []releaseRow) error {
 		}
 	}
 	return nil
-}
-
-// equalBytes compares commitment bytes exactly, including their lengths.
-func equalBytes(left, right []byte) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }
 
 // StaticQuery contains an auditable code-owned SQL query. Request values are

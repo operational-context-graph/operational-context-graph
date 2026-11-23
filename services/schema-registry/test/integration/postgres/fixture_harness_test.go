@@ -14,8 +14,6 @@ import (
 	"github.com/gowebpki/jcs"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
-	storage "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
 	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
@@ -376,16 +374,13 @@ ON CONFLICT (artifact_revision, name) DO NOTHING`, item.Revision, resource.Name,
 			}
 		}
 	}
-	// Complete the binding projection before recording commitments for later read-side verification.
+	// Complete the binding projection before committing the fixture's authoritative bytes and rows.
 	for _, binding := range parsed.SchemaContextBindings {
 		for _, revision := range binding.ContextRevisions {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO schema_registry.schema_context_bindings (schema_version, schema_revision, context_revision) VALUES ($1, $2, $3)`, fixture.version, binding.SchemaRevision, revision); err != nil {
 				return manifest.Manifest{}, err
 			}
 		}
-	}
-	if err := storeProjectionCommitments(ctx, tx, parsed); err != nil {
-		return manifest.Manifest{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return manifest.Manifest{}, err
@@ -431,43 +426,6 @@ ON CONFLICT (artifact_revision) DO NOTHING`); err != nil {
 		return err
 	}
 	return tx.Commit()
-}
-
-// storeProjectionCommitments persists authoritative per-family evidence, deriving mapping rows from descriptor payloads rather than manifest-only fields.
-func storeProjectionCommitments(ctx context.Context, transaction *sql.Tx, value manifest.Manifest) error {
-	for _, family := range []model.ProjectionFamily{model.ProjectionRelease, model.ProjectionArtifact, model.ProjectionResource, model.ProjectionDependency, model.ProjectionBinding, model.ProjectionURI, model.ProjectionStorage, model.ProjectionSourceMapping} {
-		rows, err := storage.ManifestProjectionRows(value, value.Raw, family)
-		if err != nil && family == model.ProjectionSourceMapping {
-			rows = make([]string, 0)
-			for _, item := range value.Artifacts {
-				if item.Kind != artifact.KindSourceMapping {
-					continue
-				}
-				var payload []byte
-				if err = transaction.QueryRowContext(ctx, `SELECT payload_bytes FROM schema_registry.artifacts WHERE artifact_revision = $1`, item.Revision).Scan(&payload); err != nil {
-					return err
-				}
-				var descriptor sourcemapping.Descriptor
-				descriptor, err = sourcemapping.Parse(payload)
-				if err != nil {
-					return err
-				}
-				var derived []string
-				derived, err = storage.MappingDescriptorProjection(value, item, descriptor)
-				if err != nil {
-					return err
-				}
-				rows = append(rows, derived...)
-			}
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := transaction.ExecContext(ctx, `INSERT INTO schema_registry.release_projection_commitments (schema_version, family, commitment) VALUES ($1, $2, $3)`, value.SchemaVersion, family, storage.ProjectionCommitment(rows)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // previousVersion returns nullable predecessor version metadata for database insertion.

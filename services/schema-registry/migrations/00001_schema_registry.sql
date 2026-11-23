@@ -216,16 +216,6 @@ CREATE TABLE schema_registry.source_mapping_transformations (
 CREATE INDEX source_mapping_transformations_target_index
     ON schema_registry.source_mapping_transformations (schema_version, target_artifact_type, mapping_revision);
 
-CREATE TABLE schema_registry.release_projection_commitments (
-    schema_version text COLLATE "C" NOT NULL,
-    family text COLLATE "C" NOT NULL,
-    commitment bytea NOT NULL,
-    PRIMARY KEY (schema_version, family),
-    CHECK (family IN ('release', 'artifact', 'resource', 'dependency', 'binding', 'uri', 'storage', 'source-mapping')),
-    CHECK (octet_length(commitment) = 32),
-    FOREIGN KEY (schema_version) REFERENCES schema_registry.releases(schema_version) ON DELETE RESTRICT
-);
-
 CREATE TABLE schema_registry.activated_revision_reachability (
     artifact_revision text COLLATE "C" PRIMARY KEY,
     first_activated_sequence bigint NOT NULL,

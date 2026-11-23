@@ -82,8 +82,8 @@ func sqlContains(fragment string) any {
 	return mock.MatchedBy(func(query string) bool { return strings.Contains(query, fragment) })
 }
 
-// expectVerifiedProjection supplies successful integrity evidence so injected failures exercise later database operations.
-func expectVerifiedProjection(t *testing.T, tx *queryTestTx, family model.ProjectionFamily) {
+// expectVerifiedProjection supplies matching authoritative rows so injected failures exercise later database operations.
+func expectVerifiedProjection(t *testing.T, tx *queryTestTx, family model.ProjectionFamily) *queryTestRows {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "manifest", "valid-initial.json"))
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func expectVerifiedProjection(t *testing.T, tx *queryTestTx, family model.Projec
 	tx.On("QueryRow", mock.Anything, sqlContains("SELECT EXISTS (SELECT 1 FROM schema_registry.releases"), []any{"1.0.0"}).Return(valueRow(true)).Once()
 	tx.On("Query", mock.Anything, query, []any{"1.0.0"}).Return(rows, nil).Once()
 	tx.On("QueryRow", mock.Anything, sqlContains("SELECT manifest_bytes"), []any{"1.0.0"}).Return(valueRow(raw)).Once()
-	tx.On("QueryRow", mock.Anything, sqlContains("SELECT commitment"), []any{"1.0.0", family}).Return(valueRow(ProjectionCommitment(expected))).Once()
+	return rows
 }
 
 // TestSnapshotQueryFailuresPreserveCause checks errors from each read entry point's first database operation.
@@ -185,9 +185,6 @@ func TestSnapshotQueryFailuresPreserveCause(t *testing.T) {
 			_, err := s.SourceMappingByRevision(ctx, "1.0.0", "revision")
 			return err
 		}},
-		{name: "commitment", read: func(ctx context.Context, s *Snapshot) error {
-			return s.VerifyCommitment(ctx, "1.0.0", model.ProjectionArtifact, nil)
-		}},
 		{name: "manifest bytes", read: func(ctx context.Context, s *Snapshot) error {
 			_, err := releaseManifestBytes(ctx, s.tx, "1.0.0")
 			return err
@@ -224,7 +221,7 @@ func TestSnapshotQueryFailuresPreserveCause(t *testing.T) {
 }
 
 // TestStorageMissingRowsHaveStableClassification distinguishes missing data from broken required read-model records.
-// Missing current state, lineage, and commitments are inconsistent; a missing manifest is not found.
+// Missing current state and lineage are inconsistent; a missing manifest is not found.
 func TestStorageMissingRowsHaveStableClassification(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -239,9 +236,6 @@ func TestStorageMissingRowsHaveStableClassification(t *testing.T) {
 		{name: "missing lineage", read: func(ctx context.Context, s *Snapshot) error {
 			_, err := s.IsAncestor(ctx, "1.0.0", "2.0.0")
 			return err
-		}, want: ErrInconsistentState},
-		{name: "missing commitment", read: func(ctx context.Context, s *Snapshot) error {
-			return s.VerifyCommitment(ctx, "1.0.0", model.ProjectionArtifact, nil)
 		}, want: ErrInconsistentState},
 		{name: "missing manifest", read: func(ctx context.Context, s *Snapshot) error {
 			_, err := releaseManifestBytes(ctx, s.tx, "1.0.0")

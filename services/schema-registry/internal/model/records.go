@@ -173,10 +173,3 @@ const (
 	ProjectionStorage       ProjectionFamily = "storage"
 	ProjectionSourceMapping ProjectionFamily = "source-mapping"
 )
-
-// ProjectionCommitment binds a release projection family to authoritative bytes.
-type ProjectionCommitment struct {
-	SchemaVersion string
-	Family        ProjectionFamily
-	Commitment    []byte
-}
