@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -354,6 +355,77 @@ func TestBuildMappingWithoutConditionOrStores(t *testing.T) {
 	require.JSONEq(t, `{"transformations":[]}`, string(testJSON(t, mapping.Programs)))
 }
 
+// TestMappingPackageContent verifies Base64 padding, boolean schemas, Unicode escaping, and precision-sensitive numeric literals.
+// Building preserves raw document bytes and leaves input models unchanged.
+func TestMappingPackageContent(t *testing.T) {
+	documents := []struct {
+		name string
+		raw  string
+	}{
+		{"true", "true"},
+		{"false", " false \n"},
+		{"empty-object", " { } \n"},
+		{"escaped-unicode-object", " {\n\t\"title\": \"<&> 世界 \u2028 \u2029 \\u2028\", \"nested\": [true, false, null] } "},
+		{"exact-numbers", ` { "large": 9007199254740993, "decimal": 1.2300000000000000000000001, "exponent": 1e+400, "negativeZero": -0 } `},
+	}
+	for _, length := range []int{0, 1, 2, 3, 4, 1 << 20} {
+		for _, document := range documents {
+			t.Run(fmt.Sprintf("bytes-%d/%s", length, document.name), func(t *testing.T) {
+				value := testPackage(bytes.Repeat([]byte{0xfb}, length))
+				value.Schemas[1].Artifact.Payload = testBytes([]byte(document.raw), "application/schema+json")
+				before := testJSON(t, value)
+				body, err := BuildMappingPackage(value, testVersion)
+				require.NoError(t, err)
+				encoded := testJSON(t, body)
+				require.Equal(t, base64.StdEncoding.EncodedLen(length), len(body.Programs[1].Content))
+				require.Equal(t, base64.StdEncoding.EncodeToString(value.Programs[1].Bytes), body.Programs[1].Content)
+				require.Equal(t, document.raw, string(body.Schemas[1].Document), "building preserves exact raw document bytes")
+				var decoded struct {
+					Schemas []struct{ Document json.RawMessage }
+				}
+				require.NoError(t, json.Unmarshal(encoded, &decoded))
+				require.Equal(t, testJSON(t, json.RawMessage(document.raw)), []byte(decoded.Schemas[1].Document))
+				require.Equal(t, before, testJSON(t, value))
+			})
+		}
+	}
+}
+
+// TestMappingPackageRejectsInvalidContent verifies absent content, invalid JSON, and mismatched program sizes fail representation validation.
+func TestMappingPackageRejectsInvalidContent(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*model.SourceMappingPackage)
+		want   error
+	}{
+		{"zero-value", func(value *model.SourceMappingPackage) { *value = model.SourceMappingPackage{} }, ErrInvalid},
+		{"nil-schemas", func(value *model.SourceMappingPackage) { value.Schemas = nil }, ErrInvalid},
+		{"empty-schemas", func(value *model.SourceMappingPackage) { value.Schemas = []model.Descriptor{} }, ErrInvalid},
+		{"nil-programs", func(value *model.SourceMappingPackage) { value.Programs = nil }, ErrInvalid},
+		{"empty-programs", func(value *model.SourceMappingPackage) { value.Programs = []model.Resource{} }, ErrInvalid},
+		{"nil-schema-bytes", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = nil }, ErrInvalid},
+		{"empty-schema-bytes", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte{} }, ErrInvalid},
+		{"invalid-schema", func(value *model.SourceMappingPackage) { value.Schemas[0].Artifact.Payload.Bytes = []byte(`{"type":`) }, ErrInvalid},
+		{"trailing-schema-value", func(value *model.SourceMappingPackage) {
+			value.Schemas[0].Artifact.Payload.Bytes = []byte(`true false`)
+		}, ErrInvalid},
+		{"invalid-mapping-extensions", func(value *model.SourceMappingPackage) { value.Mapping.Artifact.Extensions = []byte(`{`) }, ErrInvalid},
+		{"invalid-schema-extensions", func(value *model.SourceMappingPackage) { value.Schemas[1].Artifact.Extensions = []byte(`undefined`) }, ErrInvalid},
+		{"negative-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = -1 }, ErrInvalid},
+		{"minimum-program-size", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MinInt64 }, ErrInvalid},
+		{"maximum-program-size-mismatch", func(value *model.SourceMappingPackage) { value.Programs[1].Size = math.MaxInt64 }, ErrInvalid},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := testPackage([]byte{1, 2, 3})
+			test.change(&value)
+			body, err := BuildMappingPackage(value, testVersion)
+			require.ErrorIs(t, err, test.want)
+			require.Equal(t, v1.SourceMappingPackage{}, body)
+		})
+	}
+}
+
 // TestBuildMappingPackageRejectsMismatchedProgramBytes verifies declared program sizes must match actual bytes before a package can encode.
 func TestBuildMappingPackageRejectsMismatchedProgramBytes(t *testing.T) {
 	for _, test := range []struct {
@@ -369,9 +441,6 @@ func TestBuildMappingPackageRejectsMismatchedProgramBytes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			value := testPackage(test.raw)
 			value.Programs[1].Size = test.size
-			size, err := MappingPackageSize(value, testVersion)
-			require.NoError(t, err, "counting uses declared program sizes without requiring their bytes")
-			require.Positive(t, size)
 			body, err := BuildMappingPackage(value, testVersion)
 			require.ErrorIs(t, err, ErrInvalid)
 			require.Equal(t, v1.SourceMappingPackage{}, body)
@@ -399,8 +468,8 @@ func TestBuildMappingPackageCopiesMutableJSON(t *testing.T) {
 	require.Equal(t, before, testJSON(t, value), "output mutations must not change immutable domain inputs")
 }
 
-// TestBuildAndCountConcurrentImmutableInput verifies simultaneous building and sizing yield matching stable results without mutating shared fixture state.
-func TestBuildAndCountConcurrentImmutableInput(t *testing.T) {
+// TestBuildConcurrentImmutableInput verifies simultaneous builders yield stable results without mutating shared fixture state.
+func TestBuildConcurrentImmutableInput(t *testing.T) {
 	value := testPackage(bytes.Repeat([]byte{0, 0xff, 0x80}, 1024))
 	before := testJSON(t, value)
 	expected, err := BuildMappingPackage(value, testVersion)
@@ -411,9 +480,6 @@ func TestBuildAndCountConcurrentImmutableInput(t *testing.T) {
 			t.Run(fmt.Sprintf("reader-%d", index), func(t *testing.T) {
 				t.Parallel()
 				for range 5 {
-					size, err := MappingPackageSize(value, testVersion)
-					require.NoError(t, err)
-					require.Equal(t, int64(len(encoded)), size)
 					body, err := BuildMappingPackage(value, testVersion)
 					require.NoError(t, err)
 					require.Equal(t, encoded, testJSON(t, body))

@@ -2,16 +2,12 @@ package httpapi
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
-	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
 // TestNegotiateCoding verifies identity defaults, gzip preferences, wildcard and explicit exclusions, and quality-based supported coding selection.
@@ -59,24 +55,6 @@ func TestEncodeRepresentationIsDeterministicAndExact(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, identity, plain)
 	assert.Equal(t, []byte{0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 4, 255}, first[:10])
-}
-
-// TestEncodeRepresentationAllows64MiBBoundary verifies exact-limit identity content encodes while content one byte larger fails before compression.
-func TestEncodeRepresentationAllows64MiBBoundary(t *testing.T) {
-	identity := bytes.Repeat([]byte("x"), int(limits.MaxGeneratedJSONBytes))
-	compressed, err := EncodeRepresentation(identity, Gzip)
-	require.NoError(t, err)
-
-	reader, err := gzip.NewReader(bytes.NewReader(compressed))
-	require.NoError(t, err)
-	written, err := io.Copy(io.Discard, io.LimitReader(reader, limits.MaxGeneratedJSONBytes+1))
-	require.NoError(t, err)
-	require.NoError(t, reader.Close())
-	assert.Equal(t, limits.MaxGeneratedJSONBytes, written)
-
-	tooLarge := make([]byte, int(limits.MaxGeneratedJSONBytes)+1)
-	_, err = EncodeRepresentation(tooLarge, Gzip)
-	require.ErrorIs(t, err, ErrRepresentationTooLarge)
 }
 
 // TestEncodeRepresentationContextStopsCancelledCompression verifies canceled contexts stop representation work with context.Canceled and no encoded output.

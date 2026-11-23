@@ -14,8 +14,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 )
 
 // TestWriteRepresentationEncodesGzipAndSuppressesHeadBody verifies gzip integrity headers and HEAD parity for encoded length and validators without a body.
@@ -108,7 +106,7 @@ func TestWriteRepresentationDoesNotCommitAfterClientCancellation(t *testing.T) {
 
 // TestWriteRepresentationStopsOnClientDisconnect verifies a real transport disconnect cancels in-progress compression within the test deadline.
 func TestWriteRepresentationStopsOnClientDisconnect(t *testing.T) {
-	body := bytes.Repeat([]byte("x"), int(limits.MaxGeneratedJSONBytes))
+	body := bytes.Repeat([]byte("x"), 16*1024*1024)
 	started := make(chan struct{})
 	finished := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -257,20 +255,10 @@ func TestWriteRedirectIsConditionalAndDoesNotUseRequestAuthority(t *testing.T) {
 	assert.Equal(t, "3.0.0", conditional.Header().Get("Schema-Version"))
 }
 
-// TestWriteRepresentationDoesNotCommitOnLateFailure verifies oversized content and injected header text fail without headers or partial success bodies.
+// TestWriteRepresentationDoesNotCommitOnLateFailure verifies injected header text fails without headers or partial success bodies.
 func TestWriteRepresentationDoesNotCommitOnLateFailure(t *testing.T) {
 	response := httptest.NewRecorder()
 	err := WriteRepresentation(response, Representation{
-		Status:    http.StatusOK,
-		MediaType: "application/json",
-		Body:      make([]byte, int(limits.MaxGeneratedJSONBytes)+1),
-		Method:    http.MethodGet,
-	})
-	require.ErrorIs(t, err, ErrRepresentationTooLarge)
-	assert.Empty(t, response.Header())
-	assert.Empty(t, response.Body.String())
-
-	err = WriteRepresentation(response, Representation{
 		Status:    http.StatusOK,
 		MediaType: "application/json\r\nX-Injected: true",
 		Body:      []byte("{}"),

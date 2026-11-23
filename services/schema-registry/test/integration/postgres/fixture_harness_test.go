@@ -156,7 +156,7 @@ func candidateFixture(t testing.TB) registryFixture {
 			programs["condition"] = map[string]any{"programRef": condition.Name, "programDigest": condition.Digest}
 			programs["transformations"] = append(transformations, map[string]any{"programRef": program.Name, "programDigest": program.Digest, "cardinality": "many", "targetSchema": map[string]any{"id": edge.Type, "revision": edge.Revision}}, transformations[0])
 		}
-		data, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": name, "sourceSchema": map[string]any{"id": source.Type, "revision": source.Revision}, "engine": map[string]any{"language": "publisher-engine", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"}, "programs": programs})
+		data, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": sourcemapping.FormatVersion, "id": name, "sourceSchema": map[string]any{"id": source.Type, "revision": source.Revision}, "engine": map[string]any{"language": "publisher-engine", "languageVersion": "1.0.0", "executionProfile": "publisher-profile"}, "programs": programs})
 		require.NoError(t, err)
 		dependencies := []artifact.Dependency{{Kind: artifact.KindSchema, Type: entity.Type, Revision: entity.Revision}, {Kind: artifact.KindSchema, Type: source.Type, Revision: source.Revision}}
 		if index == 0 {
@@ -245,7 +245,7 @@ func fixtureManifest(t testing.TB, fixture registryFixture) (manifest.Manifest, 
 	sort.Slice(uris, func(i, j int) bool { return uris[i]["uri"].(string) < uris[j]["uri"].(string) })
 	sort.Slice(storage, func(i, j int) bool { return storage[i]["artifactType"].(string) < storage[j]["artifactType"].(string) })
 	root := map[string]any{
-		"$schema": "https://example.test/manifest-1.0.0", "formatVersion": "1.0.0", "schemaVersion": fixture.version,
+		"$schema": "https://example.test/manifest-1.0.0", "formatVersion": manifest.FormatVersion, "schemaVersion": fixture.version,
 		"source":    map[string]any{"repository": "https://git.example.test/schema-model", "commit": strings.Repeat("a", 40)},
 		"artifacts": entries, "schemaContextBindings": []any{}, "uriCatalog": uris, "storageCatalog": storage,
 	}

@@ -276,9 +276,8 @@ func TestSharedArtifactBytesDoNotAffectMetadataComparisons(t *testing.T) {
 	assert.False(t, sameArtifactRelations(left, right))
 }
 
-// TestManifestFormatAcceptsOversizedMultiProgramPackage separates individual
-// resource validity from application-level assembled-response size limits.
-func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
+// TestManifestFormatAcceptsMultipleMaximumSizePrograms verifies each resource's exact-byte input limit independently.
+func TestManifestFormatAcceptsMultipleMaximumSizePrograms(t *testing.T) {
 	m, context := mappingClosure(t)
 	key := artifactmodel.Dependency{Kind: artifactmodel.KindSourceMapping, Type: "mapping-a", Revision: "mapping-a-r1"}
 	item := context.Artifacts[key]
@@ -307,7 +306,6 @@ func TestManifestFormatAcceptsOversizedMultiProgramPackage(t *testing.T) {
 	item.PayloadBytes, item.Payload = payload, descriptor(payload, "application/vnd.apeiro.ocg.source-mapping.v1+json", "artifacts/mapping-a.json")
 	context.Artifacts[key] = item
 	m.Artifacts[3] = item.Metadata()
-	// Format validity does not establish application response serviceability.
 	require.NoError(t, m.Validate(context))
 }
 

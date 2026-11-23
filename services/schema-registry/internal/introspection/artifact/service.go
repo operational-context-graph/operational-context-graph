@@ -12,7 +12,6 @@ import (
 	"mime"
 	"sort"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
@@ -401,7 +400,7 @@ func sourceMappingDependencyError(err error) error {
 }
 
 // assembleSourceMappingPackage loads verified program bytes and unique schema documents from one snapshot.
-// It bounds retained content and returns deterministic program, schema, and store ordering without executing programs.
+// It returns deterministic program, schema, and store ordering without executing programs.
 func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot, version string, mapping model.SourceMapping) (model.SourceMappingPackage, error) {
 	programNames := make(map[string]bool)
 	if condition := mapping.Detail.Condition; condition != nil {
@@ -417,14 +416,6 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 		}
 	}
 	if len(result.Programs) != len(programNames) {
-		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
-	}
-	var budget int64
-	// Base64 expands program bytes in JSON; reject an oversized lower bound before allocating program content.
-	for _, resource := range result.Programs {
-		budget += (resource.Size + 2) / 3 * 4
-	}
-	if budget > limits.MaxGeneratedJSONBytes {
 		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 	}
 	for index, resource := range result.Programs {
@@ -448,10 +439,6 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 	if err != nil {
 		return model.SourceMappingPackage{}, err
 	}
-	budget += int64(len(source.Artifact.Payload.Bytes))
-	if budget > limits.MaxGeneratedJSONBytes {
-		return model.SourceMappingPackage{}, postgres.ErrInconsistentState
-	}
 	result.Schemas = []Descriptor{source}
 	seenSchemas := map[string]bool{source.Artifact.Revision: true}
 	seenStores := make(map[string]bool)
@@ -470,10 +457,6 @@ func assembleSourceMappingPackage(ctx context.Context, snapshot release.Snapshot
 			target, err = compactSchemaDocument(target)
 			if err != nil {
 				return model.SourceMappingPackage{}, err
-			}
-			budget += int64(len(target.Artifact.Payload.Bytes))
-			if budget > limits.MaxGeneratedJSONBytes {
-				return model.SourceMappingPackage{}, postgres.ErrInconsistentState
 			}
 			result.Schemas = append(result.Schemas, target)
 			seenSchemas[target.Artifact.Revision] = true
@@ -560,7 +543,6 @@ func (s *Service) SourceMappings(ctx context.Context, version string, filter mod
 		}
 		mappings := make([]model.SourceMapping, 0, len(items))
 		schemas := make(schemaMetadataCache)
-		var minimumBytes int64
 		for index, item := range items {
 			if item.Kind != "source-mapping" {
 				continue
@@ -573,10 +555,6 @@ func (s *Service) SourceMappings(ctx context.Context, version string, filter mod
 			mapping, err := loadSourceMapping(readCtx, snapshot, version, item.Type, schemas)
 			if err != nil {
 				return err
-			}
-			minimumBytes += minimumSourceMappingBytes(mapping, version)
-			if minimumBytes > limits.MaxGeneratedJSONBytes {
-				return postgres.ErrInconsistentState
 			}
 			mappings = append(mappings, mapping)
 		}
@@ -605,7 +583,6 @@ func (s *Service) SourceMappingPackages(ctx context.Context, version string, fil
 		}
 		result.Value = make([]model.SourceMappingPackage, 0, len(items))
 		schemas := make(schemaMetadataCache)
-		var minimumBytes int64
 		for index, item := range items {
 			if index == limit-1 {
 				result.Value = append(result.Value, model.SourceMappingPackage{Mapping: Descriptor{Artifact: item}})
@@ -619,45 +596,12 @@ func (s *Service) SourceMappingPackages(ctx context.Context, version string, fil
 			if err != nil {
 				return err
 			}
-			minimumBytes += minimumSourceMappingBytes(mapping, version)
-			for _, program := range value.Programs {
-				minimumBytes += (program.Size + 2) / 3 * 4
-			}
-			for _, schema := range value.Schemas {
-				minimumBytes += int64(len(schema.Artifact.Payload.Bytes))
-				minimumBytes += extensionBytes(schema.Artifact.Extensions)
-			}
-			if minimumBytes > limits.MaxGeneratedJSONBytes {
-				return postgres.ErrInconsistentState
-			}
 			result.Value = append(result.Value, value)
 		}
 		return nil
 	})
 	result.Current, result.Selected = current, version
 	return result, err
-}
-
-// extensionBytes counts extensions as JSON emits them and returns an over-budget value for invalid JSON.
-func extensionBytes(raw []byte) int64 {
-	if len(raw) == 0 {
-		return 0
-	}
-	encoded, err := json.Marshal(json.RawMessage(raw))
-	if err != nil {
-		return limits.MaxGeneratedJSONBytes + 1
-	}
-	return int64(len(encoded))
-}
-
-// minimumSourceMappingBytes bounds retained metadata using values present in the wire model.
-// Transport validation still checks each complete item and the final envelope.
-func minimumSourceMappingBytes(mapping model.SourceMapping, version string) int64 {
-	size := extensionBytes(mapping.Descriptor.Artifact.Extensions)
-	for _, transformation := range mapping.Detail.Transformations {
-		size += int64(len(version) + len(transformation.TargetArtifactType) + len(transformation.TargetRevision) + len(transformation.ProgramName) + len(transformation.ProgramDigest))
-	}
-	return size
 }
 
 // loadDescriptor resolves a release-selected artifact and loads its verified content and relationships.

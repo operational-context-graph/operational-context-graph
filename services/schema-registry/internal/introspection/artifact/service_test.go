@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
 
 // serviceSnapshot supplies controlled artifacts and dependencies and records read and resource-load counts.
@@ -151,7 +151,7 @@ func testBytes(raw []byte, mediaType string) model.ByteDescriptor {
 func newServiceSnapshot() *serviceSnapshot {
 	sourceClass, targetClass, version := "source-record", "entity-type", "1.0.0"
 	program := model.Resource{ArtifactRevision: "mapping-r1", Name: "program.bin", Role: "program", ByteDescriptor: testBytes([]byte("opaque\x00program"), "application/octet-stream")}
-	mappingBytes := []byte(fmt.Sprintf(`{"$schema":"https://example.test/mapping","formatVersion":"1.0.0","id":"mapping","sourceSchema":{"id":"source","revision":"source-r1"},"engine":{"language":"opaque","languageVersion":"1.0.0","executionProfile":"test"},"programs":{"transformations":[{"programRef":"program.bin","programDigest":%q,"cardinality":"one","targetSchema":{"id":"target","revision":"target-r1"}}]}}`, program.Digest))
+	mappingBytes := []byte(fmt.Sprintf(`{"$schema":"https://example.test/mapping","formatVersion":%q,"id":"mapping","sourceSchema":{"id":"source","revision":"source-r1"},"engine":{"language":"opaque","languageVersion":"1.0.0","executionProfile":"test"},"programs":{"transformations":[{"programRef":"program.bin","programDigest":%q,"cardinality":"one","targetSchema":{"id":"target","revision":"target-r1"}}]}}`, sourcemapping.FormatVersion, program.Digest))
 	return &serviceSnapshot{
 		current: model.CurrentState{SchemaVersion: version, ActivationSequence: 1, SnapshotSequence: 1},
 		artifacts: map[string]model.Artifact{
@@ -370,9 +370,9 @@ func TestArtifactReadsPreserveFailureScope(t *testing.T) {
 	}
 }
 
-// TestMappingAssemblyRejectsMissingProgramsAndOversizedMetadata verifies missing programs and oversized declared content fail before resource-byte loads.
-// Invalid extension JSON exceeds the budget, and mismatched resource ownership fails integrity checks.
-func TestMappingAssemblyRejectsMissingProgramsAndOversizedMetadata(t *testing.T) {
+// TestMappingAssemblyRejectsMissingPrograms verifies missing program metadata fails before resource-byte loads.
+// Mismatched resource ownership also fails integrity checks.
+func TestMappingAssemblyRejectsMissingPrograms(t *testing.T) {
 	snapshot := newServiceSnapshot()
 	mapping, err := loadSourceMapping(t.Context(), snapshot, "1.0.0", "mapping", make(schemaMetadataCache))
 	require.NoError(t, err)
@@ -380,12 +380,6 @@ func TestMappingAssemblyRejectsMissingProgramsAndOversizedMetadata(t *testing.T)
 	_, err = assembleSourceMappingPackage(t.Context(), snapshot, "1.0.0", mapping)
 	require.ErrorIs(t, err, postgres.ErrInconsistentState)
 	assert.Zero(t, snapshot.resourceReads)
-	mapping.Descriptor.Resources = append([]model.Resource(nil), snapshot.resources["mapping-r1"]...)
-	mapping.Descriptor.Resources[0].Size = limits.MaxGeneratedJSONBytes
-	_, err = assembleSourceMappingPackage(t.Context(), snapshot, "1.0.0", mapping)
-	require.ErrorIs(t, err, postgres.ErrInconsistentState)
-	assert.Zero(t, snapshot.resourceReads, "oversized program metadata must fail before loading program bytes")
-	assert.Greater(t, extensionBytes([]byte("{")), limits.MaxGeneratedJSONBytes)
 	require.ErrorIs(t, EnsureResourceOwner(model.Resource{ArtifactRevision: "other"}, "expected"), postgres.ErrInconsistentState)
 }
 

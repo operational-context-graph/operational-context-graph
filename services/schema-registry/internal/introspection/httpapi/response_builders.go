@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
@@ -11,6 +12,9 @@ import (
 	manifestmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
 	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 )
+
+// ErrInvalid identifies content that cannot produce the shared JSON representation.
+var ErrInvalid = errors.New("invalid API representation")
 
 // BuildDescriptor projects validated artifact metadata into the shared wire contract.
 func BuildDescriptor(value model.Descriptor, selected string) v1.ArtifactDescriptor {
@@ -94,17 +98,23 @@ func mappingPackageMetadata(value model.SourceMappingPackage, version string) (v
 	return body, nil
 }
 
-// BuildMappingPackage checks identity size before allocating Base64 program strings.
+// BuildMappingPackage embeds schema documents and encodes exact program bytes as Base64 strings.
 // Callers MUST validate release consistency and byte integrity before calling this function.
 func BuildMappingPackage(value model.SourceMappingPackage, version string) (v1.SourceMappingPackage, error) {
 	body, err := mappingPackageMetadata(value, version)
 	if err != nil {
 		return v1.SourceMappingPackage{}, err
 	}
-	if _, err := MappingPackageSize(value, version); err != nil {
-		return v1.SourceMappingPackage{}, err
+	if len(body.Mapping.Extensions) > 0 && !json.Valid(body.Mapping.Extensions) {
+		return v1.SourceMappingPackage{}, fmt.Errorf("%w: invalid mapping extensions JSON", ErrInvalid)
 	}
 	for index, schema := range value.Schemas {
+		if !json.Valid(schema.Artifact.Payload.Bytes) {
+			return v1.SourceMappingPackage{}, fmt.Errorf("%w: invalid schema JSON", ErrInvalid)
+		}
+		if len(schema.Artifact.Extensions) > 0 && !json.Valid(schema.Artifact.Extensions) {
+			return v1.SourceMappingPackage{}, fmt.Errorf("%w: invalid schema extensions JSON", ErrInvalid)
+		}
 		body.Schemas[index].Document = append(json.RawMessage(nil), schema.Artifact.Payload.Bytes...)
 	}
 	for index, program := range value.Programs {

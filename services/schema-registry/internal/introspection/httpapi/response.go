@@ -162,7 +162,7 @@ func WriteRepresentation(writer http.ResponseWriter, value Representation) error
 		ctx = context.Background()
 	}
 	body, err := EncodeRepresentationContext(ctx, value.Body, coding)
-	// Encoding must finish before commitment so cancellation and size failures cannot produce partial success responses.
+	// Encoding must finish before commitment so cancellation cannot produce partial success responses.
 	if err != nil {
 		return err
 	}

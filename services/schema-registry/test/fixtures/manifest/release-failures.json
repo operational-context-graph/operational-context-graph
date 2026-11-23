@@ -85,7 +85,6 @@
     {"id":"profile-members","rule":"profile.members","target":"profile","operation":"members","phase":"parse","classification":"member-limit","errorContains":"too many members"},
     {"id":"profile-entries","rule":"profile.entries","target":"profile","operation":"array","phase":"parse","classification":"array-limit","errorContains":"too many entries"},
     {"id":"profile-string","rule":"profile.strings","target":"profile","operation":"string","phase":"parse","classification":"string-limit","errorContains":"string exceeds the byte limit"},
-    {"id":"profile-generated-package","rule":"profile.generated-response","target":"large-package","phase":"serviceability","classification":"response-limit","errorContains":"mapping-b package"},
     {"id":"profile-identifier","rule":"profile.identifiers","target":"manifest","path":"artifacts/2/artifactType","operation":"string","value":256,"phase":"parse","classification":"invalid-manifest","errorContains":"invalid artifact identity"},
     {"id":"profile-media-type","rule":"profile.media-types","target":"bound","path":"payload/mediaType","operation":"string","value":256,"phase":"closure","classification":"invalid-manifest","errorContains":"descriptor requires a bounded media type"},
     {"id":"profile-uri","rule":"profile.uris","target":"manifest","path":"source/repository","operation":"uri","value":8193,"phase":"parse","classification":"invalid-manifest","errorContains":"invalid source"},

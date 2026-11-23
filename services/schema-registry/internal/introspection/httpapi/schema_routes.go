@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/pagination"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
@@ -232,7 +231,7 @@ func (s *Server) schemaPackage(c *gin.Context) {
 			Document: document,
 		})
 	}
-	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, v1.SchemaPackage{
+	s.writeGeneratedJSON(c, value.Current.SchemaVersion, version, v1.SchemaPackage{
 		SchemaVersion: version,
 		Schema: v1.SchemaDocument{
 			Metadata: descriptor(value.Value.Schema, version),
@@ -332,16 +331,6 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 	items := make([]v1.SourceMapping, 0)
 	packageItems := make([]v1.SourceMappingPackage, 0)
 	matchedTypes := make([]string, 0)
-	encodedItems := 0
-	// Bound aggregate item bytes as well as each package; the final envelope receives a separate exact-size check.
-	withinItemBudget := func(value any) bool {
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return false
-		}
-		encodedItems += len(encoded)
-		return int64(encodedItems) <= limits.MaxGeneratedJSONBytes
-	}
 	if packages {
 		result, lookupErr := s.artifacts.SourceMappingPackages(c.Request.Context(), version, filter, afterType, limit+1)
 		if lookupErr != nil {
@@ -356,10 +345,6 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 			}
 			body, err := mappingPackageBody(item, version)
 			if err != nil {
-				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
-				return
-			}
-			if !withinItemBudget(body) {
 				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
 				return
 			}
@@ -378,10 +363,6 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 				continue
 			}
 			body := enrichedMapping(item, version)
-			if !withinItemBudget(body) {
-				s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: current, SelectedSchemaVersion: version})
-				return
-			}
 			items = append(items, body)
 		}
 	}
@@ -400,7 +381,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		}
 	}
 	if packages {
-		s.writeBoundedJSON(c, current, version, v1.Page[v1.SourceMappingPackage]{
+		s.writeGeneratedJSON(c, current, version, v1.Page[v1.SourceMappingPackage]{
 			SchemaVersion: version,
 			Items:         packageItems,
 			NextCursor:    next,
@@ -408,7 +389,7 @@ func (s *Server) mappingCollection(c *gin.Context, nested, packages bool) {
 		})
 		return
 	}
-	s.writeBoundedJSON(c, current, version, v1.Page[v1.SourceMapping]{
+	s.writeGeneratedJSON(c, current, version, v1.Page[v1.SourceMapping]{
 		SchemaVersion: version,
 		Items:         items,
 		NextCursor:    next,
@@ -432,7 +413,7 @@ func (s *Server) mappingMetadata(c *gin.Context) {
 		s.writeArtifactError(c, err, ArtifactNotInRelease)
 		return
 	}
-	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, enrichedMapping(value.Value, version))
+	s.writeGeneratedJSON(c, value.Current.SchemaVersion, version, enrichedMapping(value.Value, version))
 }
 
 // mappingPackage serves verified schema documents and Base64 program content without executing the programs.
@@ -456,10 +437,10 @@ func (s *Server) mappingPackage(c *gin.Context) {
 		s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: value.Current.SchemaVersion, SelectedSchemaVersion: version})
 		return
 	}
-	s.writeBoundedJSON(c, value.Current.SchemaVersion, version, body)
+	s.writeGeneratedJSON(c, value.Current.SchemaVersion, version, body)
 }
 
-// mappingPackageBody delegates package sizing and content encoding to the shared representation builder.
+// mappingPackageBody delegates content encoding to the shared representation builder.
 func mappingPackageBody(value model.SourceMappingPackage, version string) (v1.SourceMappingPackage, error) {
 	return BuildMappingPackage(value, version)
 }
@@ -500,10 +481,10 @@ func (s *Server) schemaStores(c *gin.Context) {
 	})
 }
 
-// writeBoundedJSON validates exact identity size and negotiation before committing a generated JSON response.
-func (s *Server) writeBoundedJSON(c *gin.Context, schema, selected string, value any) {
+// writeGeneratedJSON completes serialization and negotiation before committing a generated JSON response.
+func (s *Server) writeGeneratedJSON(c *gin.Context, schema, selected string, value any) {
 	body, err := json.Marshal(value)
-	if err != nil || int64(len(body)) > limits.MaxGeneratedJSONBytes {
+	if err != nil {
 		s.writeReleaseErrorResponse(c, InconsistentRegistryState, 0, ErrorMetadata{SchemaVersion: schema, SelectedSchemaVersion: selected})
 		return
 	}

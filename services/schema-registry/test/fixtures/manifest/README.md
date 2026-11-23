@@ -1,7 +1,7 @@
 # Schema Release Manifest Test Fixtures
 
-This directory is the permanent corpus for artifact, source mapping, release manifest, and release-serviceability
-validation. Tests read only these checked-in fixtures.
+This directory is the permanent corpus for artifact, source mapping, and release manifest validation.
+Tests read only these checked-in fixtures.
 
 ## Fixture sources
 
@@ -25,9 +25,8 @@ The release corpus executes these observable boundaries in order:
 
 1. `parse`: bounded strict JSON, field shapes, lexical forms, canonical bytes, and array ordering.
 2. `closure`: immutable metadata, exact bytes, offline payload standards, references, mapping bindings, lineage, and deterministic changes.
-3. `serviceability`: complete generated package sizing, including metadata, escaping, and Base64 expansion.
 
-These are API boundaries, not claims that each internal validator implements a separate pipeline stage.
+These are validation boundaries, not claims that each internal validator implements a separate pipeline stage.
 For example, descriptor JSON is checked during release closure validation, after manifest parsing succeeds.
 
 Every invalid release recipe records a stable ID, rule, phase, sentinel classification, and diagnostic substring.
@@ -96,7 +95,6 @@ Requirement names identify the format contracts independently of the OpenSpec sp
 | `mapping.top-level` | Descriptor top-level fields: required objects and no legacy single-program fields. |
 | `profile.entries` | Bounded manifest and artifact profile: 10000 entries per array, including transformations. |
 | `profile.exact-bytes` | Bounded manifest and artifact profile: 16777216 exact bytes per manifest, payload, or resource. |
-| `profile.generated-response` | Bounded generated representations: complete package identity JSON fits 67108864 bytes. |
 | `profile.identifiers` | Bounded artifact profile: identifiers fit 255 UTF-8 bytes. |
 | `profile.media-types` | Bounded artifact profile: media types fit 255 UTF-8 bytes. |
 | `profile.members` | Bounded JSON profile: 256 members per object. |

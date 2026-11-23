@@ -19,6 +19,7 @@ import (
 	v1 "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/api/v1"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/manifest"
+	sourcemapping "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/test/shared/corpus"
 )
 
@@ -183,7 +184,7 @@ func TestMappingChangesUseConservativeClassifierThroughHTTP(t *testing.T) {
 			programs := map[string]any{"condition": map[string]any{"programRef": "opaque.bin", "programDigest": fixtureBytes([]byte("opaque"), "application/octet-stream").Digest}, "transformations": []any{map[string]any{"programRef": "opaque.bin", "programDigest": fixtureBytes([]byte("opaque"), "application/octet-stream").Digest, "cardinality": "many", "targetSchema": map[string]any{"id": "device", "revision": schema["artifactRevision"]}}}}
 			transformations := programs["transformations"].([]any)
 			programs["transformations"] = append(transformations, transformations[0])
-			payload, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": "device-mapping", "sourceSchema": map[string]any{"id": test.source, "revision": sourceRevision}, "engine": map[string]any{"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "opaque"}, "programs": programs})
+			payload, err := json.Marshal(map[string]any{"$schema": "https://example.test/mapping-1.0.0", "formatVersion": sourcemapping.FormatVersion, "id": "device-mapping", "sourceSchema": map[string]any{"id": test.source, "revision": sourceRevision}, "engine": map[string]any{"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "opaque"}, "programs": programs})
 			require.NoError(t, err)
 			payloadDescriptor := fixtureBytes(payload, "application/vnd.apeiro.ocg.source-mapping.v1+json")
 			entry := map[string]any{"kind": "source-mapping", "artifactType": "device-mapping", "artifactRevision": "mapping-added", "createdUnderSchemaVersion": test.version, "targetSchemaVersion": test.version, "canonicalUri": "https://registry.example.test/v1/resources/source-mapping/device-mapping/mapping-added", "payload": map[string]any{"mediaType": payloadDescriptor.MediaType, "digest": payloadDescriptor.Digest, "size": payloadDescriptor.Size, "bundlePath": "mapping/descriptor.json"}, "resources": []any{}, "dependencies": []any{}}
@@ -419,7 +420,7 @@ func TestChangesMappingMetadataAndBehavior(t *testing.T) {
 		program := fixtureBytes([]byte("opaque"), "application/octet-stream")
 		programRef := map[string]any{"programRef": "opaque.bin", "programDigest": program.Digest}
 		descriptor := map[string]any{
-			"$schema": "https://example.test/mapping-1.0.0", "formatVersion": "1.0.0", "id": "mapping",
+			"$schema": "https://example.test/mapping-1.0.0", "formatVersion": sourcemapping.FormatVersion, "id": "mapping",
 			"sourceSchema": map[string]any{"id": "device", "revision": "rev-1"},
 			"engine":       map[string]any{"language": "opaque", "languageVersion": "1.0.0", "executionProfile": "opaque"},
 			"programs":     map[string]any{"transformations": []any{map[string]any{"programRef": "opaque.bin", "programDigest": program.Digest, "cardinality": "one", "targetSchema": map[string]any{"id": "device", "revision": "rev-1"}}}},

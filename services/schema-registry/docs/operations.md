@@ -83,6 +83,16 @@ Administrative auditing, encrypted backups, point-in-time recovery, retention mo
 
 ## API and scope boundaries
 
+Detecting and handling oversized API responses is out of scope for version 1.
+Generated responses have no application-enforced byte limit, including complete package collection pages.
+Response size alone does not classify persisted data as inconsistent registry state.
+Format validation does not calculate response sizes or reject releases based on those sizes.
+
+Exact manifests, payloads, and resources retain their individual 16 MiB input limits and integrity checks.
+JSON structural limits, pagination item counts, admission, timeouts, gzip, and complete-response assembly remain in place.
+Aggregate responses can still consume substantial memory and compression CPU.
+Admission and deployment resource limits do not guarantee a maximum generated-response size.
+
 Consumers pin related reads to one schema release and follow every candidate mapping page before evaluating conditions externally.
 Mappings preserve optional conditions, ordered transformations, exact program bytes, and complete package models.
 The Registry does not interpret or execute programs.

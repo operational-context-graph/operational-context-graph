@@ -17,12 +17,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	usecase "github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/artifact"
-	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/limits"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/introspection/release"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/model"
 	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/internal/storage/postgres"
@@ -917,48 +915,6 @@ func TestSourceMappingPackageOpaqueProgramBoundaries(t *testing.T) {
 	}
 }
 
-// TestGeneratedPackageSizeBoundary verifies generated identity JSON accepts the configured boundary and rejects content exceeding it.
-func TestGeneratedPackageSizeBoundary(t *testing.T) {
-	// packageBody supplies predictable JSON overhead for exact generated-response size boundaries.
-	type packageBody struct {
-		Content string `json:"content"`
-	}
-	const limit = int(limits.MaxGeneratedJSONBytes)
-	base, err := json.Marshal(packageBody{})
-	require.NoError(t, err)
-	content := strings.Repeat("x", limit-len(base))
-	require.Len(t, mustJSON(t, packageBody{Content: content}), limit)
-
-	// Exact 64 MiB identity JSON succeeds and retains its complete encoded length.
-	t.Run("exact limit succeeds", func(t *testing.T) {
-		writer := httptest.NewRecorder()
-		requestContext, _ := gin.CreateTestContext(writer)
-		requestContext.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
-		(&Server{}).writeBoundedJSON(requestContext, "1.0.0", "1.0.0", packageBody{Content: content})
-		assert.Equal(t, http.StatusOK, writer.Code)
-		assert.Len(t, writer.Body.Bytes(), limit)
-	})
-
-	// One-byte overflow returns an integrity error without exposing the generated content field.
-	t.Run("one byte over fails before success", func(t *testing.T) {
-		writer := httptest.NewRecorder()
-		requestContext, _ := gin.CreateTestContext(writer)
-		requestContext.Request = httptest.NewRequest(http.MethodGet, "/v1/releases/1.0.0/schemas/device/package", nil)
-		(&Server{}).writeBoundedJSON(requestContext, "1.0.0", "1.0.0", packageBody{Content: content + "x"})
-		assert.Equal(t, http.StatusInternalServerError, writer.Code)
-		assert.NotContains(t, writer.Body.String(), `"content"`)
-		assert.Contains(t, writer.Body.String(), `"code":"inconsistent-registry-state"`)
-	})
-}
-
-// mustJSON serializes fixture documents and attributes encoding failures to the calling test.
-func mustJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	bytes, err := json.Marshal(value)
-	require.NoError(t, err)
-	return bytes
-}
-
 // schemaFixture supplies selected schemas with bound contexts and canonical logical storage placements.
 func schemaFixture() *artifactTestSnapshot {
 	fixture := artifactFixture()
@@ -1041,7 +997,7 @@ func setMappingFixture(fixture *artifactTestSnapshot, item model.Artifact, detai
 	}
 	data, err := json.Marshal(map[string]any{
 		"$schema":       "https://example.test/mapping-1.0.0",
-		"formatVersion": "1.0.0",
+		"formatVersion": sourcemappingmodel.FormatVersion,
 		"id":            item.Type,
 		"sourceSchema":  map[string]any{"id": detail.SourceArtifactType, "revision": detail.SourceRevision},
 		"engine": map[string]any{
@@ -1118,8 +1074,8 @@ func mappingJSON(t testing.TB, response *httptest.ResponseRecorder) map[string]a
 	return result
 }
 
-// TestMappingHTTPUsesSharedRepresentationAndSize verifies HTTP package bytes and identity size match the shared response builder and sizing contract.
-func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
+// TestMappingHTTPUsesSharedRepresentation verifies HTTP package bytes match the shared response builder.
+func TestMappingHTTPUsesSharedRepresentation(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		fixture    func() *artifactTestSnapshot
@@ -1132,8 +1088,6 @@ func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
 			server := artifactTestServer(test.fixture())
 			value, err := server.artifacts.SourceMappingPackage(context.Background(), "1.0.0", "device-mapping")
 			require.NoError(t, err)
-			size, err := MappingPackageSize(value.Value, "1.0.0")
-			require.NoError(t, err)
 			body, err := BuildMappingPackage(value.Value, "1.0.0")
 			require.NoError(t, err)
 			encoded, err := json.Marshal(body)
@@ -1141,7 +1095,6 @@ func TestMappingHTTPUsesSharedRepresentationAndSize(t *testing.T) {
 			response := serveArtifactRequest(server, http.MethodGet, mappingBase+"/package")
 			require.Equal(t, http.StatusOK, response.Code)
 			require.Equal(t, encoded, response.Body.Bytes())
-			require.EqualValues(t, response.Body.Len(), size)
 			require.Equal(t, ETag(encoded), response.Header().Get("ETag"))
 			collection := mappingJSON(t, serveArtifactRequest(server, http.MethodGet, test.collection+"?sourceMappingArtifactType=device-mapping"))
 			var direct map[string]any
@@ -1290,38 +1243,6 @@ func TestCandidateCollectionFiltersAndCursorBindings(t *testing.T) {
 	for _, path := range []string{"/v1/releases/1.0.0/schemas/incoming/source-mapping", "/v1/releases/1.0.0/schemas/incoming/source-mapping/package"} {
 		require.Equal(t, http.StatusNotFound, serveArtifactRequest(server, http.MethodGet, path).Code)
 	}
-}
-
-// TestPackagePageLimitIncludesEveryReturnedPackage verifies individually valid packages can exceed the aggregate page limit and fail without partial items.
-func TestPackagePageLimitIncludesEveryReturnedPackage(t *testing.T) {
-	fixture := multiMappingFixture()
-	data := bytes.Repeat([]byte{0xff}, 16<<20)
-	for _, revision := range []string{"rev-mapping", "rev-mapping-two"} {
-		detail := fixture.mappings[revision]
-		detail.Transformations = append([]model.SourceMappingTransformation(nil), detail.Transformations...)
-		for index := range fixture.resources[revision] {
-			resource := &fixture.resources[revision][index]
-			resource.ByteDescriptor = fixtureBytes(data, resource.MediaType)
-		}
-		for index := range detail.Transformations {
-			detail.Transformations[index].ProgramDigest = fixtureBytes(data, "application/octet-stream").Digest
-		}
-		if detail.Condition != nil {
-			condition := *detail.Condition
-			condition.ProgramDigest = fixtureBytes(data, "application/octet-stream").Digest
-			detail.Condition = &condition
-		}
-		setMappingFixture(fixture, fixture.artifacts[revision], detail)
-	}
-	server := artifactTestServer(fixture)
-	for _, path := range []string{mappingBase + "/package", mappingBase + "-two/package", candidateBase + "/packages?limit=1"} {
-		response := serveArtifactRequest(server, http.MethodHead, path)
-		require.Equal(t, http.StatusOK, response.Code, path)
-	}
-	response := serveArtifactRequest(server, http.MethodGet, candidateBase+"/packages")
-	require.Equal(t, http.StatusInternalServerError, response.Code)
-	require.Contains(t, response.Body.String(), `"code":"inconsistent-registry-state"`)
-	require.NotContains(t, response.Body.String(), `"items"`)
 }
 
 // TestPackagePageFailsAtomicallyForLaterMapping verifies a later mapping's corrupt binding or bytes rejects the whole page while preserving selected-version metadata.
