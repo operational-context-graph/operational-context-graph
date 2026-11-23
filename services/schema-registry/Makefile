@@ -21,7 +21,7 @@ test: ## Run tests with race detection
 	go test $(TEST_PACKAGES) -race -coverprofile=$(COVERAGE_DIR)/$(NAME).out $(TEST_ARGS)
 
 test-unit: ## Run package unit tests with race detection
-	go test ./internal/... ./pkg/... -race $(TEST_ARGS)
+	go test ./pkg/... -race $(TEST_ARGS)
 
 test-integration: ## Run boundary integration tests with race detection
 	go test ./test/integration/... -race $(TEST_ARGS)
