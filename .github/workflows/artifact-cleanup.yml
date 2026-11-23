@@ -4,15 +4,6 @@
 # chart), delete dev-tagged versions older than 7 days, then prune untagged
 # orphan manifests that no tagged index still references.
 #
-# Why the prune: a multi-arch image is an index pointing to child manifests
-# (per-platform images plus provenance and SBOM attestations) that carry no tag.
-# Deleting the tagged index does not cascade to them, so they pile up as untagged
-# orphans. The prune removes only children no live tag references, so it also
-# clears orphans left by release images, not just dev ones.
-#
-# Runs weekly and can be triggered manually.
-#
-# When adding a new component image, add one matrix.package entry below.
 ---
 name: Cleanup Dev Artifacts
 
