@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     permissions:
-      contents: read # default GITHUB_TOKEN is unused; all git and API writes use the App token
+      contents: read
       pull-requests: read
     env:
       TAG: ${{ needs.validate.outputs.tag }}
@@ -143,8 +143,7 @@ jobs:
         run: git push origin "$BRANCH"
 
       # Commit through the Contents API so GitHub signs the commit with the App
-      # identity. A git-commit pushed over HTTPS is never signed, and branch
-      # protection requiring verified signatures would reject the merge.
+      # identity.
       - name: Commit changelog
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}

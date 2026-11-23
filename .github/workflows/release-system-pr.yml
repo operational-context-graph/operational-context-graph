@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     permissions:
-      contents: read # default GITHUB_TOKEN authenticates GHCR login only; all git and content writes use the App token
+      contents: read
       pull-requests: read
       packages: read  # required: crane digest reads component image manifests from GHCR to pin digests
     steps:
@@ -128,8 +128,7 @@ jobs:
         run: git push origin "release/${VERSION}"
 
       # Each file is committed through the Contents API so GitHub signs the commit
-      # with the App identity. git-commit over HTTPS is never signed and branch
-      # protection requiring verified signatures would reject the merge.
+      # with the App identity.
       - name: Commit subchart image tag pins
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
