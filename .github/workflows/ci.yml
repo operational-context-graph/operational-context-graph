@@ -342,14 +342,8 @@ jobs:
   tag-release:
     name: Tag Release
     needs: [detect-release-merge, publish-dev, publish-helm]
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      needs.detect-release-merge.outputs.release_type != ''
-    # Full owner/repo@sha form, not a local ./ path: the repo's "require actions
-    # pinned to a full-length SHA" policy rejects refless local reusable-workflow
-    # calls at startup. Bump the SHA when push-release-tag.yml changes on main.
-    uses: operational-context-graph/operational-context-graph/.github/workflows/push-release-tag.yml@b32af36d6b6aec9361a49e4283e40e40c16a34c9
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-release-merge.outputs.release_type != ''
+    uses: $/.github/workflows/push-release-tag.yml
     with:
       tag: ${{ needs.detect-release-merge.outputs.tag }}
       message: >-

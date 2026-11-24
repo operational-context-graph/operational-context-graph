@@ -20,14 +20,14 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 
 ---
 
-### Requirement: Local reusable workflow references use the ./ path with a zizmor suppression
+### Requirement: Reusable workflow references are pinned to a full commit SHA
 
-Local reusable workflow references SHALL use the workspace-relative `./` form (e.g., `./.github/workflows/push-release-tag.yml`), not the `$/` self-repository prefix, which startup-fails in this organization. Each such reference SHALL carry an inline `# zizmor: ignore[self-repository]` comment on the same line, since zizmor's `self-repository` audit flags the `./` form. Referenced files MUST live directly under `.github/workflows/`.
+Reusable workflow references SHALL use the full `owner/repo/.github/workflows/<file>@<sha>` form pinned to a commit SHA. The repository enforces "require actions pinned to a full-length commit SHA", which rejects refless local (`./` or `$/`) reusable-workflow calls at startup. The referenced file MUST exist at the pinned SHA on the default branch.
 
-#### Scenario: Local reusable workflow reference uses ./ with inline zizmor suppression
+#### Scenario: Reusable workflow call uses the full path pinned to a SHA
 - **WHEN** a code reviewer inspects `ci.yml` or `release-system.yml`
-- **THEN** every `uses:` reference to a workflow in the same repository starts with `./.github/workflows/` and carries `# zizmor: ignore[self-repository]` on the same line
-- **AND** no such reference points into a subdirectory of `.github/workflows/`
+- **THEN** every reusable-workflow `uses:` is `operational-context-graph/operational-context-graph/.github/workflows/<file>@<40-char-sha>`
+- **AND** no reusable-workflow `uses:` uses a refless local `./` or `$/` path
 
 ---
 
