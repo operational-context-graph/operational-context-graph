@@ -188,11 +188,10 @@ jobs:
       - name: Resolve dev tag
         id: version
         run: |
-          date=$(date -u +%Y%m%d)
           # Use the commit committer date. The release retag
           # derives the same dev tag from this commit's date, and a wall-clock
           # date would diverge from it across a midnight-UTC boundary.
-          # date=$(git show -s --format=%cI "$GITHUB_SHA" | cut -c1-10 | tr -d '-')
+          date=$(git show -s --format=%cI "$GITHUB_SHA" | cut -c1-10 | tr -d '-')
           version="dev.${date}-${GITHUB_SHA:0:7}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved dev tag: ${version}"
