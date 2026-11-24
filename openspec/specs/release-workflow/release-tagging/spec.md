@@ -20,14 +20,15 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 
 ---
 
-### Requirement: Local reusable workflow references use the $/ prefix
+### Requirement: Local reusable workflow references use the $/ self-repository prefix at the top level
 
-Local reusable workflow references SHALL use the `$/` prefix (e.g., `$/.github/workflows/shared/push-release-tag.yml`), not `./`. The `./` prefix is flagged as a security finding by zizmor.
+Local reusable workflow references SHALL use the `$/` self-repository prefix (e.g., `$/.github/workflows/push-release-tag.yml`). The `$/` form is pinned and passes zizmor's `self-repository` audit; `./` is flagged. Referenced files MUST live directly under `.github/workflows/` — GitHub refuses reusable workflows in subdirectories.
 
-#### Scenario: Local reusable workflow reference uses $/ prefix
-- **WHEN** a code reviewer inspects `release-component.yml` or `release-system.yml`
-- **THEN** all `uses:` references to workflows in the same repository start with `$/`
-- **AND** no `uses:` reference starts with `./`
+#### Scenario: Local reusable workflow reference uses $/ prefix and top-level path
+
+- **WHEN** a code reviewer inspects `merge-gate.yml` or `release-system.yml`
+- **THEN** every `uses:` reference to a workflow in the same repository starts with `$/.github/workflows/`
+- **AND** no such reference points into a subdirectory of `.github/workflows/`
 
 ---
 

@@ -97,7 +97,7 @@ jobs:
     name: Push Release Tag
     needs: detect
     if: needs.detect.outputs.release_type != ''
-    uses: $/.github/workflows/shared/push-release-tag.yml
+    uses: $/.github/workflows/push-release-tag.yml
     with:
       tag: ${{ needs.detect.outputs.tag }}
       message: >-

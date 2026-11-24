@@ -147,7 +147,7 @@ jobs:
     name: Create System GitHub Release
     needs: [detect, pull-helm-chart, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
-    uses: $/.github/workflows/shared/create-github-release.yml
+    uses: $/.github/workflows/create-github-release.yml
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       title: "system v${{ needs.detect.outputs.version }}"
