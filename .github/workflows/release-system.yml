@@ -148,9 +148,10 @@ jobs:
     name: Create System GitHub Release
     needs: [detect, pull-helm-chart, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
-    # ./ not $/: the self-repository prefix is still experimental and the current
-    # GitHub runners reject it (startup failure). zizmor flags ./, hence the ignore.
-    uses: ./.github/workflows/create-github-release.yml # zizmor: ignore[self-repository]
+    # Full owner/repo@sha form, not a local ./ path: the repo's "require actions
+    # pinned to a full-length SHA" policy rejects refless local reusable-workflow
+    # calls at startup. Bump the SHA when create-github-release.yml changes on main.
+    uses: operational-context-graph/operational-context-graph/.github/workflows/create-github-release.yml@b32af36d6b6aec9361a49e4283e40e40c16a34c9
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       title: "system v${{ needs.detect.outputs.version }}"
