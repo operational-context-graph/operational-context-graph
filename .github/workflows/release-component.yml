@@ -1,7 +1,7 @@
 # Fires on a component release tag push (services/**/vX.Y.Z). The tag is pushed by
-# merge-gate.yml after a component release PR squash-merges to main. This workflow
-# aliases the dev container image to the release version tag. No image build, no
-# GitHub Release for components.
+# the tag-release job in ci.yml, after that run publishes the dev image for the
+# squash-merged release PR. This workflow aliases the dev container image to the
+# release version tag. No image build, no GitHub Release for components.
 #
 ---
 name: Release Component
