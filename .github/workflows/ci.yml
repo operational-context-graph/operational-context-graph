@@ -339,18 +339,18 @@ jobs:
             echo "Release merge detected: type=${RELEASE_TYPE} tag=${TAG}"
           fi
 
-  # tag-release:
-  #   name: Tag Release
-  #   needs: [detect-release-merge, publish-dev, publish-helm]
-  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-release-merge.outputs.release_type != ''
-  #   uses: $/.github/workflows/push-release-tag.yml
-  #   with:
-  #     tag: ${{ needs.detect-release-merge.outputs.tag }}
-  #     message: >-
-  #       chore(release):
-  #       ${{ needs.detect-release-merge.outputs.release_type == 'component'
-  #         && format('{0} v{1}', needs.detect-release-merge.outputs.slug, needs.detect-release-merge.outputs.version)
-  #         || format('system v{0}', needs.detect-release-merge.outputs.version) }}
-  #     client_id: ${{ vars.APP_CLIENT_ID }}
-  #   secrets:
-  #     private_key: ${{ secrets.APP_PRIVATE_KEY }}
+  tag-release:
+    name: Tag Release
+    needs: [detect-release-merge, publish-dev, publish-helm]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-release-merge.outputs.release_type != ''
+    uses: $/.github/workflows/push-release-tag.yml
+    with:
+      tag: ${{ needs.detect-release-merge.outputs.tag }}
+      message: >-
+        chore(release):
+        ${{ needs.detect-release-merge.outputs.release_type == 'component'
+          && format('{0} v{1}', needs.detect-release-merge.outputs.slug, needs.detect-release-merge.outputs.version)
+          || format('system v{0}', needs.detect-release-merge.outputs.version) }}
+      client_id: ${{ vars.APP_CLIENT_ID }}
+    secrets:
+      private_key: ${{ secrets.APP_PRIVATE_KEY }}
