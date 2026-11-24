@@ -188,7 +188,7 @@ jobs:
       - name: Resolve dev tag
         id: version
         run: |
-          # Use the commit committer date, not wall-clock: the release retag
+          # Use the commit committer date. The release retag
           # derives the same dev tag from this commit's date, and a wall-clock
           # date would diverge from it across a midnight-UTC boundary.
           date=$(git show -s --format=%cI "$GITHUB_SHA" | cut -c1-10 | tr -d '-')
@@ -273,11 +273,6 @@ jobs:
           echo "TODO: implement OCM bundle packaging"
           echo "digest=" >> "$GITHUB_OUTPUT"
 
-  # Pushes the release git tag after this run publishes the dev artifacts the
-  # release promotes. Gating on the publish jobs via `needs` means the tag (which
-  # triggers the retag in release-component.yml / release-system.yml) can never
-  # fire before its dev artifact exists, and a failed build pushes no tag.
-  # Fork-safe: runs only on push to the protected default branch.
   detect-release-merge:
     name: Detect Release Merge
     runs-on: ubuntu-latest
@@ -346,8 +341,6 @@ jobs:
 
   tag-release:
     name: Tag Release
-    # publish-dev feeds release-component; publish-helm feeds release-system.
-    # Add publish-ocm-bundle once release-system consumes the OCM bundle.
     needs: [detect-release-merge, publish-dev, publish-helm]
     if: >-
       github.ref == 'refs/heads/main' &&
