@@ -148,7 +148,9 @@ jobs:
     name: Create System GitHub Release
     needs: [detect, pull-helm-chart, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
-    uses: $/.github/workflows/create-github-release.yml
+    # ./ not $/: the self-repository prefix is still experimental and the current
+    # GitHub runners reject it (startup failure). zizmor flags ./, hence the ignore.
+    uses: ./.github/workflows/create-github-release.yml # zizmor: ignore[self-repository]
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       title: "system v${{ needs.detect.outputs.version }}"

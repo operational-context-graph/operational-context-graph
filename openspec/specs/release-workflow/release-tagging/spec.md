@@ -20,13 +20,13 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 
 ---
 
-### Requirement: Local reusable workflow references use the $/ self-repository prefix at the top level
+### Requirement: Local reusable workflow references use the ./ path with a zizmor suppression
 
-Local reusable workflow references SHALL use the `$/` self-repository prefix (e.g., `$/.github/workflows/push-release-tag.yml`). The `$/` form is pinned and passes zizmor's `self-repository` audit; `./` is flagged. Referenced files MUST live directly under `.github/workflows/` — GitHub refuses reusable workflows in subdirectories.
+Local reusable workflow references SHALL use the workspace-relative `./` form (e.g., `./.github/workflows/push-release-tag.yml`). GitHub's `$/` self-repository prefix is documented but non-functional in this organization: every workflow that used it failed at startup with zero jobs, so no release tag was ever minted. Because zizmor's `self-repository` audit flags the `./` form, each such reference SHALL carry an inline `# zizmor: ignore[self-repository]` comment on the same line. Referenced files MUST live directly under `.github/workflows/`; GitHub refuses reusable workflows in a subdirectory.
 
-#### Scenario: Local reusable workflow reference uses $/ prefix and top-level path
+#### Scenario: Local reusable workflow reference uses ./ with inline zizmor suppression
 - **WHEN** a code reviewer inspects `ci.yml` or `release-system.yml`
-- **THEN** every `uses:` reference to a workflow in the same repository starts with `$/.github/workflows/`
+- **THEN** every `uses:` reference to a workflow in the same repository starts with `./.github/workflows/` and carries `# zizmor: ignore[self-repository]` on the same line
 - **AND** no such reference points into a subdirectory of `.github/workflows/`
 
 ---

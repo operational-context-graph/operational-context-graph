@@ -346,7 +346,9 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
       needs.detect-release-merge.outputs.release_type != ''
-    uses: $/.github/workflows/push-release-tag.yml
+    # ./ not $/: the self-repository prefix is still experimental and the current
+    # GitHub runners reject it (startup failure). zizmor flags ./, hence the ignore.
+    uses: ./.github/workflows/push-release-tag.yml # zizmor: ignore[self-repository]
     with:
       tag: ${{ needs.detect-release-merge.outputs.tag }}
       message: >-
