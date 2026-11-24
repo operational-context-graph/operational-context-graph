@@ -22,7 +22,7 @@ Defines the behavior of `release-component.yml` and `release-system.yml`: two se
 
 ### Requirement: Local reusable workflow references use the ./ path with a zizmor suppression
 
-Local reusable workflow references SHALL use the workspace-relative `./` form (e.g., `./.github/workflows/push-release-tag.yml`). GitHub's `$/` self-repository prefix is documented but non-functional in this organization: every workflow that used it failed at startup with zero jobs, so no release tag was ever minted. Because zizmor's `self-repository` audit flags the `./` form, each such reference SHALL carry an inline `# zizmor: ignore[self-repository]` comment on the same line. Referenced files MUST live directly under `.github/workflows/`; GitHub refuses reusable workflows in a subdirectory.
+Local reusable workflow references SHALL use the workspace-relative `./` form (e.g., `./.github/workflows/push-release-tag.yml`), not the `$/` self-repository prefix, which startup-fails in this organization. Each such reference SHALL carry an inline `# zizmor: ignore[self-repository]` comment on the same line, since zizmor's `self-repository` audit flags the `./` form. Referenced files MUST live directly under `.github/workflows/`.
 
 #### Scenario: Local reusable workflow reference uses ./ with inline zizmor suppression
 - **WHEN** a code reviewer inspects `ci.yml` or `release-system.yml`
