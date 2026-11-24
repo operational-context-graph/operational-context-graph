@@ -128,7 +128,7 @@ On a push to `main`, the CI pipeline SHALL determine whether the push is a relea
 
 ### Requirement: Release git tag is pushed only after the dev artifacts are published
 
-When a push to `main` is a release-branch merge, the CI pipeline SHALL push the annotated release git tag (`<component-path>/v<version>` for a component, `v<version>` for a system) using the release GitHub App, and SHALL do so only after the `publish-dev` and `publish-helm` jobs succeed. The tag push SHALL run only on `push` to the protected default branch, never on pull requests, so a fork cannot reach the App private key. The pushed tag is what triggers the promotion workflows in `release-tagging`.
+When a push to `main` is a release-branch merge, the CI pipeline SHALL push the annotated release git tag using the release GitHub App, and only after the `publish-dev` and `publish-helm` jobs succeed. The tag push SHALL run only on `push` to the protected default branch, never on pull requests.
 
 #### Scenario: Tag pushed after artifacts exist on a release merge
 - **WHEN** a `release/data-ingestion/1.2.3` merge passes CI and `publish-dev` and `publish-helm` succeed
