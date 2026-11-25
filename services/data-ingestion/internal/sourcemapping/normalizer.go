@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -455,7 +456,35 @@ func normalizeGreenhouseCluster(record ingest.IngestRecord) ([]ingest.IngestReco
 	if err != nil {
 		return nil, err
 	}
-	return []ingest.IngestRecord{rec}, nil
+	out := []ingest.IngestRecord{rec}
+
+	slog.Default().Info("normalizeGreenhouseCluster: produced cluster asset", "namespace", namespace, "name", name)
+
+	var netboxDeviceID string
+	if annotations, ok := getPath(doc, "metadata.annotations").(map[string]any); ok {
+		netboxDeviceID, _ = annotations["netbox.sap/device-id"].(string)
+	}
+	slog.Default().Info("normalizeGreenhouseCluster: checking for RUNS_ON edge", "netbox_device_id", netboxDeviceID)
+	if netboxDeviceID != "" {
+		edge := map[string]any{
+			"artifact_type": "RUNS_ON",
+			"source_system": "greenhouse",
+			"ingested_at":   time.Now().UTC().Format(time.RFC3339Nano),
+			"source_iri":    iri,
+			"target_iri":    "urn:ocg:asset/netbox/netboxid-" + netboxDeviceID,
+			"source_key":    []string{"greenhouse", fmt.Sprintf("%s/%s", namespace, name)},
+			"target_key":    []string{"netbox", netboxDeviceID},
+			"extensions":    map[string]any{},
+		}
+		edgeRec, err := toRecord("canonical_relation", edge)
+		if err != nil {
+			return nil, err
+		}
+		slog.Default().Info("normalizeGreenhouseCluster: emitting RUNS_ON edge", "source_key", fmt.Sprintf("greenhouse/%s/%s", namespace, name), "target_key", fmt.Sprintf("netbox/%s", netboxDeviceID))
+		out = append(out, edgeRec)
+	}
+
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
