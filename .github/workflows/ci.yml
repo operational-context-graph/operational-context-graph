@@ -343,7 +343,7 @@ jobs:
     name: Tag Release
     needs: [detect-release-merge, publish-dev, publish-helm]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-release-merge.outputs.release_type != ''
-    uses: ./.github/workflows/push-release-tag.yml
+    uses: $/.github/workflows/push-release-tag.yml
     with:
       tag: ${{ needs.detect-release-merge.outputs.tag }}
       message: >-
