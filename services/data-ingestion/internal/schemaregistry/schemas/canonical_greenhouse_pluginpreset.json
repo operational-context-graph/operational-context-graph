@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:canonical_greenhouse_pluginpreset:0.1.0",
+  "type": "object",
+  "required": ["iri", "artifact_type", "source_system", "source_id"],
+  "properties": {
+    "iri": { "type": "string" },
+    "artifact_type": { "type": "string", "const": "PluginPreset" },
+    "source_system": { "type": "string" },
+    "ingested_at": { "type": ["string", "null"], "format": "date-time" },
+    "name": { "type": ["string", "null"] },
+    "source_id": { "type": "string" },
+    "created_at_source": { "type": ["string", "null"], "format": "date-time" },
+    "last_updated_at_source": { "type": ["string", "null"], "format": "date-time" },
+    "extensions": {
+      "type": "object",
+      "properties": {
+        "namespace": { "type": "string" },
+        "plugin_definition": { "type": "string" },
+        "plugin_definition_version": { "type": "string" },
+        "release_namespace": { "type": "string" },
+        "deletion_policy": { "type": "string" },
+        "total_plugins": { "type": "integer" },
+        "ready_plugins": { "type": "integer" },
+        "failed_plugins": { "type": "integer" },
+        "ready": { "type": "string" },
+        "conditions": { "type": "array" }
+      }
+    }
+  }
+}

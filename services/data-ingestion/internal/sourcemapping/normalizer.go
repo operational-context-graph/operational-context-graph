@@ -25,6 +25,8 @@ func (s *Stub) Normalize(_ context.Context, _ ingest.SourceMapping, record inges
 		return normalizeNetboxDevice(record)
 	case "generic.log":
 		return normalizeOctobusLog(record)
+	case "greenhouse.PluginPreset":
+		return normalizeGreenhousePluginPreset(record)
 	default:
 		return nil, fmt.Errorf("%w: no mapping for %q", ingest.ErrNotFound, record.Schema.LogicalArtifactType)
 	}
@@ -283,6 +285,84 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 	}
 
 	rec, err := toRecord("canonical_octobus_logs", payload)
+	if err != nil {
+		return nil, err
+	}
+	return []ingest.IngestRecord{rec}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Greenhouse PluginPreset → canonical PluginPreset asset
+// ---------------------------------------------------------------------------
+
+func normalizeGreenhousePluginPreset(record ingest.IngestRecord) ([]ingest.IngestRecord, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(record.Payload, &doc); err != nil {
+		return nil, fmt.Errorf("sourcemapping: unmarshal greenhouse pluginpreset: %w", err)
+	}
+
+	name := getString(doc, "metadata.name")
+	namespace := getString(doc, "metadata.namespace")
+	createdAt := getString(doc, "metadata.creationTimestamp")
+
+	pluginDef := getString(doc, "spec.plugin.pluginDefinitionRef.name")
+	releaseNamespace := getString(doc, "spec.plugin.releaseNamespace")
+	deletionPolicy := getString(doc, "spec.deletionPolicy")
+	pluginDefVersion := getString(doc, "status.pluginDefinitionVersion")
+
+	totalPlugins := 0
+	readyPlugins := 0
+	failedPlugins := 0
+	if v, ok := getPath(doc, "status.totalPlugins").(float64); ok {
+		totalPlugins = int(v)
+	}
+	if v, ok := getPath(doc, "status.readyPlugins").(float64); ok {
+		readyPlugins = int(v)
+	}
+	if v, ok := getPath(doc, "status.failedPlugins").(float64); ok {
+		failedPlugins = int(v)
+	}
+
+	readyStatus := "False"
+	var conditions []any
+	if sc, ok := getPath(doc, "status.statusConditions").(map[string]any); ok {
+		if conds, ok := sc["conditions"].([]any); ok {
+			conditions = conds
+			for _, c := range conds {
+				if cm, ok := c.(map[string]any); ok {
+					if cm["type"] == "Ready" {
+						readyStatus, _ = cm["status"].(string)
+					}
+				}
+			}
+		}
+	}
+
+	iri := fmt.Sprintf("urn:ocg:greenhouse/pluginpreset/%s/%s", namespace, name)
+
+	asset := map[string]any{
+		"iri":               iri,
+		"artifact_type":     "PluginPreset",
+		"source_system":     "greenhouse",
+		"ingested_at":       time.Now().UTC().Format(time.RFC3339Nano),
+		"name":              name,
+		"source_id":         fmt.Sprintf("%s/%s", namespace, name),
+		"created_at_source": createdAt,
+		"extensions": map[string]any{
+			"namespace":                 namespace,
+			"plugin_definition":         pluginDef,
+			"plugin_definition_version": pluginDefVersion,
+			"release_namespace":         releaseNamespace,
+			"deletion_policy":           deletionPolicy,
+			"total_plugins":             totalPlugins,
+			"ready_plugins":             readyPlugins,
+			"failed_plugins":            failedPlugins,
+			"ready":                     readyStatus,
+			"conditions":                conditions,
+		},
+	}
+
+	rec, err := toRecord("canonical_greenhouse_pluginpreset", asset)
 	if err != nil {
 		return nil, err
 	}

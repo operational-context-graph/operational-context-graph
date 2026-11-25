@@ -1,0 +1,12 @@
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginPreset
+metadata:
+  name: sample-preset
+  namespace: demo
+spec:
+  plugin:
+    pluginDefinitionRef:
+      name: test-plugin
+  clusterSelector:
+    matchLabels:
+      greenhouse.sap/onboarded: "true"
