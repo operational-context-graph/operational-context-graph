@@ -133,7 +133,7 @@ inventory-connector:
     endpoint: "ocg-data-ingestion:9090"
     connectorID: "ocg-inventory-connector"
   connector:
-    schemaVersion: "0.0.1"
+    schemaVersion: "0.1.0"
     endpoints:
       - "dcim/devices/"
 
