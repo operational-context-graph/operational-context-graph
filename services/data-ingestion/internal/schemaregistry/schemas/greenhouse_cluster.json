@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ocg:schema:greenhouse.Cluster:0.1.0",
+  "type": "object",
+  "required": ["metadata", "spec"],
+  "properties": {
+    "apiVersion": { "type": "string" },
+    "kind": { "type": "string" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "creationTimestamp": { "type": ["string", "null"] }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["accessMode"],
+      "properties": {
+        "accessMode": { "type": "string" },
+        "kubeConfig": {
+          "type": "object",
+          "properties": {
+            "maxTokenValidity": { "type": "integer" }
+          }
+        },
+        "mode": { "type": "string" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "kubernetesVersion": { "type": "string" },
+        "bearerTokenExpirationTimestamp": { "type": ["string", "null"] },
+        "statusConditions": { "type": "object" },
+        "nodes": {
+          "type": "object",
+          "properties": {
+            "total": { "type": "integer" },
+            "ready": { "type": "integer" },
+            "notReady": { "type": "array" }
+          }
+        }
+      }
+    }
+  }
+}

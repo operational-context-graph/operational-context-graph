@@ -40,7 +40,7 @@ func (r *PluginPresetReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		"failedPlugins", pp.Status.FailedPlugins,
 	)
 
-	if err := r.Publisher.Publish(ctx, pp.Namespace, pp.Name, &pp); err != nil {
+	if err := r.Publisher.Publish(ctx, "greenhouse.PluginPreset", "0.1.0", pp.Namespace, pp.Name, &pp); err != nil {
 		log.Error(err, "failed to publish PluginPreset")
 		return ctrl.Result{}, err
 	}

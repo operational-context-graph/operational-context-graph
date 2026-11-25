@@ -14,11 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const (
-	LogicalArtifactID = "greenhouse.PluginPreset"
-	SchemaVersion     = "0.1.0"
-)
-
 type Publisher struct {
 	client      pb.IngestionServiceClient
 	connectorID string
@@ -35,7 +30,7 @@ func New(endpoint, certFile, keyFile, connectorID string) (*Publisher, error) {
 	}, nil
 }
 
-func (p *Publisher) Publish(ctx context.Context, namespace, name string, obj any) error {
+func (p *Publisher) Publish(ctx context.Context, logicalArtifactID, schemaVersion, namespace, name string, obj any) error {
 	payload, err := json.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("publisher: marshal: %w", err)
@@ -50,8 +45,8 @@ func (p *Publisher) Publish(ctx context.Context, namespace, name string, obj any
 	}
 
 	msg := &pb.MessageEnvelope{
-		LogicalArtifactId: LogicalArtifactID,
-		SchemaVersion:     SchemaVersion,
+		LogicalArtifactId: logicalArtifactID,
+		SchemaVersion:     schemaVersion,
 		Payload:           payload,
 		Partition:         partition,
 	}

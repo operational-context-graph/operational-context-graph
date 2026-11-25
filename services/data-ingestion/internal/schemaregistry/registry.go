@@ -36,6 +36,8 @@ var registeredSchemas = []schemaEntry{
 	{"schemas/canonical_octobus_log.json", "canonical_octobus_logs", "0.1.0"},
 	{"schemas/canonical_greenhouse_pluginpreset.json", "canonical_greenhouse_pluginpreset", "0.1.0"},
 	{"schemas/greenhouse_pluginpreset.json", "greenhouse.PluginPreset", "0.1.0"},
+	{"schemas/canonical_greenhouse_cluster.json", "canonical_greenhouse_cluster", "0.1.0"},
+	{"schemas/greenhouse_cluster.json", "greenhouse.Cluster", "0.1.0"},
 	{"schemas/device.json", "netbox.Device", "0.1.0"},
 	{"schemas/log.json", "generic.log", "0.1.0"},
 }
