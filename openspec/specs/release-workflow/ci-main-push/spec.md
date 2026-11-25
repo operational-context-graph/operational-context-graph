@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the behavior of the CI pipeline on every push to `main`: running the full test suite, building and pushing all artifacts tagged with a dev version, and conditionally aliasing artifacts to a release version when the merge source was a release branch.
+Defines the behavior of `ci.yml` on every push to `main`: running the full test suite, building and pushing all artifacts tagged with a dev version, detecting whether the push is a release-branch merge, and pushing the release git tag once the dev artifacts are published. The pushed tag triggers the promotion workflows specified in `release-tagging`. `ci.yml` itself performs no aliasing.
 
 ## Requirements
 
@@ -12,32 +12,36 @@ The CI pipeline SHALL run lint, build, unit tests, Helm lint, and workspace-sync
 
 #### Scenario: All checks pass on a regular main push
 - **WHEN** a non-release branch is merged to `main` and all CI jobs succeed
-- **THEN** the pipeline exits with success and artifact jobs proceed
+- **THEN** the pipeline exits with success and the artifact publish jobs proceed
 
 #### Scenario: Lint fails on main push
 - **WHEN** `make lint-all` returns non-zero on a main push
-- **THEN** the pipeline fails, no artifacts are built or pushed, and no tags are applied
+- **THEN** the pipeline fails, no artifacts are published, and no release tag is pushed
 
 #### Scenario: Unit tests fail on main push
 - **WHEN** `make test-all` returns non-zero on a main push
-- **THEN** the pipeline fails, no artifacts are built or pushed, and no tags are applied
+- **THEN** the pipeline fails, no artifacts are published, and no release tag is pushed
 
 #### Scenario: Helm lint fails on main push
 - **WHEN** `ct lint` returns non-zero on a main push
-- **THEN** the pipeline fails, no artifacts are built or pushed, and no tags are applied
+- **THEN** the pipeline fails, no artifacts are published, and no release tag is pushed
 
 ---
 
-### Requirement: Dev version tag derived from push date and commit SHA
+### Requirement: Dev version tag derived from the commit committer date and SHA
 
-The CI pipeline SHALL derive a dev version tag of the form `dev.<YYYYMMDD>-<sha7>` from the UTC date of the push and the first 7 characters of the commit SHA.
+The CI pipeline SHALL derive a dev version tag of the form `dev.<YYYYMMDD>-<sha7>` from the UTC date of the commit's committer timestamp and the first 7 characters of the commit SHA. The committer date, not the runner wall-clock date, is used so the dev tag matches the value the release promotion workflows recompute from the same commit.
 
 #### Scenario: Dev tag derived correctly
-- **WHEN** the CI pipeline runs on commit `abc1234` on 2026-03-15 UTC
+- **WHEN** the CI pipeline runs on commit `abc1234` whose committer date is 2026-03-15 UTC
 - **THEN** the dev version tag is `dev.20260315-abc1234`
 
-#### Scenario: Commit SHA shorter than 7 characters is not possible in practice, but tag format is stable
-- **WHEN** `GITHUB_SHA` is exactly 40 characters (standard git SHA)
+#### Scenario: Committer date governs the dev tag across a wall-clock boundary
+- **WHEN** the publish job runs on a later UTC calendar day than the commit's committer date
+- **THEN** the dev tag uses the committer date, so it matches the tag the release promotion recomputes from the same commit
+
+#### Scenario: Commit SHA is truncated to 7 characters
+- **WHEN** `GITHUB_SHA` is a standard 40-character git SHA
 - **THEN** only the first 7 characters are used in the dev tag
 
 ---
@@ -56,7 +60,7 @@ The CI pipeline SHALL build all container images defined in `docker-bake.hcl` (t
 
 #### Scenario: GHCR push fails for one image
 - **WHEN** the GHCR registry returns an error during push of one image target
-- **THEN** the CI pipeline fails, the GitHub Release workflow does not run (its `workflow_run` prerequisite does not reach `success`)
+- **THEN** the CI pipeline fails; the Helm publish and `tag-release` jobs do not run; no release tag is pushed, so the tag-triggered promotion workflows never fire
 
 #### Scenario: Docker Buildx unavailable on runner
 - **WHEN** `docker/setup-buildx-action` fails to initialize
@@ -82,78 +86,86 @@ The CI pipeline SHALL package the umbrella Helm chart from the repository tree w
 
 ---
 
-### Requirement: OCM bundle is packaged and pushed to OCI on every main push
+### Requirement: OCM bundle publish is a placeholder pending implementation
 
-The CI pipeline SHALL package an OCM component bundle and push it to GHCR as an OCI artifact tagged with the dev version tag.
+The CI pipeline SHALL include an OCM bundle publish job wired into the artifact dependency graph, so release promotion does not need a second change when OCM support lands. Until implemented, the job SHALL be a no-op placeholder that packages and pushes nothing and emits an empty digest.
 
-#### Scenario: OCM bundle packaged and pushed with dev tag
-- **WHEN** CI succeeds on a main push with dev tag `dev.20260315-abc1234`
-- **THEN** the OCM bundle is pushed to `ghcr.io/operational-context-graph/ocg-ocm:dev.20260315-abc1234` as an OCI artifact
+#### Scenario: OCM placeholder runs without publishing a bundle
+- **WHEN** CI succeeds on a main push
+- **THEN** the OCM publish job completes successfully, pushes no OCI artifact, and emits an empty digest output
 
-#### Scenario: OCM CLI tool unavailable on runner
-- **WHEN** the OCM CLI is not installed or returns non-zero during bundle creation
-- **THEN** the OCM push job fails and the pipeline fails; no bundle is pushed
-
----
-
-### Requirement: Released component image is aliased to release version on component release merge
-
-When the source branch of a main push is `release/<slug>/<version>`, the CI pipeline SHALL alias the released component's GHCR image from its `dev.<date>-<sha>` digest to `<version>` and `<version>-<sha>` — without rebuilding the image.
-
-#### Scenario: Component release merge aliases image to release version
-- **WHEN** branch `release/data-ingestion/1.2.3` is merged to `main`, CI succeeds, dev tag is `dev.20260315-abc1234`
-- **THEN** `ghcr.io/operational-context-graph/data-ingestion:1.2.3` and `ghcr.io/operational-context-graph/data-ingestion:1.2.3-abc1234` are pushed as aliases pointing to the same digest as `:dev.20260315-abc1234`
-- **AND** no new image layer is built
-
-#### Scenario: Only the released component receives the version alias
-- **WHEN** branch `release/data-ingestion/1.2.3` is merged to `main`
-- **THEN** only `data-ingestion` receives the `1.2.3` and `1.2.3-abc1234` tags; `inventory-store`, `telemetry-store`, and `inventory-connector` receive only their `dev.<date>-<sha>` tags
-
-#### Scenario: Source branch name does not match a known component slug
-- **WHEN** the source branch is `release/unknown-service/1.0.0` and no component with that slug exists in `docker-bake.hcl`
-- **THEN** the alias step fails with a clear error message identifying the unknown slug; no alias tags are pushed
-
-#### Scenario: Dev image not yet present when alias is attempted
-- **WHEN** the alias job runs before the image build job completes (dependency ordering violated)
-- **THEN** the alias job MUST be declared as depending on the image build job so that this scenario cannot occur in a correctly configured workflow
-
-#### Scenario: Non-Dockerfile component release merge
-- **WHEN** branch `release/gen-go/1.0.0` is merged to `main` and `gen/go` has no `Dockerfile`
-- **THEN** no image alias step runs for that component; other artifact jobs proceed normally
+#### Scenario: OCM placeholder keeps the dependency graph intact
+- **WHEN** a downstream job depends on the OCM publish job
+- **THEN** it observes the placeholder's successful completion and is not blocked by the missing implementation
 
 ---
 
-### Requirement: Helm chart and OCM bundle are aliased to system release version on system release merge
+### Requirement: Release merge is detected from the squash-merged PR source branch
 
-When the source branch of a main push is `release/<version>`, the CI pipeline SHALL alias the Helm chart OCI artifact and the OCM bundle OCI artifact from their `dev.<date>-<sha>` tags to `<version>` — without repackaging.
+On a push to `main`, the CI pipeline SHALL determine whether the push is a release-branch merge. It SHALL read the authoritative PR number from the squash commit subject `(#N)` (first line only), resolve the PR head ref via a targeted GitHub API lookup, and parse that ref with `scripts/parse-release-branch.sh` to produce `release_type`, `slug`, `version`, and `tag`. The commit subject is untrusted input and SHALL only be expanded as a shell variable, never interpolated into a script body.
 
-#### Scenario: System release merge aliases Helm chart and OCM bundle to release version
-- **WHEN** branch `release/1.0.0` is merged to `main`, CI succeeds, dev tag is `dev.20260315-abc1234`
-- **THEN** `ghcr.io/operational-context-graph/operational-context-graph:1.0.0` points to the same digest as `:dev.20260315-abc1234`
-- **AND** `ghcr.io/operational-context-graph/ocg-ocm:1.0.0` points to the same digest as `:dev.20260315-abc1234`
-- **AND** no repackaging or rebuild occurs
+#### Scenario: Component release merge detected
+- **WHEN** the squash-merged PR head ref is `release/data-ingestion/1.2.3`
+- **THEN** detection yields `release_type` `component`, `slug` `data-ingestion`, `version` `1.2.3`, and `tag` `services/data-ingestion/v1.2.3`
 
-#### Scenario: Helm chart OCI push failure during alias
-- **WHEN** the alias tag push for the Helm chart fails (registry error)
-- **THEN** the alias job fails; the system release tag job in `release-system.yml` does not run (depends on CI success)
+#### Scenario: System release merge detected
+- **WHEN** the squash-merged PR head ref is `release/1.0.0`
+- **THEN** detection yields `release_type` `system`, `version` `1.0.0`, and `tag` `v1.0.0`
+
+#### Scenario: Non-release merge yields empty release type
+- **WHEN** the squash-merged PR head ref is a non-release branch
+- **THEN** `release_type` is empty and no release tag is pushed
+
+#### Scenario: Commit subject carries no PR number
+- **WHEN** the squash commit subject has no trailing `(#N)`
+- **THEN** detection skips, `release_type` is empty, and no release tag is pushed
+
+#### Scenario: PR head ref lookup fails
+- **WHEN** the GitHub API lookup for the resolved PR number returns an error or empty ref
+- **THEN** the detect job fails with a logged error and no release tag is pushed
+
+---
+
+### Requirement: Release git tag is pushed only after the dev artifacts are published
+
+When a push to `main` is a release-branch merge, the CI pipeline SHALL push the annotated release git tag using the release GitHub App, and only after the `publish-dev` and `publish-helm` jobs succeed. The tag push SHALL run only on `push` to the protected default branch, never on pull requests.
+
+#### Scenario: Tag pushed after artifacts exist on a release merge
+- **WHEN** a `release/data-ingestion/1.2.3` merge passes CI and `publish-dev` and `publish-helm` succeed
+- **THEN** the annotated tag `services/data-ingestion/v1.2.3` is pushed by the release App
+- **AND** because the tag is pushed only after the dev image and chart are published, the tag-triggered promotion cannot run before its source artifact exists
+
+#### Scenario: No tag pushed when a dev artifact fails to publish
+- **WHEN** a release merge passes the test suite but `publish-dev` or `publish-helm` fails
+- **THEN** the `tag-release` job does not run and no release tag is pushed, so no release tag can point at a commit whose artifacts were never published
+
+#### Scenario: No tag pushed on a non-release main push
+- **WHEN** a non-release branch is merged to `main`
+- **THEN** detection yields an empty `release_type`, the `tag-release` job is skipped, and no tag is pushed
+
+#### Scenario: Tag push path does not run on pull requests
+- **WHEN** the event is a pull request rather than a push to `main`
+- **THEN** the detect and `tag-release` jobs do not run, so the App private key is never in scope for a fork
+
+#### Scenario: Release git tag already exists
+- **WHEN** the computed release tag already exists in the repository
+- **THEN** the tag push fails with a clear error and no new tag is created to trigger a promotion workflow
+
+#### Scenario: GitHub App token generation fails for the tag push
+- **WHEN** `actions/create-github-app-token` returns an error in the tag push workflow
+- **THEN** the `tag-release` job fails, no tag is pushed, and no promotion workflow runs
 
 ## Non-Goals
 
+- Aliasing dev artifacts to the release version — handled by the promotion workflows in `release-tagging`, triggered by the tag this pipeline pushes.
 - Multi-architecture builds (`linux/arm64`) — all images target `linux/amd64` only.
 - Integration or end-to-end tests as part of the CI suite — only unit tests and static analysis.
 - Automated component discovery from workspace manifests — the bake targets and component slugs are enumerated statically.
-- Changing the CI behavior for pull requests — PR CI continues to run lint, build, and test only; no artifact push.
-
-## Non-Goals
-
-- Multi-architecture builds (`linux/arm64`) — all images target `linux/amd64` only.
-- Integration or end-to-end tests as part of the CI suite — only unit tests and static analysis.
-- Automated component discovery from workspace manifests — the bake targets and component slugs are enumerated statically.
-- Changing the CI behavior for pull requests — PR CI continues to run lint, build, and test only; no artifact push.
+- Changing the CI behavior for pull requests — PR CI runs lint, build, and test only; no artifact push and no tag push.
 
 ## Implementation Notes
 
-- **Alias mechanism**: `crane tag` is used for re-tagging without rebuild. Crane is installed at runtime from the GitHub releases page at a pinned version (v0.22.1, SHA256 `0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0`). The installer verifies the checksum before use.
-- **Dev tag date source**: the commit committer date is fetched via `gh api repos/{repo}/commits/{sha}` and formatted as `YYYYMMDD`. This ensures the date matches the commit timestamp rather than the runner's wall clock.
-- **Helm OCI target path**: `ghcr.io/<repo-owner>/operational-context-graph/operational-context-graph`.
-- **OCM bundle**: the OCM alias step is a placeholder pending `publish-ocm-bundle` workflow implementation.
+- **Dev tag date source**: `ci.yml` derives the date from the commit committer date via `git show -s --format=%cI` on the checked-out commit. The promotion workflows recompute the same date from `gh api repos/{repo}/commits/{sha}`. Both read the committer date of the same commit, so the dev tag matches on both sides.
+- **Tag push identity**: the `tag-release` job calls the `push-release-tag.yml` reusable workflow, which mints a GitHub App token and pushes the annotated tag as the release App.
+- **Helm OCI target path**: `ghcr.io/<repo-owner>/operational-context-graph`.
+- **OCM bundle**: the OCM publish job is a placeholder pending implementation.
