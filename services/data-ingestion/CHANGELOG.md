@@ -1,4 +1,4 @@
-## v0.0.1 (2026-11-25)
+## v0.0.1 (2026-11-26)
 
 ### Features
 
@@ -42,5 +42,4 @@
 - Simplify data-ingestion config ([#89](https://github.com/operational-context-graph/operational-context-graph/pull/89))
 - Remove dead code in data-ingestion ([#86](https://github.com/operational-context-graph/operational-context-graph/pull/86))
 - Add label to Dockerfile and update Readme ([#34](https://github.com/operational-context-graph/operational-context-graph/pull/34))
-
 
