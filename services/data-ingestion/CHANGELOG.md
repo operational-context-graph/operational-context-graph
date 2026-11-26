@@ -1,4 +1,4 @@
-## v0.0.1 (2026-11-23)
+## v0.0.1 (2026-11-25)
 
 ### Features
 
@@ -18,6 +18,7 @@
 
 ### Bug Fixes
 
+- *(DevOps)* Revert failed data ingestion release ([#204](https://github.com/operational-context-graph/operational-context-graph/pull/204))
 - *(Dependencies)* Bump golang.org/x deps and klauspost/compress to fix CVEs ([#165](https://github.com/operational-context-graph/operational-context-graph/pull/165))
 - *(Data Ingestion)* Fix flaky TestWorker_StoreIsolation_OneStalledOneDrains ([#167](https://github.com/operational-context-graph/operational-context-graph/pull/167))
 - *(Dependencies)* Update module github.com/jackc/pgx/v5 to v5.13.0 ([#157](https://github.com/operational-context-graph/operational-context-graph/pull/157))
@@ -41,4 +42,5 @@
 - Simplify data-ingestion config ([#89](https://github.com/operational-context-graph/operational-context-graph/pull/89))
 - Remove dead code in data-ingestion ([#86](https://github.com/operational-context-graph/operational-context-graph/pull/86))
 - Add label to Dockerfile and update Readme ([#34](https://github.com/operational-context-graph/operational-context-graph/pull/34))
+
 
