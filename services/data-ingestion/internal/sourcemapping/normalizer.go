@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,10 @@ func (s *Stub) Normalize(_ context.Context, _ ingest.SourceMapping, record inges
 		return normalizeNetboxDevice(record)
 	case "generic.log":
 		return normalizeOctobusLog(record)
+	case "greenhouse.PluginPreset":
+		return normalizeGreenhousePluginPreset(record)
+	case "greenhouse.Cluster":
+		return normalizeGreenhouseCluster(record)
 	default:
 		return nil, fmt.Errorf("%w: no mapping for %q", ingest.ErrNotFound, record.Schema.LogicalArtifactType)
 	}
@@ -287,6 +292,199 @@ func normalizeOctobusLog(record ingest.IngestRecord) ([]ingest.IngestRecord, err
 		return nil, err
 	}
 	return []ingest.IngestRecord{rec}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Greenhouse PluginPreset → canonical PluginPreset asset
+// ---------------------------------------------------------------------------
+
+func normalizeGreenhousePluginPreset(record ingest.IngestRecord) ([]ingest.IngestRecord, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(record.Payload, &doc); err != nil {
+		return nil, fmt.Errorf("sourcemapping: unmarshal greenhouse pluginpreset: %w", err)
+	}
+
+	name := getString(doc, "metadata.name")
+	namespace := getString(doc, "metadata.namespace")
+	createdAt := getString(doc, "metadata.creationTimestamp")
+
+	pluginDef := getString(doc, "spec.plugin.pluginDefinitionRef.name")
+	releaseNamespace := getString(doc, "spec.plugin.releaseNamespace")
+	deletionPolicy := getString(doc, "spec.deletionPolicy")
+	pluginDefVersion := getString(doc, "status.pluginDefinitionVersion")
+
+	totalPlugins := 0
+	readyPlugins := 0
+	failedPlugins := 0
+	if v, ok := getPath(doc, "status.totalPlugins").(float64); ok {
+		totalPlugins = int(v)
+	}
+	if v, ok := getPath(doc, "status.readyPlugins").(float64); ok {
+		readyPlugins = int(v)
+	}
+	if v, ok := getPath(doc, "status.failedPlugins").(float64); ok {
+		failedPlugins = int(v)
+	}
+
+	readyStatus := "False"
+	var conditions []any
+	if sc, ok := getPath(doc, "status.statusConditions").(map[string]any); ok {
+		if conds, ok := sc["conditions"].([]any); ok {
+			conditions = conds
+			for _, c := range conds {
+				if cm, ok := c.(map[string]any); ok {
+					if cm["type"] == "Ready" {
+						readyStatus, _ = cm["status"].(string)
+					}
+				}
+			}
+		}
+	}
+
+	iri := fmt.Sprintf("urn:ocg:greenhouse/pluginpreset/%s/%s", namespace, name)
+
+	asset := map[string]any{
+		"iri":               iri,
+		"artifact_type":     "PluginPreset",
+		"source_system":     "greenhouse",
+		"ingested_at":       time.Now().UTC().Format(time.RFC3339Nano),
+		"name":              name,
+		"source_id":         fmt.Sprintf("%s/%s", namespace, name),
+		"created_at_source": createdAt,
+		"extensions": map[string]any{
+			"namespace":                 namespace,
+			"plugin_definition":         pluginDef,
+			"plugin_definition_version": pluginDefVersion,
+			"release_namespace":         releaseNamespace,
+			"deletion_policy":           deletionPolicy,
+			"total_plugins":             totalPlugins,
+			"ready_plugins":             readyPlugins,
+			"failed_plugins":            failedPlugins,
+			"ready":                     readyStatus,
+			"conditions":                conditions,
+		},
+	}
+
+	rec, err := toRecord("canonical_greenhouse_pluginpreset", asset)
+	if err != nil {
+		return nil, err
+	}
+	return []ingest.IngestRecord{rec}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Greenhouse Cluster → canonical Cluster asset
+// ---------------------------------------------------------------------------
+
+func normalizeGreenhouseCluster(record ingest.IngestRecord) ([]ingest.IngestRecord, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(record.Payload, &doc); err != nil {
+		return nil, fmt.Errorf("sourcemapping: unmarshal greenhouse cluster: %w", err)
+	}
+
+	name := getString(doc, "metadata.name")
+	namespace := getString(doc, "metadata.namespace")
+	createdAt := getString(doc, "metadata.creationTimestamp")
+
+	accessMode := getString(doc, "spec.accessMode")
+	mode := getString(doc, "spec.mode")
+	kubernetesVersion := getString(doc, "status.kubernetesVersion")
+	bearerTokenExpiration := getString(doc, "status.bearerTokenExpirationTimestamp")
+
+	nodesTotal := 0
+	nodesReady := 0
+	var nodesNotReady []any
+	if nodes, ok := getPath(doc, "status.nodes").(map[string]any); ok {
+		if v, ok := nodes["total"].(float64); ok {
+			nodesTotal = int(v)
+		}
+		if v, ok := nodes["ready"].(float64); ok {
+			nodesReady = int(v)
+		}
+		if nr, ok := nodes["notReady"].([]any); ok {
+			nodesNotReady = nr
+		}
+	}
+
+	readyStatus := "False"
+	var conditions []any
+	if sc, ok := getPath(doc, "status.statusConditions").(map[string]any); ok {
+		if conds, ok := sc["conditions"].([]any); ok {
+			conditions = conds
+			for _, c := range conds {
+				if cm, ok := c.(map[string]any); ok {
+					if cm["type"] == "Ready" {
+						readyStatus, _ = cm["status"].(string)
+					}
+				}
+			}
+		}
+	}
+
+	if nodesNotReady == nil {
+		nodesNotReady = []any{}
+	}
+	if conditions == nil {
+		conditions = []any{}
+	}
+
+	iri := fmt.Sprintf("urn:ocg:greenhouse/cluster/%s/%s", namespace, name)
+
+	asset := map[string]any{
+		"iri":               iri,
+		"artifact_type":     "Cluster",
+		"source_system":     "greenhouse",
+		"ingested_at":       time.Now().UTC().Format(time.RFC3339Nano),
+		"name":              name,
+		"source_id":         fmt.Sprintf("%s/%s", namespace, name),
+		"created_at_source": createdAt,
+		"extensions": map[string]any{
+			"namespace":               namespace,
+			"access_mode":             accessMode,
+			"mode":                    mode,
+			"kubernetes_version":      kubernetesVersion,
+			"nodes_total":             nodesTotal,
+			"nodes_ready":             nodesReady,
+			"nodes_not_ready":         nodesNotReady,
+			"bearer_token_expiration": bearerTokenExpiration,
+			"ready":                   readyStatus,
+			"conditions":              conditions,
+		},
+	}
+
+	rec, err := toRecord("canonical_greenhouse_cluster", asset)
+	if err != nil {
+		return nil, err
+	}
+	out := []ingest.IngestRecord{rec}
+
+	slog.Default().Info("normalizeGreenhouseCluster: produced cluster asset", "namespace", namespace, "name", name)
+
+	var netboxDeviceID string
+	if annotations, ok := getPath(doc, "metadata.annotations").(map[string]any); ok {
+		netboxDeviceID, _ = annotations["netbox.sap/device-id"].(string)
+	}
+	slog.Default().Info("normalizeGreenhouseCluster: checking for RUNS_ON edge", "netbox_device_id", netboxDeviceID)
+	if netboxDeviceID != "" {
+		edge := map[string]any{
+			"artifact_type": "RUNS_ON",
+			"source_system": "greenhouse",
+			"ingested_at":   time.Now().UTC().Format(time.RFC3339Nano),
+			"source_iri":    iri,
+			"target_iri":    "urn:ocg:asset/netbox/netboxid-" + netboxDeviceID,
+			"source_key":    []string{"greenhouse", fmt.Sprintf("%s/%s", namespace, name)},
+			"target_key":    []string{"netbox", netboxDeviceID},
+			"extensions":    map[string]any{},
+		}
+		edgeRec, err := toRecord("canonical_relation", edge)
+		if err != nil {
+			return nil, err
+		}
+		slog.Default().Info("normalizeGreenhouseCluster: emitting RUNS_ON edge", "source_key", fmt.Sprintf("greenhouse/%s/%s", namespace, name), "target_key", fmt.Sprintf("netbox/%s", netboxDeviceID))
+		out = append(out, edgeRec)
+	}
+
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

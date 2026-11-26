@@ -1,0 +1,42 @@
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginPreset
+metadata:
+  name: monitoring-preset
+  namespace: demo
+  labels:
+    greenhouse.sap/owned-by: demo
+spec:
+  plugin:
+    pluginDefinitionRef:
+      name: kube-monitoring
+    releaseNamespace: monitoring
+    optionValues:
+      - name: alertmanager.enabled
+        value: true
+      - name: retention
+        value: "30d"
+  clusterSelector:
+    matchLabels:
+      greenhouse.sap/owned-by: demo
+  deletionPolicy: Retain
+---
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginPreset
+metadata:
+  name: logging-preset
+  namespace: demo
+  labels:
+    greenhouse.sap/owned-by: demo
+spec:
+  plugin:
+    pluginDefinitionRef:
+      name: opensearch
+    releaseNamespace: logging
+    optionValues:
+      - name: replicas
+        value: 1
+      - name: storage
+        value: "50Gi"
+  clusterSelector:
+    matchLabels:
+      greenhouse.sap/owned-by: demo

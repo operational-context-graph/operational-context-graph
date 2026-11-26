@@ -84,10 +84,19 @@ target "data-ingestion" {
   }
 }
 
+target "greenhouse-connector" {
+  inherits   = ["_base"]
+  dockerfile = "services/connectors/greenhouse-connector/Dockerfile"
+  tags       = ["${REGISTRY}/greenhouse-connector:${VERSION}"]
+  labels = {
+    "org.opencontainers.image.description" = "Watches Greenhouse Kubernetes resources and reports status updates to the OCG data ingestion pipeline"
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Groups
 # ---------------------------------------------------------------------------
 
 group "default" {
-  targets = ["inventory-connector", "inventory-store", "telemetry-store", "data-ingestion"]
+  targets = ["inventory-connector", "inventory-store", "telemetry-store", "data-ingestion", "greenhouse-connector"]
 }

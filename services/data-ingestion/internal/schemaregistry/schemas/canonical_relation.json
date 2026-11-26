@@ -6,7 +6,7 @@
   "properties": {
     "artifact_type": {
       "type": "string",
-      "enum": ["RESIDES_IN", "HOSTS"]
+      "enum": ["RESIDES_IN", "HOSTS", "RUNS_ON"]
     },
     "source_system": { "type": "string" },
     "source_iri": { "type": "string" },

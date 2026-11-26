@@ -1,0 +1,37 @@
+enabled: true
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: localhost:5001/greenhouse-connector
+  tag: "local"
+  digest: ""
+  pullPolicy: Always
+
+grpc:
+  endpoint: "ocg-data-ingestion:9090"
+  connectorID: "greenhouse-connector"
+
+# kubeconfig for the Greenhouse admin cluster.
+# The value must be the name of a Secret in the same namespace containing
+# a "kubeconfig" key with the kubeconfig YAML.
+greenhouse:
+  kubeconfigSecret: "greenhouse-admin-kubeconfig"
+
+tls:
+  enabled: false
+  secretName: ""
+  mountPath: /etc/tls
+
+resources: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

@@ -1,0 +1,38 @@
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginDefinition
+metadata:
+  name: kube-monitoring
+spec:
+  displayName: Kube Monitoring
+  description: Monitoring stack for Kubernetes clusters
+  version: "1.0.0"
+  helmChart:
+    name: kube-monitoring
+    repository: oci://localhost:5000/cloudoperators/greenhouse-extensions/charts
+    version: "1.0.0"
+---
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginDefinition
+metadata:
+  name: opensearch
+spec:
+  displayName: OpenSearch
+  description: Log aggregation with OpenSearch
+  version: "1.0.0"
+  helmChart:
+    name: opensearch
+    repository: oci://localhost:5000/cloudoperators/greenhouse-extensions/charts
+    version: "1.0.0"
+---
+apiVersion: greenhouse.sap/v1alpha1
+kind: PluginDefinition
+metadata:
+  name: test-plugin
+spec:
+  displayName: Test Plugin
+  description: Test plugin for PoC
+  version: "1.0.0"
+  helmChart:
+    name: test-plugin
+    repository: oci://localhost:5000/cloudoperators/greenhouse-extensions/charts
+    version: "1.0.0"

@@ -1,0 +1,12 @@
+apiVersion: greenhouse.sap/v1alpha1
+kind: Cluster
+metadata:
+  name: sample-cluster-7
+  namespace: demo
+  annotations:
+    netbox.sap/device-id: "48055"
+spec:
+  accessMode: direct
+  mode: Default
+  kubeConfig:
+    maxTokenValidity: 72

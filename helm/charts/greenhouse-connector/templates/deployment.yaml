@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "greenhouse-connector.fullname" . }}
+  labels:
+    {{- include "greenhouse-connector.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "greenhouse-connector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "greenhouse-connector.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "greenhouse-connector.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --grpc-endpoint={{ .Values.grpc.endpoint }}
+            - --connector-id={{ .Values.grpc.connectorID }}
+            - --metrics-secure=false
+            - --health-probe-bind-address=:8081
+            - --webhook-port=-1
+            {{- if .Values.tls.enabled }}
+            - --grpc-cert-file={{ .Values.tls.mountPath }}/tls.crt
+            - --grpc-key-file={{ .Values.tls.mountPath }}/tls.key
+            {{- end }}
+          env:
+            - name: KUBECONFIG
+              value: /etc/greenhouse/kubeconfig
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: greenhouse-kubeconfig
+              mountPath: /etc/greenhouse
+              readOnly: true
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: greenhouse-kubeconfig
+          secret:
+            secretName: {{ .Values.greenhouse.kubeconfigSecret }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+        {{- end }}
