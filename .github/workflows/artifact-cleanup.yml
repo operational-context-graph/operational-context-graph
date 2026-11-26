@@ -1,9 +1,9 @@
-# Deletes dev artifact versions older than 7 days from GHCR.
-# Covers container images, the OCI-hosted Helm chart, and the OCM bundle.
-# All are stored as container packages in GHCR and share the same cleanup logic.
-# Runs weekly and can be triggered manually.
+# Deletes stale dev artifacts from GHCR and prunes dereferenced manifests.
 #
-# When adding a new component with a container image, add it to the matrix.images list.
+# For every GHCR container package (the component images and the OCI-hosted Helm
+# chart), delete dev-tagged versions older than 7 days, then prune untagged
+# orphan manifests that no tagged index still references.
+#
 ---
 name: Cleanup Dev Artifacts
 
@@ -16,20 +16,41 @@ permissions:
   contents: read
 
 jobs:
-  cleanup-images:
-    name: Delete stale dev image versions
+  cleanup:
+    name: Cleanup stale versions and prune orphans
     runs-on: ubuntu-latest
     permissions:
-      packages: write  # required: deletes stale dev container image versions from GHCR
+      contents: read  # required: checkout provides the prune script
+      packages: write # required: deletes stale dev versions and dereferenced manifests from GHCR
     strategy:
+      fail-fast: false
       matrix:
+        # Each entry is a GHCR container package. The Helm chart lands under a
+        # nested path; GHCR encodes the slash as %2F in the API path.
         package:
           - data-ingestion
           - inventory-store
           - telemetry-store
           - inventory-connector
+          - operational-context-graph%2Foperational-context-graph
     steps:
-      - name: Delete dev versions older than 7 days
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install crane
+        env:
+          CRANE_VERSION: "v0.22.1"
+          CRANE_SHA256: "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0"
+        run: scripts/install-crane.sh "${CRANE_VERSION}" "${CRANE_SHA256}"
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete stale dev-tagged versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGE: ${{ matrix.package }}
@@ -37,10 +58,15 @@ jobs:
         run: |
           cutoff=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
 
+          # Delete a version only when EVERY tag is a dev tag. A release reuses the
+          # dev image digest (crane tag in release-component.yml), so the promoted
+          # version carries both dev.* and release tags on one digest. Matching
+          # "any dev tag" would delete that version by id and take the release tag
+          # with it. "all tags are dev" leaves promoted releases untouched.
           gh api \
             "orgs/${ORG}/packages/container/${PACKAGE}/versions" \
             --paginate \
-            --jq ".[] | select(.metadata.container.tags | length > 0) | select(.metadata.container.tags[] | startswith(\"dev.\")) | select(.updated_at < \"${cutoff}\") | [.id, (.metadata.container.tags | join(\",\")), .updated_at] | @tsv" \
+            --jq ".[] | select(.metadata.container.tags | length > 0) | select(all(.metadata.container.tags[]; startswith(\"dev.\"))) | select(.updated_at < \"${cutoff}\") | [.id, (.metadata.container.tags | join(\",\")), .updated_at] | @tsv" \
           | while IFS=$'\t' read -r id tags updated_at; do
               echo "Deleting ${PACKAGE}:${tags} (version ${id}, last updated ${updated_at})"
               gh api \
@@ -48,33 +74,16 @@ jobs:
                 "orgs/${ORG}/packages/container/${PACKAGE}/versions/${id}"
             done
 
-  cleanup-helm:
-    name: Delete stale dev Helm chart versions
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write  # required: deletes stale dev Helm chart versions from GHCR
-    steps:
-      - name: Delete dev versions older than 7 days
+      # Must run after the tag deletion above so the just-orphaned children of
+      # deleted indexes are pruned in the same run.
+      - name: Prune dereferenced untagged manifests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ORG: ${{ github.repository_owner }}
-          # Helm charts pushed via "helm push oci://" land under a nested package path.
-          # GHCR encodes the slash as %2F in the API path.
-          PACKAGE: "operational-context-graph%2Foperational-context-graph"
-        run: |
-          cutoff=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          PACKAGE: ${{ matrix.package }}
+          CRANE_BIN: /home/runner/.local/bin/crane
+        run: scripts/prune-ghcr-orphans.sh "$ORG" "$PACKAGE" 7
 
-          gh api \
-            "orgs/${ORG}/packages/container/${PACKAGE}/versions" \
-            --paginate \
-            --jq ".[] | select(.metadata.container.tags | length > 0) | select(.metadata.container.tags[] | startswith(\"dev.\")) | select(.updated_at < \"${cutoff}\") | [.id, (.metadata.container.tags | join(\",\")), .updated_at] | @tsv" \
-          | while IFS=$'\t' read -r id tags updated_at; do
-              echo "Deleting helm chart operational-context-graph:${tags} (version ${id}, last updated ${updated_at})"
-              gh api \
-                --method DELETE \
-                "orgs/${ORG}/packages/container/${PACKAGE}/versions/${id}"
-            done
-
-  # TODO: add cleanup-ocm-bundle job once OCM bundle publishing is implemented.
-  # The package path will be operational-context-graph/operational-context-graph-ocm
-  # and the cleanup logic is identical to cleanup-helm.
+  # TODO: add the OCM bundle package to the matrix once OCM publishing is implemented.
+  # The path will be operational-context-graph/operational-context-graph-ocm
+  # (encode the slash as %2F).
