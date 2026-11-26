@@ -341,7 +341,7 @@ jobs:
 
   tag-release:
     name: Tag Release
-    needs: [detect-release-merge, publish-dev, publish-helm]
+    needs: [detect-release-merge, publish-dev, publish-helm, publish-ocm-bundle]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-release-merge.outputs.release_type != ''
     permissions:
       contents: write
