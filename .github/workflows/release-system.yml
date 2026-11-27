@@ -1,8 +1,7 @@
-# Fires on a system release tag push (vX.Y.Z). The tag is pushed by the
-# tag-release job in ci.yml, after that run publishes the dev Helm chart for
-# the squash-merged release PR. This workflow aliases the dev Helm chart to the
-# release version, pulls it, and creates a GitHub Release with the chart attached.
-# No container image build, no Helm chart repackaging.
+# Fires on a system release tag push (vX.Y.Z). The tag is pushed by merge-gate.yml
+# after a system release PR squash-merges to main. This workflow aliases the dev
+# Helm chart to the release version, re-versions and signs the OCM bundle, and
+# creates a GitHub Release with the Helm chart and OCM CTF archive attached.
 #
 ---
 name: Release System
@@ -47,8 +46,8 @@ jobs:
             echo "release_type=${RELEASE_TYPE} version=${VERSION} tag=${TAG}"
           fi
 
-  retag-release-artifacts:
-    name: Retag Release Artifacts to Release Version
+  alias-release-artifacts:
+    name: Alias Release Artifacts to Release Version
     runs-on: ubuntu-latest
     needs: detect
     if: needs.detect.outputs.release_type == 'system'
@@ -73,7 +72,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Retag dev Helm chart to release version
+      - name: Alias dev Helm chart to release version
         env:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
           VERSION: ${{ needs.detect.outputs.version }}
@@ -86,15 +85,119 @@ jobs:
             | cut -c1-10 \
             | tr -d '-')
           DEV_TAG="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
-          src="${REGISTRY}/operational-context-graph:${DEV_TAG}"
+          src="${REGISTRY}/charts/operational-context-graph:${DEV_TAG}"
           ~/.local/bin/crane tag "${src}" "${VERSION}"
-          echo "Retagged Helm chart ${src} → ${VERSION}"
-          # TODO: retag OCM bundle when publish-ocm-bundle is implemented
+          echo "Aliased Helm chart ${src} → ${VERSION}"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OCM Bundle: re-version the dev CTF from GHCR to the release version.
+  # Downloads the CI-built dev bundle (same image content as tested), extracts
+  # resources, rebuilds CTF at release version, signs, and pushes to GHCR.
+  # This avoids re-pulling service images from the registry.
+  # ─────────────────────────────────────────────────────────────────────────────
+  ocm-bundle:
+    name: OCM Bundle
+    runs-on: ubuntu-latest
+    needs: [detect]
+    if: needs.detect.outputs.release_type == 'system'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      OCM_VERSION: "0.22.1"
+      OCM_CLI_SHA256: "15532daec120686519dc3d122e078820114f2bd090b1ed3091e9bea6704339ca"
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: "v${{ needs.detect.outputs.version }}"
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install OCM v2 CLI
+        run: |
+          curl -fsSL \
+            "https://github.com/open-component-model/open-component-model/releases/download/v${OCM_VERSION}/ocm-linux-amd64" \
+            -o /tmp/ocm-bin
+          echo "${OCM_CLI_SHA256}  /tmp/ocm-bin" | sha256sum --check --status || {
+            echo "ERROR: OCM CLI checksum mismatch"
+            sha256sum /tmp/ocm-bin
+            exit 1
+          }
+          install -m 0755 /tmp/ocm-bin /usr/local/bin/ocm
+          ocm version
+
+      - name: Set up Helm
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+
+      - name: Install tools (yq)
+        env:
+          YQ_VERSION: "v4.44.6"
+          YQ_SHA256: "0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
+        run: |
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /tmp/yq
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
+          install -m 0755 /tmp/yq /usr/local/bin/yq
+
+      - name: Write signing key
+        env:
+          OCM_SIGNING_KEY: ${{ secrets.OCM_SIGNING_KEY }}
+        run: |
+          printf '%s' "${OCM_SIGNING_KEY}" > /tmp/ocg-signing-key.pem
+          chmod 600 /tmp/ocg-signing-key.pem
+
+      - name: Resolve dev bundle version
+        id: dev-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          COMMIT_DATE=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" \
+            --jq '.commit.committer.date' \
+            | cut -c1-10 \
+            | tr -d '-')
+          DEV_VERSION="0.0.0-dev.${COMMIT_DATE}-${HEAD_SHA:0:7}"
+          echo "dev_version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved dev bundle version: ${DEV_VERSION}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release preflight
+        run: VERSION="${VERSION}" make ocm-release-preflight
+
+      - name: Re-version, sign, and verify OCM bundle
+        env:
+          DEV_VERSION: ${{ steps.dev-version.outputs.dev_version }}
+        run: |
+          SIGN_KEY=/tmp/ocg-signing-key.pem \
+            scripts/ocm-reversion.sh "${DEV_VERSION}" "${VERSION}" "${REGISTRY}"
+
+      - name: Push CTF to GHCR as OCI
+        run: |
+          ocm transfer component-version \
+            ctf::./bin/ctf// \
+            "oci::${REGISTRY}/ocm"
+
+      - name: Upload OCM CTF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ocg-ctf-${{ needs.detect.outputs.version }}
+          path: bin/ocg-${{ needs.detect.outputs.version }}.ctf.tgz
+          retention-days: 30
 
   pull-helm-chart:
     name: Pull Helm Chart from OCI
     runs-on: ubuntu-latest
-    needs: [detect, retag-release-artifacts]
+    needs: [detect, alias-release-artifacts]
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
@@ -114,7 +217,7 @@ jobs:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           helm pull \
-            "oci://${REGISTRY}/operational-context-graph" \
+            "oci://${REGISTRY}/charts/operational-context-graph" \
             --version "${VERSION}"
           ls -la "operational-context-graph-${VERSION}.tgz"
       - name: Upload Helm chart artifact
@@ -146,13 +249,11 @@ jobs:
           VERSION: ${{ needs.detect.outputs.version }}
         run: |
           NOTES=$(scripts/extract-release-notes.sh "${VERSION}" CHANGELOG.md)
-          echo "Extracted release notes for v${VERSION}:"
-          echo "${NOTES}"
           printf 'notes<<EOF\n%s\nEOF\n' "${NOTES}" >> "$GITHUB_OUTPUT"
 
   github-release-system:
     name: Create System GitHub Release
-    needs: [detect, pull-helm-chart, generate-system-release-notes]
+    needs: [detect, pull-helm-chart, ocm-bundle, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
     uses: $/.github/workflows/create-github-release.yml
     with:
@@ -161,6 +262,7 @@ jobs:
       notes: ${{ needs.generate-system-release-notes.outputs.notes }}
       artifacts: |
         ocg-helm-${{ needs.detect.outputs.version }}:operational-context-graph-${{ needs.detect.outputs.version }}.tgz#Helm chart
+        ocg-ctf-${{ needs.detect.outputs.version }}:ocg-${{ needs.detect.outputs.version }}.ctf.tgz#OCM bundle
       client_id: ${{ vars.APP_CLIENT_ID }}
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}

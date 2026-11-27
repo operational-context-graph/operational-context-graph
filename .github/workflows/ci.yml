@@ -252,26 +252,105 @@ jobs:
             --version "${HELM_VERSION}" \
             --app-version "${VERSION}"
           helm push "operational-context-graph-${HELM_VERSION}.tgz" \
-            "oci://${REGISTRY}"
+            "oci://${REGISTRY}/charts"
 
-  # TODO: implement OCM bundle packaging (separate PR/branch).
-  # Placeholder wired into dependency graph so the system alias job
-  # does not need a second PR when OCM support lands.
   publish-ocm-bundle:
-    name: Publish Dev OCM Bundle (placeholder)
+    name: Publish Dev OCM Bundle
     runs-on: ubuntu-latest
     needs: [publish-helm]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
+      packages: write
+    env:
+      OCM_VERSION: "0.22.1"
+      OCM_CLI_SHA256: "15532daec120686519dc3d122e078820114f2bd090b1ed3091e9bea6704339ca"
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
     outputs:
-      digest: ${{ steps.placeholder.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Placeholder - OCM bundle not yet implemented
-        id: placeholder
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve dev version
+        id: version
         run: |
-          echo "TODO: implement OCM bundle packaging"
-          echo "digest=" >> "$GITHUB_OUTPUT"
+          date=$(date -u +%Y%m%d)
+          version="0.0.0-dev.${date}-${GITHUB_SHA:0:7}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved OCM bundle dev version: ${version}"
+
+      - name: Install OCM v2 CLI
+        run: |
+          curl -fsSL \
+            "https://github.com/open-component-model/open-component-model/releases/download/v${OCM_VERSION}/ocm-linux-amd64" \
+            -o /tmp/ocm-bin
+          echo "${OCM_CLI_SHA256}  /tmp/ocm-bin" | sha256sum --check --status || {
+            echo "ERROR: OCM CLI checksum mismatch"
+            sha256sum /tmp/ocm-bin
+            exit 1
+          }
+          install -m 0755 /tmp/ocm-bin /usr/local/bin/ocm
+          ocm version
+
+      - name: Set up Helm
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+
+      - name: Install tools (yq, skopeo)
+        env:
+          YQ_VERSION: "v4.44.6"
+          YQ_SHA256: "0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
+        run: |
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /tmp/yq
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
+          install -m 0755 /tmp/yq /usr/local/bin/yq
+          sudo apt-get install -y skopeo
+
+      - name: Write signing key
+        env:
+          OCM_SIGNING_KEY: ${{ secrets.OCM_SIGNING_KEY }}
+        run: |
+          printf '%s' "${OCM_SIGNING_KEY}" > /tmp/ocg-signing-key.pem
+          chmod 600 /tmp/ocg-signing-key.pem
+
+      - name: Pull service images as OCI layout tarballs
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Images are tagged with the same dev.YYYYMMDD-SHA formula as publish-dev
+          date=$(date -u +%Y%m%d)
+          IMG_TAG="dev.${date}-${GITHUB_SHA:0:7}"
+          mkdir -p bin/images
+          for svc in data-ingestion inventory-store telemetry-store inventory-connector; do
+            skopeo copy \
+              --src-creds "${GITHUB_ACTOR}:${GHCR_TOKEN}" \
+              "docker://${REGISTRY}/${svc}:${IMG_TAG}" \
+              "oci-archive:bin/images/${svc}.oci.tar"
+          done
+
+      - name: Build and sign OCM bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: VERSION="${VERSION}" SIGN_KEY=/tmp/ocg-signing-key.pem make ocm-build
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push CTF to GHCR as OCI
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ocm transfer component-version \
+            ctf::./bin/ctf// \
+            "oci::${REGISTRY}/ocm"
+          echo "Pushed OCM bundle to ${REGISTRY}/ocm (${VERSION})"
 
   detect-release-merge:
     name: Detect Release Merge

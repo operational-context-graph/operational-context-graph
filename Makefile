@@ -203,3 +203,105 @@ require-targets:
 		echo "       Run make from the repo root and ensure each service has a go.mod"; \
 		exit 1; \
 	}
+
+# =============================================================================
+# OCM Bundle Pipeline
+# =============================================================================
+# Entry points sharing scripts/ocm-bundle.sh (build → package → inspect → sign → verify):
+#
+#   make ocm-build              — build and sign from pre-pulled OCI tarballs in
+#                                 bin/images/; VERSION must be supplied. Used by
+#                                 the dev CI job (untagged HEAD, dev version).
+#   make ocm-release-preflight  — release guard: verifies HEAD is tagged vVERSION
+#                                 and working tree is clean. Run before ocm-reversion
+#                                 in the release workflow.
+#   make ocm-dev                — local path: builds images via docker buildx bake
+#                                 first, then runs the same pipeline script.
+#
+# For the release workflow, scripts/ocm-reversion.sh re-versions the dev CTF from
+# GHCR rather than rebuilding from source.
+#
+# Required env:
+#   SIGN_KEY     - path to RSA private key PEM (default: /tmp/ocg-signing-key.pem)
+#
+# Optional env (ocm-dev only):
+#   DEV_VERSION  - semver string to use for the local build (default: 0.0.0)
+#
+# Usage:
+#   CI (dev):     VERSION=0.0.0-dev.DATE-SHA SIGN_KEY=/run/secrets/ocg.key make ocm-build
+#   CI (release): scripts/ocm-reversion.sh <dev-version> <release-version> <registry>
+#   Local (dev):  make ocm-dev                            # unsigned; no key needed
+#   Local (dev):  SIGN_KEY=.ocm/ocg.key make ocm-dev     # signed with local key
+
+.NOTPARALLEL:
+
+OCM_VERSION  := 0.22.1
+SIGN_KEY     ?= /tmp/ocg-signing-key.pem
+OCM_SERVICES := data-ingestion telemetry-store inventory-store inventory-connector
+DEV_VERSION  ?= 0.0.0
+
+.PHONY: ocm-build ocm-release-preflight ocm-dev ocm-dev-images
+
+# ---------------------------------------------------------------------------
+# ocm-release-preflight: release guard — run before ocm-build in release CI.
+# Checks that HEAD is tagged with a matching vX.Y.Z tag and the working tree
+# is clean. Keeps these constraints out of ocm-build so the same target works
+# for both the dev CI job (untagged HEAD) and the release workflow.
+# ---------------------------------------------------------------------------
+
+ocm-release-preflight:
+	@test -n "$(VERSION)" || { \
+	  echo "ERROR: VERSION is required. Example: make ocm-release-preflight VERSION=1.2.3"; exit 1; \
+	}
+	@git describe --tags --exact-match HEAD 2>/dev/null | grep -qxF "v$(VERSION)" || { \
+	  echo "ERROR: HEAD is not tagged v$(VERSION)"; \
+	  echo "       current tags at HEAD: $$(git tag --points-at HEAD | tr '\n' ' ')"; \
+	  exit 1; \
+	}
+	@test -z "$$(git status --porcelain)" || { \
+	  echo "ERROR: working tree is dirty:"; git status --porcelain; exit 1; \
+	}
+	@echo "ocm-release-preflight: OK (VERSION=$(VERSION), HEAD tagged v$(VERSION), tree clean)"
+
+# ---------------------------------------------------------------------------
+# ocm-build: build and sign the OCM bundle.
+# OCI tarballs must already be in bin/images/ (pulled by pull-images in CI).
+# VERSION must be supplied by the caller; no git-tag or clean-tree guard here
+# so this target works for both dev CI builds (untagged HEAD) and releases.
+# Run make ocm-release-preflight first when building a release.
+# ---------------------------------------------------------------------------
+
+ocm-build:
+	@test -n "$(VERSION)" || { \
+	  echo "ERROR: VERSION is required. Example: make ocm-build VERSION=1.2.3"; exit 1; \
+	}
+	SIGN_KEY="$(SIGN_KEY)" scripts/ocm-bundle.sh "$(VERSION)"
+
+# ---------------------------------------------------------------------------
+# ocm-dev-images: build all service images locally and export as OCI layout tars
+# ---------------------------------------------------------------------------
+
+ocm-dev-images:
+	@command -v docker >/dev/null 2>&1 || { echo "ERROR: docker: not found"; exit 1; }
+	@# Ensure a docker-container builder exists; the default docker driver does
+	@# not support OCI layout output.
+	@docker buildx inspect ocm-builder >/dev/null 2>&1 || \
+	  docker buildx create --name ocm-builder --driver docker-container >/dev/null
+	@mkdir -p bin/images
+	@echo "dev-images: building and exporting OCI layout tars via docker buildx bake..."
+	@for svc in $(OCM_SERVICES); do \
+	  echo "  building $$svc → bin/images/$$svc.oci.tar"; \
+	  BUILDX_BAKE_ENTITLEMENTS_FS=0 VERSION=$(DEV_VERSION) docker buildx bake "$$svc" \
+	    --builder ocm-builder \
+	    --set "$$svc.output=type=oci,dest=bin/images/$$svc.oci.tar" \
+	    --progress=plain; \
+	  test -s "bin/images/$$svc.oci.tar" || { echo "ERROR: $$svc: output tar is empty"; exit 1; }; \
+	done
+	@echo "dev-images: OK"
+
+# ---------------------------------------------------------------------------
+# ocm-dev: local entry point — builds images then runs the pipeline script
+# ---------------------------------------------------------------------------
+
+ocm-dev: ocm-dev-images
+	SKIP_SIGN="$(if $(filter-out /tmp/ocg-signing-key.pem,$(SIGN_KEY)),0,1)" SIGN_KEY="$(SIGN_KEY)" scripts/ocm-bundle.sh "$(DEV_VERSION)"
