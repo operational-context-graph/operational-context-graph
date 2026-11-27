@@ -1,7 +1,7 @@
 # Fires on a component release tag push (services/**/vX.Y.Z). The tag is pushed by
-# merge-gate.yml after a component release PR squash-merges to main. This workflow
-# aliases the dev container image to the release version tag. No image build, no
-# GitHub Release for components.
+# the tag-release job in ci.yml, after that run publishes the dev image for the
+# squash-merged release PR. This workflow aliases the dev container image to the
+# release version tag. No image build, no GitHub Release for components.
 #
 ---
 name: Release Component
@@ -60,6 +60,12 @@ jobs:
       contents: read
       packages: write  # required: crane tag retags the dev container image in GHCR to the release version
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/
+          sparse-checkout-cone-mode: false
       - name: Install crane
         env:
           CRANE_VERSION: "v0.22.1"

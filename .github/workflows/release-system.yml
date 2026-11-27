@@ -53,8 +53,14 @@ jobs:
     if: needs.detect.outputs.release_type == 'system'
     permissions:
       contents: read
-      packages: write  # required: crane tag retags the dev Helm chart in GHCR to the release version
+      packages: write # required: crane tag retags the dev Helm chart in GHCR to the release version
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/
+          sparse-checkout-cone-mode: false
       - name: Install crane
         env:
           CRANE_VERSION: "v0.22.1"
@@ -249,7 +255,7 @@ jobs:
     name: Create System GitHub Release
     needs: [detect, pull-helm-chart, ocm-bundle, generate-system-release-notes]
     if: needs.detect.outputs.release_type == 'system'
-    uses: $/.github/workflows/shared/create-github-release.yml
+    uses: $/.github/workflows/create-github-release.yml
     with:
       tag: "v${{ needs.detect.outputs.version }}"
       title: "system v${{ needs.detect.outputs.version }}"
@@ -260,4 +266,3 @@ jobs:
       client_id: ${{ vars.APP_CLIENT_ID }}
     secrets:
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
-
