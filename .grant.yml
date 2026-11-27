@@ -69,6 +69,6 @@ ignore-packages:
   - pnpm # MIT
   - "@pnpm/exe.*" # platform-specific binary distributions that lack SPDX metadata in the SBOM
 
-  # Exclude github.com/operational-context-graph/* due to being our own packages
+  # Exclude github.com/operational-context-graph/* and $/.github/workflows/* due to being our own packages
   - github.com/operational-context-graph/*
-  - $/.github/workflows/shared/*
+  - $/.github/workflows/*

@@ -2,130 +2,101 @@
 
 ## Purpose
 
-Defines the behavior of `release-component.yml` and `release-system.yml`: two separate workflows that fire after CI succeeds on a push to `main`. Each handles one release type only, with permissions scoped to that type's needs. `release.yml` is deleted.
+Defines the behavior of `release-component.yml` and `release-system.yml`: two separate promotion workflows that fire on a release git tag push. The tag itself is pushed by the `tag-release` job in `ci.yml` (see `ci-main-push`) after the dev artifacts are published. Each workflow handles one release type only, reads its intent directly from the tag ref, and has permissions scoped to that type's needs. Neither builds artifacts; each aliases the already-published dev artifact to the release version.
 
 ## Requirements
 
 ### Requirement: Each release workflow is scoped to one release type with minimal permissions
 
-`release-component.yml` SHALL declare only `contents: read` at the workflow level (individual jobs acquire `contents: write` and `packages: write` as needed). `release-system.yml` SHALL declare `contents: read` and `packages: read` at the workflow level. Neither workflow SHALL declare permissions beyond what its release type requires at the workflow level.
+`release-component.yml` SHALL declare only `contents: read` at the workflow level (individual jobs acquire `packages: write` as needed). `release-system.yml` SHALL declare `contents: read` and `packages: read` at the workflow level. Neither workflow SHALL declare permissions beyond what its release type requires at the workflow level.
 
 #### Scenario: Component release workflow has no workflow-level registry write permissions
 - **WHEN** a code reviewer inspects `release-component.yml`
-- **THEN** `packages: write` does not appear at the workflow level; only the `alias-component-image` job declares it
+- **THEN** `packages: write` does not appear at the workflow level; only the `retag-component-image` job declares it
 
 #### Scenario: System release workflow has no workflow-level registry write permissions
 - **WHEN** a code reviewer inspects `release-system.yml`
-- **THEN** `packages: write` does not appear at the workflow level; only the `alias-release-artifacts` job declares it
+- **THEN** `packages: write` does not appear at the workflow level; only the `retag-release-artifacts` job declares it
 
 ---
 
-### Requirement: Local reusable workflow references use the $/ prefix
+### Requirement: Reusable workflow references are pinned to a full commit SHA
 
-Local reusable workflow references SHALL use the `$/` prefix (e.g., `$/.github/workflows/shared/push-release-tag.yml`), not `./`. The `./` prefix is flagged as a security finding by zizmor.
+Reusable workflow references SHALL use the full `owner/repo/.github/workflows/<file>@<sha>` form pinned to a commit SHA. The repository enforces "require actions pinned to a full-length commit SHA", which rejects refless local (`./` or `$/`) reusable-workflow calls at startup. The referenced file MUST exist at the pinned SHA on the default branch.
 
-#### Scenario: Local reusable workflow reference uses $/ prefix
-- **WHEN** a code reviewer inspects `release-component.yml` or `release-system.yml`
-- **THEN** all `uses:` references to workflows in the same repository start with `$/`
-- **AND** no `uses:` reference starts with `./`
-
----
-
-### Requirement: workflow_run trigger carries an inline zizmor suppression comment
-
-The `workflow_run` trigger line SHALL carry `# zizmor: ignore[dangerous-triggers]` as an inline comment on the same line. A standalone comment on a preceding line is not recognized by zizmor.
-
-#### Scenario: zizmor suppression is inline on the trigger line
-- **WHEN** a code reviewer inspects `release-component.yml` or `release-system.yml`
-- **THEN** the `workflow_run:` key and `# zizmor: ignore[dangerous-triggers]` appear on the same line
+#### Scenario: Reusable workflow call uses the full path pinned to a SHA
+- **WHEN** a code reviewer inspects `ci.yml` or `release-system.yml`
+- **THEN** every reusable-workflow `uses:` is `operational-context-graph/operational-context-graph/.github/workflows/<file>@<40-char-sha>`
+- **AND** no reusable-workflow `uses:` uses a refless local `./` or `$/` path
 
 ---
 
-### Requirement: Release type is detected from the merge source branch
+### Requirement: Release workflows trigger on the pushed release tag and detect type from it
 
-Both `release-component.yml` and `release-system.yml` SHALL detect the release type by resolving the source branch of the commit that triggered the CI workflow and parsing it with `scripts/parse-release-branch.sh`. Each workflow skips all downstream jobs when the detected type does not match its own type.
+`release-component.yml` SHALL trigger on tag pushes matching `services/**/v*.*.*` and `release-system.yml` SHALL trigger on tag pushes matching `v*.*.*`. Each workflow SHALL read the release type directly from the pushed tag ref using `scripts/parse-release-tag.sh`, with no PR or source-branch reverse lookup, and SHALL skip all downstream jobs when the detected type does not match its own.
 
-#### Scenario: Component release workflow fires on non-release main push
-- **WHEN** a non-release branch is merged to `main`
-- **THEN** `release-component.yml` detects `release_type` as empty and all jobs are skipped; the workflow exits successfully
+#### Scenario: Component tag detected by the component workflow
+- **WHEN** tag `services/data-ingestion/v1.2.3` is pushed
+- **THEN** `release-component.yml` parses `release_type` `component` and proceeds
 
-#### Scenario: System release workflow fires on component release merge
-- **WHEN** a `release/<slug>/<version>` branch is merged to `main`
-- **THEN** `release-system.yml` detects `release_type` as `component`; all its jobs are skipped; the workflow exits successfully
+#### Scenario: System tag detected by the system workflow
+- **WHEN** tag `v1.0.0` is pushed
+- **THEN** `release-system.yml` parses `release_type` `system` and proceeds
 
-#### Scenario: Component release workflow fires on component release merge
-- **WHEN** the merged source branch is `release/<slug>/<version>`
-- **THEN** `release-component.yml` detects `release_type` as `component` and proceeds
+#### Scenario: Component workflow ignores a non-matching tag type
+- **WHEN** a tag reaches `release-component.yml` whose parsed `release_type` is not `component`
+- **THEN** all downstream jobs are skipped and the workflow exits successfully
 
-#### Scenario: System release workflow fires on system release merge
-- **WHEN** the merged source branch is `release/<version>`
-- **THEN** `release-system.yml` detects `release_type` as `system` and proceeds
-
-#### Scenario: GitHub API call to resolve source branch fails
-- **WHEN** the `gh api` call to resolve the PR for the commit SHA returns an error or empty result
-- **THEN** the detect job fails with a logged error; no tags are pushed
-
-#### Scenario: Merge commit has no associated PR
-- **WHEN** the commit has no associated pull request in the GitHub API response
-- **THEN** source branch resolves to empty; `release_type` is empty; all jobs in both workflows are skipped
+#### Scenario: Tag ref is not a valid release tag
+- **WHEN** the pushed tag does not parse to a known release type
+- **THEN** `parse-release-tag.sh` yields an empty `release_type` and all downstream jobs are skipped
 
 ---
 
-### Requirement: Component release pushes a git tag and aliases the dev image to the release version
+### Requirement: Component release aliases the dev image to the release version
 
-On a component release, `release-component.yml` SHALL push an annotated git tag of the form `<component-path>/v<version>`, then alias the dev image in GHCR to `<version>` and `<version>-<sha7>` using `crane tag` — without rebuilding the image. It SHALL NOT create a GitHub Release.
+On a component release, `release-component.yml` SHALL alias the dev image in GHCR to `<version>` and `<version>-<sha7>` using `crane tag`, without rebuilding the image. It SHALL NOT push a git tag (the triggering tag already exists) and SHALL NOT create a GitHub Release.
 
-#### Scenario: Git tag pushed and image aliased for component release
-- **WHEN** `release_type` is `component` for `services/data-ingestion` version `1.2.3`, dev tag is `dev.20260315-abc1234`
-- **THEN** annotated tag `services/data-ingestion/v1.2.3` is pushed to the repository
-- **AND** `ghcr.io/operational-context-graph/data-ingestion:1.2.3` and `ghcr.io/operational-context-graph/data-ingestion:1.2.3-abc1234` are pushed as aliases
-- **AND** no GitHub Release is created
+#### Scenario: Dev image aliased for component release
+- **WHEN** tag `services/data-ingestion/v1.2.3` triggers the workflow and the dev tag for the tagged commit is `dev.20260315-abc1234`
+- **THEN** `ghcr.io/operational-context-graph/data-ingestion:1.2.3` and `ghcr.io/operational-context-graph/data-ingestion:1.2.3-abc1234` are pushed as aliases of the dev image
+- **AND** no image layer is built and no GitHub Release is created
 
-#### Scenario: Component has no Dockerfile — tag pushed, no alias
-- **WHEN** `release_type` is `component` and `has_dockerfile` is `false`
-- **THEN** the git tag is pushed
-- **AND** the `alias-component-image` job is skipped; no image tags are created
+#### Scenario: Component has no Dockerfile — no alias
+- **WHEN** the parsed tag has `has_dockerfile` `false`
+- **THEN** the `retag-component-image` job is skipped and no image tags are created
 
-#### Scenario: Git tag already exists for component release
-- **WHEN** tag `services/data-ingestion/v1.2.3` already exists before the tag job runs
-- **THEN** the tag push fails with a clear error; no alias tags are pushed; no GitHub Release is created
-
-#### Scenario: GitHub App token generation fails for tag push
-- **WHEN** `actions/create-github-app-token` returns an error
-- **THEN** the tag push job fails; no tag is pushed; no alias runs; no GitHub Release is created
+#### Scenario: Dev image not present when the alias runs
+- **WHEN** `crane tag` cannot find the dev image for the tagged commit
+- **THEN** the `retag-component-image` job fails with a clear error and no alias tags are pushed
 
 ---
 
-### Requirement: System release pushes a git tag, aliases artifacts, creates a GitHub Release, and attaches the versioned Helm chart
+### Requirement: System release aliases the dev chart, attaches it, and creates a GitHub Release
 
-On a system release, `release-system.yml` SHALL push an annotated git tag `v<version>`, alias the dev Helm chart OCI artifact to `<version>` using `crane tag`, pull the versioned Helm chart, and create a GitHub Release with the Helm chart `.tgz` attached.
+On a system release, `release-system.yml` SHALL alias the dev Helm chart OCI artifact to `<version>` using `crane tag`, pull the versioned chart, and create a GitHub Release titled `system v<version>` with the chart `.tgz` attached. It SHALL NOT push a git tag (the triggering tag already exists) and SHALL NOT repackage or rebuild the chart.
 
 #### Scenario: System release creates GitHub Release with versioned Helm chart
-- **WHEN** `release_type` is `system` for version `1.0.0`, dev tag is `dev.20260315-abc1234`
-- **THEN** annotated tag `v1.0.0` is pushed to the repository
-- **AND** `ghcr.io/operational-context-graph/operational-context-graph:1.0.0` is aliased from the dev tag via `crane tag`
-- **AND** the Helm chart is pulled from `ghcr.io/operational-context-graph/operational-context-graph:1.0.0`
-- **AND** a GitHub Release titled `system v1.0.0` is created with the `.tgz` artifact attached
-
-#### Scenario: System release GitHub Release already exists
-- **WHEN** a GitHub Release for tag `v1.0.0` already exists
-- **THEN** the release creation step fails with a clear error; the git tag is not pushed again
+- **WHEN** tag `v1.0.0` triggers the workflow and the dev tag for the tagged commit is `dev.20260315-abc1234`
+- **THEN** `ghcr.io/operational-context-graph/operational-context-graph:1.0.0` is aliased from the dev chart via `crane tag`
+- **AND** the chart is pulled from `ghcr.io/operational-context-graph/operational-context-graph:1.0.0`
+- **AND** a GitHub Release titled `system v1.0.0` is created with the `.tgz` attached
 
 #### Scenario: Helm chart OCI alias fails
-- **WHEN** `crane tag` for the Helm chart returns non-zero (e.g. dev tag does not exist)
-- **THEN** the `alias-release-artifacts` job fails; `pull-helm-chart` is blocked; the GitHub Release is not created
+- **WHEN** `crane tag` for the Helm chart returns non-zero (e.g. dev tag not found)
+- **THEN** the `retag-release-artifacts` job fails, `pull-helm-chart` is blocked, and no GitHub Release is created
 
-#### Scenario: Helm chart pull succeeds but `.tgz` export fails
+#### Scenario: Helm chart pull produces no .tgz
 - **WHEN** `helm pull` exits non-zero or produces no `.tgz` file
-- **THEN** the Helm pull step fails; the GitHub Release creation step is skipped
+- **THEN** the pull step fails and GitHub Release creation is skipped
 
-#### Scenario: GitHub Release creation fails (API error)
+#### Scenario: System GitHub Release already exists
+- **WHEN** a GitHub Release for tag `v1.0.0` already exists
+- **THEN** the release creation step fails with a clear error
+
+#### Scenario: GitHub Release creation API error
 - **WHEN** the GitHub API returns an error on release creation
-- **THEN** the step fails; the git tag is already pushed; re-running the workflow MUST not attempt to re-push the tag (the tag push step will fail gracefully on the re-run)
-
-#### Scenario: System git tag already exists
-- **WHEN** tag `v1.0.0` already exists before the tag job runs
-- **THEN** the tag push fails with a clear error; the alias and GitHub Release creation steps are blocked
+- **THEN** the step fails; the git tag already exists and is not re-pushed by this workflow; re-running retries only the promotion steps
 
 ---
 
@@ -180,7 +151,13 @@ Neither `release-component.yml` nor `release-system.yml` SHALL build container i
 
 ## Non-Goals
 
-- OCM bundle creation or attachment — handled by a separate workflow (placeholder exists).
+- Pushing the release git tag — the tag is pushed by the `tag-release` job in `ci.yml`; these workflows consume it.
+- OCM bundle aliasing — pending `publish-ocm-bundle` implementation; the system workflow carries a placeholder.
 - SBOM generation or attestation at release time — generated at build time.
 - Automated rollback of git tags on downstream failure — git tags are permanent once pushed.
-- Eliminating the two skipped workflow runs on non-release main pushes — accepted trade-off for permission isolation.
+
+## Implementation Notes
+
+- **Alias mechanism**: `crane tag` re-tags artifacts without rebuild. Crane is installed at runtime from the GitHub releases page at a pinned version (v0.22.1, SHA256 `0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0`); the installer verifies the checksum before use.
+- **Dev tag resolution**: the dev tag consumed by the alias step is recomputed from the tagged commit's committer date via `gh api repos/{repo}/commits/{sha}`, matching the value `ci.yml` used when it published the artifact.
+- **GitHub Release identity**: `release-system.yml` creates the GitHub Release through the `create-github-release.yml` reusable workflow, which pushes as the release GitHub App.
