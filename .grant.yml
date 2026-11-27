@@ -29,84 +29,43 @@ allow:
   - BSL-1.0
   - BlueOak-1.0.0
 
-# Note: Syfts SBOM does currently not contain license information for github actions
 ignore-packages:
-  # actions/* is licensed under MIT
-  - actions/*
-
-  # github/codeql-action/* licensed under MIT
-  - github/codeql-action/*
-
-  # amannn/action-semantic-pull-request licensed under MIT
-  - amannn/action-semantic-pull-request
-
-  # fsfe/reuse-action licensed under CC0-1.0
-  - fsfe/reuse-action
-
-  # golangci/golangci-lint-action licensed under MIT
-  - golangci/golangci-lint-action
-  # golang/govulncheck-action licensed under BSD 3-Clause
-  - golang/govulncheck-action
-
-  # marocchino/sticky-pull-request-comment licensed under MIT
-  - marocchino/sticky-pull-request-comment
-
-  # ossf/scorecard-action licensed under Apache-2.0
-  - ossf/scorecard-action
-
-  # anchore/sbom-action licensed under Apache-2.0
-  - anchore/sbom-action
-  # anchore/scan-action licensed under MIT
-  - anchore/scan-action
-
-  # pnpm/action-setup licensed under MIT
-  - pnpm/action-setup
-
-  # azure/setup-helm licensed under MIT
-  - azure/setup-helm
-
-  # helm/chart-testing-action licensed under Apache-2.0
-  - helm/chart-testing-action
-
-  # pnpm and @pnpm/exe.* are licensed under MIT (https://github.com/pnpm/pnpm/blob/main/LICENSE);
-  # @pnpm/exe.* are platform-specific binary distributions that lack SPDX metadata in the SBOM
-  - pnpm
-  - "@pnpm/exe.*"
-
-  # zizmorcore/zizmor-action licensed under MIT
-  - zizmorcore/zizmor-action
-
-  # bufbuild/buf-action licensed under Apache-2.0
-  - bufbuild/buf-action
-
+  # Note: Syft's SBOM does currently not contain license information for GitHub Actions
+  - actions/* # MIT
+  - github/codeql-action/* # MIT
+  - amannn/action-semantic-pull-request # MIT
+  - fsfe/reuse-action # CC0-1.0
+  - golangci/golangci-lint-action # MIT
+  - golang/govulncheck-action # BSD-3-Clause
+  - marocchino/sticky-pull-request-comment # MIT
+  - ossf/scorecard-action # Apache-2.0
+  - anchore/sbom-action # Apache-2.0
+  - anchore/scan-action # MIT
+  - pnpm/action-setup # MIT
+  - azure/setup-helm # MIT
+  - helm/chart-testing-action # Apache-2.0
+  - zizmorcore/zizmor-action # MIT
+  - bufbuild/buf-action # Apache-2.0
   - docker/bake-action # Apache-2.0
   - docker/login-action # Apache-2.0
   - docker/setup-buildx-action # Apache-2.0
   - docker/build-push-action # Apache-2.0
 
+  # Go packages that have known permissive licenses but Syft also emits a LicenseRef-* hash
+  # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
+  - github.com/grpc-ecosystem/grpc-gateway/v2 # BSD-3-Clause
+  - github.com/jackc/pgx/v5 # MIT
+  - github.com/quic-go/quic-go # MIT
+  - github.com/coreos/go-semver # Apache-2.0
+  - modernc.org/libc # BSD-3-Clause
+  - modernc.org/memory # BSD-3-Clause
+  - modernc.org/sqlite # BSD-3-Clause
+  - github.com/piprate/json-gold # Apache-2.0
+
+  # Node.js package manager
+  - pnpm # MIT
+  - "@pnpm/exe.*" # platform-specific binary distributions that lack SPDX metadata in the SBOM
+
   # Exclude github.com/operational-context-graph/* and $/.github/workflows/* due to being our own packages
   - github.com/operational-context-graph/*
   - $/.github/workflows/*
-
-  # -------------------------
-  # The following packages have known permissive licenses but Syft also emits a LicenseRef-* hash
-  # from bundled license files it cannot map to a standard SPDX ID. The known license is allowed.
-
-  # github.com/grpc-ecosystem/grpc-gateway/v2 licensed under BSD-3-Clause
-  - github.com/grpc-ecosystem/grpc-gateway/v2
-
-  # github.com/jackc/pgx/v5 licensed under MIT
-  - github.com/jackc/pgx/v5
-
-  # github.com/quic-go/quic-go licensed under MIT
-  - github.com/quic-go/quic-go
-
-  # github.com/coreos/go-semver licensed under Apache-2.0
-  - github.com/coreos/go-semver
-
-  # modernc.org/{libc,memory,sqlite} licensed under BSD-3-Clause; pulled in as a
-  # test-only transitive dependency of github.com/pressly/goose/v3. Syft emits
-  # LicenseRef-* hashes from bundled license files it cannot map to a standard SPDX ID.
-  - modernc.org/libc
-  - modernc.org/memory
-  - modernc.org/sqlite

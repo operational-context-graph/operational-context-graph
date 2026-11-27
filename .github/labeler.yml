@@ -2,6 +2,10 @@
   - changed-files:
       - any-glob-to-any-file: "services/data-ingestion/**"
 
+"schema-registry":
+  - changed-files:
+      - any-glob-to-any-file: "services/schema-registry/**"
+
 "inventory-store":
   - changed-files:
       - any-glob-to-any-file: "services/inventory-store/**"

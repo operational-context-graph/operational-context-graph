@@ -1,0 +1,24 @@
+{
+  "format": "schema-registry-schema-changes-1",
+  "cases": [
+    {"id":"annotation","rule":"schema.keyword-position","before":{"type":"string","description":"old"},"after":{"type":"string","description":"new"},"impact":"operational"},
+    {"id":"nested-annotation","rule":"schema.keyword-position","before":{"properties":{"name":{"type":"string","title":"old"}}},"after":{"properties":{"name":{"type":"string","title":"new"}}},"impact":"operational"},
+    {"id":"property-title","rule":"schema.keyword-position","before":{"properties":{"title":{"type":"string"}}},"after":{"properties":{"title":{"type":"integer"}}},"impact":"breaking"},
+    {"id":"property-description","rule":"schema.keyword-position","before":{"properties":{"description":{"type":"string"}}},"after":{"properties":{"description":{"type":"integer"}}},"impact":"breaking"},
+    {"id":"property-comment","rule":"schema.keyword-position","before":{"properties":{"$comment":{"type":"string"}}},"after":{"properties":{"$comment":{"type":"integer"}}},"impact":"breaking"},
+    {"id":"property-examples","rule":"schema.keyword-position","before":{"properties":{"examples":{"type":"string"}}},"after":{"properties":{"examples":{"type":"integer"}}},"impact":"breaking"},
+    {"id":"definition-title","rule":"schema.keyword-position","before":{"$defs":{"title":{"type":"string"}},"$ref":"#/$defs/title"},"after":{"$defs":{"title":{"type":"integer"}},"$ref":"#/$defs/title"},"impact":"breaking"},
+    {"id":"const-title","rule":"schema.literal-data","before":{"const":{"title":"old"}},"after":{"const":{"title":"new"}},"impact":"breaking"},
+    {"id":"enum-title","rule":"schema.literal-data","before":{"enum":[{"title":"old"}]},"after":{"enum":[{"title":"new"}]},"impact":"breaking"},
+    {"id":"closed-optional","rule":"schema.optional-addition","before":{"type":"object","additionalProperties":false},"after":{"type":"object","additionalProperties":false,"properties":{"name":{"type":"string"}}},"impact":"additive"},
+    {"id":"open-optional","rule":"schema.optional-addition","before":{"type":"object"},"after":{"type":"object","properties":{"name":{"type":"string"}}},"impact":"breaking"},
+    {"id":"new-required","rule":"schema.optional-addition","before":{"type":"object","additionalProperties":false},"after":{"type":"object","additionalProperties":false,"properties":{"name":{"type":"string"}},"required":["name"]},"impact":"breaking"},
+    {"id":"annotation-and-shape","rule":"schema.keyword-position","before":{"type":"string","description":"old"},"after":{"type":"integer","description":"new"},"impact":"breaking"},
+    {"id":"negative-reference","rule":"schema.optional-addition","before":{"type":"object","additionalProperties":false,"properties":{"nested":{"not":{"$ref":"#"}}}},"after":{"type":"object","additionalProperties":false,"properties":{"nested":{"not":{"$ref":"#"}},"name":{"type":"string"}}},"impact":"breaking"},
+    {"id":"referenced-examples","rule":"schema.keyword-position","before":{"$ref":"#/examples/0","examples":[{"type":"string"}]},"after":{"$ref":"#/examples/0","examples":[{"type":"integer"}]},"impact":"breaking"},
+    {"id":"nested-referenced-examples","rule":"schema.keyword-position","before":{"properties":{"value":{"$ref":"#/examples/0"}},"examples":[{"type":"string"}]},"after":{"properties":{"value":{"$ref":"#/examples/0"}},"examples":[{"type":"integer"}]},"impact":"breaking"},
+    {"id":"dynamic-referenced-examples","rule":"schema.keyword-position","before":{"$dynamicRef":"#/examples/0","examples":[{"type":"string"}]},"after":{"$dynamicRef":"#/examples/0","examples":[{"type":"integer"}]},"impact":"breaking"},
+    {"id":"referenced-schema-annotation","rule":"schema.keyword-position","before":{"$ref":"#/$defs/value","$defs":{"value":{"type":"string"}},"description":"old"},"after":{"$ref":"#/$defs/value","$defs":{"value":{"type":"string"}},"description":"new"},"impact":"breaking"},
+    {"id":"unchanged-referenced-schema","rule":"schema.keyword-position","before":{"$ref":"#/$defs/value","$defs":{"value":{"type":"string"}}},"after":{"$defs":{"value":{"type":"string"}},"$ref":"#/$defs/value"},"impact":"operational"}
+  ]
+}

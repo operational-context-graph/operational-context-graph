@@ -1,0 +1,773 @@
+package manifest
+
+import (
+	"fmt"
+	"net/url"
+	"reflect"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode/utf16"
+
+	schemaartifacts "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts"
+	artifactmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/artifact"
+	sourcemappingmodel "github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/source-mapping"
+	"github.com/operational-context-graph/operational-context-graph/services/schema-registry/pkg/schema-artifacts/strictjson"
+)
+
+// commitPattern accepts lowercase Git object identifiers using SHA-1 or SHA-256 lengths.
+var commitPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// Validate checks canonical manifest bytes, selection metadata, byte integrity, reference resolution, historical
+// immutability, and predecessor bindings. It performs every check described by [Parse] and [Manifest.Validate].
+//
+// The context supplies exact selected artifact bytes, the Registry origin, and previously validated predecessors.
+//
+// It returns a metadata [Manifest] with authoritative [Manifest.Raw] bytes, not a copy populated from [Context.Artifacts].
+func Validate(data []byte, context Context) (Manifest, error) {
+	m, err := Parse(data)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := m.Validate(context); err != nil {
+		return Manifest{}, err
+	}
+	return m, nil
+}
+
+// Validate checks a schema release manifest's fields and selected bytes against the schema release manifest format
+// specification.
+//
+// For artifact selections and byte integrity, it checks that:
+//   - Every selection matches its supplied metadata and exact payload and resource bytes.
+//   - Descriptors have valid media types, bundle paths, SHA-256 digests, and matching byte lengths within Registry limits.
+//   - Canonical URIs use the Registry origin and /v1/resources/{kind}/{artifactType}/{revision} path.
+//   - Artifact identities, revisions, canonical URIs, resources, dependencies, bindings, and catalog keys satisfy their respective uniqueness checks.
+//
+// For release closure and storage placement, it checks that:
+//   - Dependencies and catalog targets resolve within this release, and bindings select schema and context artifacts respectively.
+//   - Every canonical URI resolves to its artifact's primary payload.
+//   - JSON Schema identifiers select their owning payloads or resources in the catalog.
+//   - Runtime document references resolve through the catalog, and cross-artifact references have exact declared dependencies.
+//   - Schema payloads compile as Draft 2020-12, and context payloads are valid JSON-LD with the context media type.
+//   - Every canonical schema has one storage entry with registered stores, and source-record schemas have none.
+//
+// For source mappings, it checks that:
+//   - Each descriptor's id matches its artifact's logical type.
+//   - Schema selectors resolve to declared dependencies and revisions selected by this release.
+//   - Target versions identify this release or a supplied ancestor, with target revisions unchanged in this release.
+//   - Transformation targets are entity, identifier, or edge schemas.
+//   - Program references identify owned program resources with matching names and digests, and every program resource is referenced.
+//
+// For release history, it checks that:
+//   - The predecessor identifies the latest supplied release's version and digest, and the candidate schema version is new.
+//   - Reused revisions preserve revision-bound metadata, excluding bundle paths.
+//   - Newly selected revisions declare this release as their creation version, and retired logical identities do not reappear.
+//   - Historical canonical URIs and schema identifiers do not select different content.
+//   - Retargeted JSON aliases have historical context-only use rather than schema use.
+//
+// For deterministic changes, it checks that:
+//   - An initial change summary has compatibility initial and empty change arrays.
+//   - Later releases have an effective difference, even when changes are absent.
+//   - Present change arrays and compatibility equal the deterministic predecessor comparison, excluding the textual summary.
+//   - Present changes use exactly the next major, minor, or patch version, resetting lower components as appropriate.
+//
+// The [Context.History] MUST contain trusted, previously validated releases in oldest-first order.
+// The [Context.Artifacts] MUST match every selection's metadata and include its exact payload and resource bytes.
+// Retargeting JSON aliases also requires affected historical releases' bytes, as documented by [Context.Artifacts].
+//
+// Validation does not verify Git provenance, retrieve the manifest's format schema, or establish extension namespace ownership.
+// Document references resolve offline; validation rejects undeclared or unavailable document dependencies.
+// Source mapping validation allows shared source schemas and does not restrict source schema classification or execute programs.
+// Compatibility-based version increment checks apply only when changes are present.
+//
+// Validate reads the current fields; it does not parse [Manifest.Raw] or check that [Manifest.Raw] still represents
+// those fields. Callers SHOULD use the package-level [Validate] when starting from untrusted manifest bytes.
+func (m Manifest) Validate(context Context) error {
+	if err := m.validateStructural(); err != nil {
+		return err
+	}
+	if context.RegistryOrigin == "" {
+		return fmt.Errorf("%w: registry origin is required", errInvalid)
+	}
+	if err := m.validateLineage(context.History); err != nil {
+		return err
+	}
+	if err := m.validateHistoricalURIs(context); err != nil {
+		return err
+	}
+	selected := make(map[artifactmodel.Dependency]artifactmodel.Artifact, len(m.Artifacts))
+	byRevision := make(map[string]artifactmodel.Artifact, len(m.Artifacts))
+	history := indexHistory(context.History)
+	for _, selectedArtifact := range m.Artifacts {
+		key := artifactmodel.Dependency{Kind: selectedArtifact.Kind, Type: selectedArtifact.Type, Revision: selectedArtifact.Revision}
+		bound, ok := context.Artifacts[key]
+		if !ok {
+			return fmt.Errorf("%w: artifact %s/%s/%s bytes are unavailable", errInvalid, key.Kind, key.Type, key.Revision)
+		}
+		// Byte integrity alone is insufficient: supplied revisions must also match every selected metadata field.
+		if !matchesSelection(selectedArtifact, bound) {
+			return fmt.Errorf("%w: artifact %s/%s/%s differs from immutable bytes", errInvalid, key.Kind, key.Type, key.Revision)
+		}
+		if validationErr := bound.Validate(context.RegistryOrigin); validationErr != nil {
+			return fmt.Errorf("%w: artifact %s: %w", errInvalid, key.Type, validationErr)
+		}
+		if err := history.validateReuse(selectedArtifact); err != nil {
+			return err
+		}
+		if _, reused := history.revisions[selectedArtifact.Revision]; !reused && selectedArtifact.CreatedUnderSchemaVersion != m.SchemaVersion {
+			return invalid("first selected revision must be created under this release")
+		}
+		selected[key] = bound
+		if previous, exists := byRevision[selectedArtifact.Revision]; exists && (previous.Kind != selectedArtifact.Kind || previous.Type != selectedArtifact.Type) {
+			return fmt.Errorf("%w: artifact revisions must be release-unique", errInvalid)
+		}
+		byRevision[selectedArtifact.Revision] = selectedArtifact
+	}
+	if err := m.validateReferences(selected, byRevision); err != nil {
+		return err
+	}
+	formatCatalog, err := m.documentCatalog(selected)
+	if err != nil {
+		return err
+	}
+	for _, selection := range m.Artifacts {
+		bound := selected[artifactmodel.Dependency{Kind: selection.Kind, Type: selection.Type, Revision: selection.Revision}]
+		if err := bound.ValidatePayloadFormatWithCatalog(formatCatalog.documents); err != nil {
+			return fmt.Errorf("%w: validate artifact format: %w", errInvalid, err)
+		}
+	}
+	if err := m.validateSourceMappings(selected, context); err != nil {
+		return err
+	}
+	if err := m.validateChanges(context); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateStructural checks manifest metadata without resolving artifact bytes or history.
+// For declarations and artifact selections, it checks that:
+//   - The format is 0.1.0, schema versions use published syntax, and document URIs are absolute.
+//   - The source commit is a full lowercase Git object identifier.
+//   - Artifacts are non-empty and pass [validateArtifact], and payload and resource bundle paths are release-unique.
+//
+// For bindings and catalogs, it checks that:
+//   - Binding schema revisions are non-empty, and context arrays stay within the collection limit.
+//   - URI entries have valid absolute document identifiers, revisions, and optional resource names.
+//   - Storage entries select schema logical types and non-empty, bounded lists of registered stores.
+//   - All format-defined arrays pass [Manifest.validateOrder].
+//
+// Required JSON field presence, complete descriptor validity, reference resolution, and history are not checked here.
+func (m Manifest) validateStructural() error {
+	if !artifactmodel.ValidDocumentURI(m.Schema) || m.FormatVersion != FormatVersion || !artifactmodel.ValidVersion(m.SchemaVersion) {
+		return fmt.Errorf("%w: invalid format declaration", errInvalid)
+	}
+	if !commitPattern.MatchString(m.Source.Commit) || !artifactmodel.ValidDocumentURI(m.Source.Repository) {
+		return fmt.Errorf("%w: invalid source", errInvalid)
+	}
+	if len(m.Artifacts) == 0 {
+		return fmt.Errorf("%w: artifacts must not be empty", errInvalid)
+	}
+	if err := checkCount(len(m.Artifacts)); err != nil {
+		return err
+	}
+	paths := make(map[string]struct{})
+	duplicatePath := false
+	for _, a := range m.Artifacts {
+		if err := validateArtifact(a); err != nil {
+			return err
+		}
+		for _, path := range bundlePaths(a) {
+			if _, exists := paths[path]; exists {
+				duplicatePath = true
+			}
+			paths[path] = struct{}{}
+		}
+	}
+	for _, b := range m.SchemaContextBindings {
+		if err := checkCount(len(b.ContextRevisions)); err != nil || b.SchemaRevision == "" {
+			return fmt.Errorf("%w: invalid schema-context binding", errInvalid)
+		}
+	}
+	for _, entry := range m.URICatalog {
+		if !artifactmodel.ValidDocumentURI(entry.URI) || !artifactmodel.ValidRevision(entry.ArtifactRevision) || (entry.Resource != "" && !artifactmodel.ValidResourceName(entry.Resource)) {
+			return fmt.Errorf("%w: invalid URI catalog entry", errInvalid)
+		}
+	}
+	if m.Changes != nil {
+		for _, change := range m.Changes.URICatalog {
+			if !artifactmodel.ValidDocumentURI(change.URI) {
+				return invalid("invalid URI change")
+			}
+		}
+	}
+	for _, entry := range m.StorageCatalog {
+		if entry.Kind != artifactmodel.KindSchema || !artifactmodel.ValidLogicalType(entry.ArtifactType) || len(entry.Stores) == 0 || checkCount(len(entry.Stores)) != nil {
+			return fmt.Errorf("%w: invalid storage catalog entry", errInvalid)
+		}
+		for _, store := range entry.Stores {
+			if !validStore(store) {
+				return fmt.Errorf("%w: invalid store", errInvalid)
+			}
+		}
+	}
+	if err := m.validateOrder(); err != nil {
+		return err
+	}
+	if duplicatePath {
+		return invalid("duplicate bundle path")
+	}
+	return nil
+}
+
+// validateReferences checks references between selected artifacts and release catalogs.
+// For artifacts and bindings, it checks that:
+//   - Logical artifact identities and canonical URIs are unique, and every dependency is selected by exact identity.
+//   - Each bound revision selects a schema with at most one binding, whose distinct context revisions select context artifacts.
+//
+// For catalog targets and storage placement, it checks that:
+//   - URI keys are unique and select existing payloads or owned resources.
+//   - Every canonical URI selects its owning payload, and top-level payload identifiers have catalog entries.
+//   - Each canonical schema has exactly one storage entry, and source-record schemas have none.
+//
+// Nested document references and schema identifier ownership are checked by [Manifest.documentCatalog], not here.
+func (m Manifest) validateReferences(selected map[artifactmodel.Dependency]artifactmodel.Artifact, revisions map[string]artifactmodel.Artifact) error {
+	logical := make(map[string]struct{}, len(m.Artifacts))
+	canonical := make(map[string]struct{}, len(m.Artifacts))
+	for _, item := range m.Artifacts {
+		identity := string(item.Kind) + "\x00" + item.Type
+		if _, ok := logical[identity]; ok {
+			return fmt.Errorf("%w: duplicate artifact selection", errInvalid)
+		}
+		logical[identity] = struct{}{}
+		if _, ok := canonical[item.CanonicalURI]; ok {
+			return fmt.Errorf("%w: duplicate canonical URI", errInvalid)
+		}
+		canonical[item.CanonicalURI] = struct{}{}
+		for _, dep := range item.Dependencies {
+			if _, ok := selected[dep]; !ok {
+				return fmt.Errorf("%w: unresolved dependency", errInvalid)
+			}
+		}
+	}
+	bindings := make(map[string]struct{}, len(m.SchemaContextBindings))
+	for _, binding := range m.SchemaContextBindings {
+		schema, ok := revisions[binding.SchemaRevision]
+		if !ok || schema.Kind != artifactmodel.KindSchema {
+			return fmt.Errorf("%w: binding schema is unresolved", errInvalid)
+		}
+		if _, exists := bindings[binding.SchemaRevision]; exists {
+			return fmt.Errorf("%w: duplicate schema binding", errInvalid)
+		}
+		bindings[binding.SchemaRevision] = struct{}{}
+		contexts := make(map[string]struct{}, len(binding.ContextRevisions))
+		for _, revision := range binding.ContextRevisions {
+			context, ok := revisions[revision]
+			if !ok || context.Kind != artifactmodel.KindContext {
+				return fmt.Errorf("%w: binding context is unresolved", errInvalid)
+			}
+			if _, exists := contexts[revision]; exists {
+				return fmt.Errorf("%w: duplicate context binding", errInvalid)
+			}
+			contexts[revision] = struct{}{}
+		}
+	}
+	uris := make(map[string]struct{}, len(m.URICatalog))
+	for _, entry := range m.URICatalog {
+		target, ok := revisions[entry.ArtifactRevision]
+		if !ok {
+			return fmt.Errorf("%w: URI target is unresolved", errInvalid)
+		}
+		if entry.Resource != "" && !hasResource(target, entry.Resource) {
+			return fmt.Errorf("%w: URI resource target is unresolved", errInvalid)
+		}
+		if _, exists := uris[entry.URI]; exists {
+			return fmt.Errorf("%w: duplicate URI", errInvalid)
+		}
+		uris[entry.URI] = struct{}{}
+	}
+	for uri := range canonical {
+		if _, ok := uris[uri]; !ok {
+			return fmt.Errorf("%w: missing canonical URI catalog entry", errInvalid)
+		}
+	}
+	for _, item := range m.Artifacts {
+		entry, ok := findURIEntry(m.URICatalog, item.CanonicalURI)
+		if !ok || entry.ArtifactRevision != item.Revision || entry.Resource != "" {
+			return fmt.Errorf("%w: canonical URI must resolve to its artifact payload", errInvalid)
+		}
+	}
+	for _, item := range m.Artifacts {
+		bound := selected[artifactmodel.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}]
+		for _, required := range requiredURIs(bound) {
+			if _, ok := uris[required]; !ok {
+				return fmt.Errorf("%w: missing required URI catalog entry %q", errInvalid, required)
+			}
+		}
+	}
+	placements := make(map[string]struct{}, len(m.StorageCatalog))
+	for _, entry := range m.StorageCatalog {
+		selectedSchema, ok := findSelected(m.Artifacts, entry.Kind, entry.ArtifactType)
+		if !ok || selectedSchema.SchemaClass == artifactmodel.SchemaClassSource {
+			return fmt.Errorf("%w: invalid schema storage placement", errInvalid)
+		}
+		key := string(entry.Kind) + "\x00" + entry.ArtifactType
+		if _, exists := placements[key]; exists {
+			return fmt.Errorf("%w: duplicate storage placement", errInvalid)
+		}
+		placements[key] = struct{}{}
+	}
+	for _, item := range m.Artifacts {
+		if item.Kind != artifactmodel.KindSchema {
+			continue
+		}
+		_, placed := placements[string(item.Kind)+"\x00"+item.Type]
+		if (item.SchemaClass == artifactmodel.SchemaClassSource) == placed {
+			return fmt.Errorf("%w: schema storage placement does not agree with class", errInvalid)
+		}
+	}
+	return nil
+}
+
+// validateSourceMappings checks mapping descriptors against the containing release and its supplied ancestors.
+// It checks that:
+//   - Descriptor identifiers match mapping logical types, and schema selectors resolve to declared dependencies and selected schemas.
+//   - Program references identify owned resources with matching roles and digests.
+//   - Transformation targets are entity, identifier, or edge schemas.
+//   - Target releases are this release or supplied ancestors, selecting the same target revisions as this release.
+//
+// Distinct mappings can share a source schema; condition and transformation programs are not interpreted or executed.
+func (m Manifest) validateSourceMappings(selected map[artifactmodel.Dependency]artifactmodel.Artifact, context Context) error {
+	schemas := make([]sourcemappingmodel.Schema, 0)
+	for _, item := range m.Artifacts {
+		if item.Kind == artifactmodel.KindSchema {
+			schemas = append(schemas, sourcemappingmodel.Schema{Type: item.Type, Revision: item.Revision, Class: item.SchemaClass})
+		}
+	}
+	// Mapping resolution expects newest-first lineage, unlike Context.History's oldest-first release sequence.
+	lineage := []sourcemappingmodel.Release{{Version: m.SchemaVersion, Schemas: schemas}}
+	for _, v := range slices.Backward(context.History) {
+		prior := v.Manifest
+		priorSchemas := make([]sourcemappingmodel.Schema, 0)
+		for _, item := range prior.Artifacts {
+			if item.Kind == artifactmodel.KindSchema {
+				priorSchemas = append(priorSchemas, sourcemappingmodel.Schema{Type: item.Type, Revision: item.Revision, Class: item.SchemaClass})
+			}
+		}
+		lineage = append(lineage, sourcemappingmodel.Release{Version: prior.SchemaVersion, Schemas: priorSchemas})
+	}
+	mappings := make([]artifactmodel.Artifact, 0)
+	for _, item := range m.Artifacts {
+		if item.Kind == artifactmodel.KindSourceMapping {
+			mappings = append(mappings, selected[artifactmodel.Dependency{Kind: item.Kind, Type: item.Type, Revision: item.Revision}])
+		}
+	}
+	_, err := sourcemappingmodel.ValidateRelease(mappings, sourcemappingmodel.ValidationContext{Version: m.SchemaVersion, Lineage: lineage})
+	if err != nil {
+		return fmt.Errorf("%w: source mapping agreement: %w", errInvalid, err)
+	}
+	return nil
+}
+
+// validateChanges checks the release difference and optional change summary.
+// It checks that:
+//   - An initial summary has compatibility initial and empty change arrays.
+//   - Later releases differ effectively from their immediate predecessors, regardless of whether changes are present.
+//   - Present machine-readable changes equal [Diff], including impacts and aggregate compatibility, but excluding the textual summary.
+//   - Present changes use the exact compatibility-based version increment checked by [validIncrement].
+func (m Manifest) validateChanges(context Context) error {
+	if m.Changes == nil {
+		// Omitted summaries still require an effective difference, but do not trigger compatibility-based version checks.
+		if len(context.History) > 0 {
+			diff, err := Diff(context.History[len(context.History)-1].Manifest, m, context)
+			if err != nil {
+				return err
+			}
+			if diff.Compatibility == CompatibilityOperational && len(diff.Artifacts) == 0 && len(diff.SchemaContextBindings) == 0 && len(diff.URICatalog) == 0 && len(diff.StorageCatalog) == 0 {
+				return fmt.Errorf("%w: release has no effective difference", errInvalid)
+			}
+		}
+		return nil
+	}
+	if len(context.History) == 0 {
+		if m.Changes.Compatibility != CompatibilityInitial || len(m.Changes.Artifacts)+len(m.Changes.SchemaContextBindings)+len(m.Changes.URICatalog)+len(m.Changes.StorageCatalog) != 0 {
+			return fmt.Errorf("%w: invalid initial change summary", errInvalid)
+		}
+		return nil
+	}
+	expected, err := Diff(context.History[len(context.History)-1].Manifest, m, context)
+	if err != nil {
+		return err
+	}
+	if len(expected.Artifacts)+len(expected.SchemaContextBindings)+len(expected.URICatalog)+len(expected.StorageCatalog) == 0 {
+		return fmt.Errorf("%w: release has no effective difference", errInvalid)
+	}
+	if !equalChanges(*m.Changes, expected) {
+		return fmt.Errorf("%w: changes do not equal deterministic difference", errInvalid)
+	}
+	if !validIncrement(context.History[len(context.History)-1].Manifest.SchemaVersion, m.SchemaVersion, expected.Compatibility) {
+		return fmt.Errorf("%w: schema version is not the required compatibility increment", errInvalid)
+	}
+	return nil
+}
+
+// invalid attaches the manifest validation sentinel to a field-specific diagnostic.
+func invalid(message string) error { return fmt.Errorf("%w: %s", errInvalid, message) }
+
+// checkCount rejects collections larger than the format 0.1.0 manifest entry limit.
+func checkCount(count int) error {
+	if count > schemaartifacts.MaxArrayEntries {
+		return invalid("collection exceeds entry limit")
+	}
+	return nil
+}
+
+// absoluteURI recognizes document identifiers for catalog coverage, including invalid over-limit identifiers.
+func absoluteURI(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.IsAbs() && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+// validStore reports whether value names one of the four registered logical stores.
+func validStore(value Store) bool {
+	switch value {
+	case StoreDataCenterInventory, StoreTelemetryStore, StoreInsightsRepository, StoreRecordedActionsRepository:
+		return true
+	}
+	return false
+}
+
+// validImpact reports whether value is an individual change impact, excluding initial-release compatibility.
+func validImpact(value Impact) bool {
+	return value == ImpactBreaking || value == ImpactAdditive || value == ImpactOperational
+}
+
+// validateArtifact checks an artifact selection's metadata.
+// For common fields, it checks that:
+//   - Logical type, revision, creation version, canonical document URI, payload digest, and bundle path have valid syntax.
+//   - Payload size is non-negative, and resource and dependency counts stay within the manifest collection limit.
+//
+// For conditional fields, it checks that:
+//   - Schemas have a registered class and no target version.
+//   - Contexts have neither a class nor a target version.
+//   - Other kinds have a published target version and no class; kind registration is not checked here.
+//
+// Resource metadata, dependency metadata, media types, byte integrity, and reference resolution are not checked here.
+func validateArtifact(item artifactmodel.Artifact) error {
+	if !artifactmodel.ValidLogicalType(item.Type) || !artifactmodel.ValidRevision(item.Revision) || !artifactmodel.ValidVersion(item.CreatedUnderSchemaVersion) || !artifactmodel.ValidDocumentURI(item.CanonicalURI) {
+		return invalid("invalid artifact identity")
+	}
+	if !artifactmodel.ValidDigest(item.Payload.Digest) || item.Payload.Size < 0 || !artifactmodel.ValidBundlePath(item.Payload.BundlePath) {
+		return invalid("invalid payload descriptor")
+	}
+	if item.Kind == artifactmodel.KindSchema {
+		if item.SchemaClass != artifactmodel.SchemaClassEntity && item.SchemaClass != artifactmodel.SchemaClassIdentifier && item.SchemaClass != artifactmodel.SchemaClassEdge && item.SchemaClass != artifactmodel.SchemaClassSource || item.TargetSchema != "" {
+			return invalid("invalid schema fields")
+		}
+	} else if item.Kind == artifactmodel.KindContext {
+		if item.SchemaClass != "" || item.TargetSchema != "" {
+			return invalid("invalid context fields")
+		}
+	} else if item.SchemaClass != "" || !artifactmodel.ValidVersion(item.TargetSchema) {
+		return invalid("invalid source mapping fields")
+	}
+	if err := checkCount(len(item.Resources)); err != nil {
+		return err
+	}
+	if err := checkCount(len(item.Dependencies)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateArtifactChange checks an artifact change's identity, impact, and revision transition.
+// It checks that:
+//   - The logical type is valid, the impact is supported, and the revision transition passes [validChangeShape].
+//   - Artifact removals have breaking impact.
+//
+// Kind registration and other impact classifications are not checked here.
+func validateArtifactChange(item ArtifactChange) error {
+	if !artifactmodel.ValidLogicalType(item.ArtifactType) || !validImpact(item.Impact) || !validChangeShape(item.Operation, item.BeforeRevision, item.AfterRevision) {
+		return invalid("invalid artifact change")
+	}
+	if item.Operation == OperationRemove && item.Impact != ImpactBreaking {
+		return invalid("artifact removal must be breaking")
+	}
+	return nil
+}
+
+// validChangeShape checks operation-specific revision selectors. It checks that:
+//   - Add entries have only a valid after revision.
+//   - Remove entries have only a valid before revision.
+//   - Update entries have valid, distinct before and after revisions.
+//
+// Other operations are rejected.
+func validChangeShape(operation Operation, before, after string) bool {
+	switch operation {
+	case OperationAdd:
+		return before == "" && artifactmodel.ValidRevision(after)
+	case OperationUpdate:
+		return artifactmodel.ValidRevision(before) && artifactmodel.ValidRevision(after) && before != after
+	case OperationRemove:
+		return artifactmodel.ValidRevision(before) && after == ""
+	}
+	return false
+}
+
+// matchesSelection checks for identical selection metadata, including descriptors, bundle paths, resources, dependencies, and extensions.
+// Payload and resource bytes are excluded; dependency comparison includes their order.
+func matchesSelection(selection, bound artifactmodel.Artifact) bool {
+	if !slices.Equal(selection.Dependencies, bound.Dependencies) {
+		return false
+	}
+	selection, bound = selection.Metadata(), bound.Metadata()
+	selection.Dependencies, bound.Dependencies = nil, nil
+	return reflect.DeepEqual(selection, bound)
+}
+
+// bundlePaths returns the payload and resource bundle paths for release-wide uniqueness checks.
+func bundlePaths(a artifactmodel.Artifact) []string {
+	paths := []string{a.Payload.BundlePath}
+	for _, resource := range a.Resources {
+		paths = append(paths, resource.BundlePath)
+	}
+	return paths
+}
+
+// findSelected looks up a selected artifact by its kind and case-sensitive logical type.
+func findSelected(items []artifactmodel.Artifact, kind artifactmodel.Kind, artifactType string) (artifactmodel.Artifact, bool) {
+	for _, item := range items {
+		if item.Kind == kind && item.Type == artifactType {
+			return item, true
+		}
+	}
+	return artifactmodel.Artifact{}, false
+}
+
+// hasResource reports whether the selection declares an owned resource with the exact requested name.
+func hasResource(item artifactmodel.Artifact, name string) bool {
+	for _, resource := range item.Resources {
+		if resource.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// findURIEntry looks up an exact catalog identifier without normalization or external resolution.
+func findURIEntry(entries []URIEntry, uri string) (URIEntry, bool) {
+	for _, entry := range entries {
+		if entry.URI == uri {
+			return entry, true
+		}
+	}
+	return URIEntry{}, false
+}
+
+// requiredURIs collects the canonical payload identifier and supported top-level document identifiers from the exact payload.
+func requiredURIs(item artifactmodel.Artifact) []string {
+	result := []string{item.CanonicalURI}
+	value, err := strictjson.Parse(item.PayloadBytes)
+	if err != nil {
+		return result
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return result
+	}
+	if identifier, ok := object["$id"].(string); ok && absoluteURI(identifier) {
+		result = append(result, identifier)
+	}
+	if context, ok := object["@context"].(string); ok && absoluteURI(context) {
+		result = append(result, context)
+	}
+	return result
+}
+
+// validateOrder checks strictly increasing lexicographic keys using UTF-16 code units without Unicode normalization.
+// Equal keys are rejected, even when other entry fields differ.
+// For release selections, it checks these sort keys:
+//   - Artifacts: kind, then artifactType.
+//   - Resources: role, then name.
+//   - Dependencies: kind, artifactType, then artifactRevision.
+//   - Bindings: schemaRevision; contextRevisions: revision.
+//   - URI entries: uri.
+//   - Storage entries: kind, then artifactType; stores: store identifier.
+//
+// For change entries, it checks these sort keys:
+//   - Artifacts: kind, artifactType, then operation.
+//   - Bindings: schemaRevision, contextRevision, then operation.
+//   - URI entries: uri, then operation.
+//   - Storage entries: kind, artifactType, store, then operation.
+func (m Manifest) validateOrder() error {
+	if !sorted(m.Artifacts, func(left, right artifactmodel.Artifact) int {
+		return compareMany(string(left.Kind), left.Type, string(right.Kind), right.Type)
+	}) {
+		return invalid("artifacts are not ordered")
+	}
+	for _, item := range m.Artifacts {
+		if !sorted(item.Resources, func(left, right artifactmodel.Resource) int {
+			return compareMany(string(left.Role), left.Name, string(right.Role), right.Name)
+		}) || !sorted(item.Dependencies, func(left, right artifactmodel.Dependency) int {
+			return compareMany(string(left.Kind), left.Type, left.Revision, string(right.Kind), right.Type, right.Revision)
+		}) {
+			return invalid("artifact arrays are not ordered")
+		}
+	}
+	if !sorted(m.SchemaContextBindings, func(left, right Binding) int { return compareUTF16(left.SchemaRevision, right.SchemaRevision) }) {
+		return invalid("bindings are not ordered")
+	}
+	for _, binding := range m.SchemaContextBindings {
+		if !sorted(binding.ContextRevisions, compareUTF16) {
+			return invalid("binding contexts are not ordered")
+		}
+	}
+	if !sorted(m.URICatalog, func(left, right URIEntry) int { return compareUTF16(left.URI, right.URI) }) || !sorted(m.StorageCatalog, func(left, right StorageEntry) int {
+		return compareMany(string(left.Kind), left.ArtifactType, string(right.Kind), right.ArtifactType)
+	}) {
+		return invalid("catalogs are not ordered")
+	}
+	for _, entry := range m.StorageCatalog {
+		if !sorted(entry.Stores, func(left, right Store) int { return compareUTF16(string(left), string(right)) }) {
+			return invalid("stores are not ordered")
+		}
+	}
+	if m.Changes != nil {
+		changes := m.Changes
+		if !sorted(changes.Artifacts, func(a, b ArtifactChange) int {
+			return compareMany(string(a.Kind), a.ArtifactType, string(a.Operation), string(b.Kind), b.ArtifactType, string(b.Operation))
+		}) || !sorted(changes.SchemaContextBindings, func(a, b BindingChange) int {
+			return compareMany(a.SchemaRevision, a.ContextRevision, string(a.Operation), b.SchemaRevision, b.ContextRevision, string(b.Operation))
+		}) || !sorted(changes.URICatalog, func(a, b URIChange) int {
+			return compareMany(a.URI, string(a.Operation), b.URI, string(b.Operation))
+		}) || !sorted(changes.StorageCatalog, func(a, b StorageChange) int {
+			return compareMany(string(a.Kind), a.ArtifactType, string(a.Store), string(a.Operation), string(b.Kind), b.ArtifactType, string(b.Store), string(b.Operation))
+		}) {
+			return invalid("change arrays are not ordered")
+		}
+	}
+	return nil
+}
+
+// sorted checks that each adjacent pair compares strictly increasing, rejecting duplicates as well as descending values.
+func sorted[T any](values []T, compare func(T, T) int) bool {
+	for index := 1; index < len(values); index++ {
+		if compare(values[index-1], values[index]) >= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// compareMany compares two equally sized tuples, supplied as all left fields followed by all right fields.
+// It panics when the argument count is odd.
+func compareMany(values ...string) int {
+	if len(values)%2 != 0 {
+		panic("compareMany requires left and right fields")
+	}
+	half := len(values) / 2
+	for index := range half {
+		if comparison := compareUTF16(values[index], values[index+half]); comparison != 0 {
+			return comparison
+		}
+	}
+	return 0
+}
+
+// compareUTF16 compares strings by UTF-16 code units, as required by the manifest's canonical array ordering.
+func compareUTF16[T ~string](left, right T) int {
+	// UTF-8 byte order differs for supplementary characters; Go's native string comparison is not sufficient here.
+	leftUnits, rightUnits := utf16.Encode([]rune(left)), utf16.Encode([]rune(right))
+	for index := 0; index < len(leftUnits) && index < len(rightUnits); index++ {
+		if leftUnits[index] < rightUnits[index] {
+			return -1
+		}
+		if leftUnits[index] > rightUnits[index] {
+			return 1
+		}
+	}
+	if len(leftUnits) < len(rightUnits) {
+		return -1
+	}
+	if len(leftUnits) > len(rightUnits) {
+		return 1
+	}
+	return 0
+}
+
+// sortChanges orders all change collections in place using the manifest-defined lexical sort keys.
+func sortChanges(changes *Changes) {
+	sort.Slice(changes.Artifacts, func(i, j int) bool {
+		return compareMany(string(changes.Artifacts[i].Kind), changes.Artifacts[i].ArtifactType, string(changes.Artifacts[j].Kind), changes.Artifacts[j].ArtifactType) < 0 || compareMany(string(changes.Artifacts[i].Kind), changes.Artifacts[i].ArtifactType, string(changes.Artifacts[j].Kind), changes.Artifacts[j].ArtifactType) == 0 && compareUTF16(changes.Artifacts[i].Operation, changes.Artifacts[j].Operation) < 0
+	})
+	sort.Slice(changes.SchemaContextBindings, func(i, j int) bool {
+		return compareMany(changes.SchemaContextBindings[i].SchemaRevision, changes.SchemaContextBindings[i].ContextRevision, changes.SchemaContextBindings[j].SchemaRevision, changes.SchemaContextBindings[j].ContextRevision) < 0 || compareMany(changes.SchemaContextBindings[i].SchemaRevision, changes.SchemaContextBindings[i].ContextRevision, changes.SchemaContextBindings[j].SchemaRevision, changes.SchemaContextBindings[j].ContextRevision) == 0 && compareUTF16(changes.SchemaContextBindings[i].Operation, changes.SchemaContextBindings[j].Operation) < 0
+	})
+	sort.Slice(changes.URICatalog, func(i, j int) bool {
+		if c := compareUTF16(changes.URICatalog[i].URI, changes.URICatalog[j].URI); c != 0 {
+			return c < 0
+		}
+		return compareUTF16(changes.URICatalog[i].Operation, changes.URICatalog[j].Operation) < 0
+	})
+	sort.Slice(changes.StorageCatalog, func(i, j int) bool {
+		if c := compareMany(string(changes.StorageCatalog[i].Kind), changes.StorageCatalog[i].ArtifactType, string(changes.StorageCatalog[j].Kind), changes.StorageCatalog[j].ArtifactType); c != 0 {
+			return c < 0
+		}
+		if c := compareUTF16(string(changes.StorageCatalog[i].Store), string(changes.StorageCatalog[j].Store)); c != 0 {
+			return c < 0
+		}
+		return compareUTF16(changes.StorageCatalog[i].Operation, changes.StorageCatalog[j].Operation) < 0
+	})
+}
+
+// equalChanges deeply compares machine-readable changes while excluding optional human-readable summaries.
+func equalChanges(left, right Changes) bool {
+	left.Summary = ""
+	right.Summary = ""
+	return reflect.DeepEqual(left, right)
+}
+
+// validIncrement checks the exact next version for a compatibility classification:
+//   - Breaking: increment major and reset minor and patch to zero.
+//   - Additive: increment minor and reset patch to zero.
+//   - Operational: increment patch without changing major or minor.
+//
+// Skipped versions and other classifications are rejected; published version syntax is a caller prerequisite.
+func validIncrement(before, after string, compatibility Compatibility) bool {
+	major, minor, patch, ok := versionParts(before)
+	if !ok {
+		return false
+	}
+	expected := ""
+	switch compatibility {
+	case CompatibilityBreaking:
+		expected = strconv.Itoa(major+1) + ".0.0"
+	case CompatibilityAdditive:
+		expected = strconv.Itoa(major) + "." + strconv.Itoa(minor+1) + ".0"
+	case CompatibilityOperational:
+		expected = strconv.Itoa(major) + "." + strconv.Itoa(minor) + "." + strconv.Itoa(patch+1)
+	default:
+		return false
+	}
+	return after == expected
+}
+
+// versionParts splits three decimal components into machine-sized integers; callers enforce semantic-version lexical rules separately.
+func versionParts(value string) (int, int, int, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	result := [3]int{}
+	for index, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return 0, 0, 0, false
+		}
+		result[index] = number
+	}
+	return result[0], result[1], result[2], true
+}
