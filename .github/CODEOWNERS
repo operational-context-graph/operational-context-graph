@@ -5,7 +5,7 @@
 /proto/ @operational-context-graph/architects
 
 # Repository administration
-/.github/CODEOWNERS @operational-context-graph/repository-admins
+/.github/CODEOWNERS @operational-context-graph/sec-ops
 
 # Continuous integration, releases, and repository automation
 /.github/workflows/ @operational-context-graph/dev-ops
