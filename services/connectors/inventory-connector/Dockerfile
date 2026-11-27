@@ -4,7 +4,7 @@
 # Example: docker buildx build --platform linux/amd64 -t ghcr.io/operational-context-graph/inventory-connector:latest -f services/connectors/inventory-connector/Dockerfile .
 # Via Bake:  docker buildx bake inventory-connector
 
-ARG GO_IMAGE="golang:1.27@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf"
+ARG GO_IMAGE="golang:1.27@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666"
 ARG DISTROLESS_IMAGE="gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2"
 
 FROM ${GO_IMAGE} AS build
